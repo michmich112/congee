@@ -1,0 +1,10 @@
+bin/
+web/admin/node_modules/
+build/
+web/admin/build/
+.svelte-kit/
+web/admin/.svelte-kit/
+*.db*
+dist/
+.env
+config.json
