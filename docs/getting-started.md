@@ -1,0 +1,77 @@
+# Getting started
+
+## Prerequisites
+
+- **Go** 1.24 or newer
+- **Node.js** 24 or newer (for the admin UI build)
+- A Nostr client that supports `wss://` or `ws://` (for local testing, use `ws://`)
+
+## Clone and build
+
+```bash
+git clone <repository-url> congee
+cd congee
+make build
+```
+
+This produces `bin/congee`.
+
+## Configuration
+
+Copy the example config and edit paths, ports, and database settings:
+
+```bash
+cp config.example.json config.json
+```
+
+The active config path defaults to `./config.json` and can be overridden with the `CONFIG_PATH` environment variable.
+
+## Run the relay
+
+```bash
+make run
+# or
+./bin/congee
+```
+
+By default the relay listens on the port set in `config.json` (see `config.example.json` — typically `3334`).
+
+## Admin UI (optional)
+
+Set `ENABLE_ADMIN_UI=true` and `ADMIN_PASSWORD` (see [environment-variables.md](environment-variables.md)). In development, `CONGEE_ENV=dev` makes the admin server proxy to the Vite dev server:
+
+```bash
+make ui-dev   # in one terminal — Vite on :5173
+ENABLE_ADMIN_UI=true ADMIN_PASSWORD=secret CONGEE_ENV=dev CONFIG_PATH=./config.json ./bin/congee
+```
+
+For production, build the UI and serve static files from `web/admin/build/`:
+
+```bash
+make ui-build
+ENABLE_ADMIN_UI=true ADMIN_PASSWORD=secret CONGEE_ENV=production ./bin/congee
+```
+
+## Connect a Nostr client
+
+1. Start Congee with your `config.json` and note the WebSocket URL (e.g. `ws://127.0.0.1:3334/` if using default port and no TLS).
+2. In your Nostr client, add a custom relay with that URL.
+3. Publish or subscribe to events as supported by your client and the relay’s enabled NIPs.
+
+TLS termination is expected to be handled by a reverse proxy (Caddy, nginx, etc.) in production; the binary serves plain HTTP/WebSocket by default.
+
+## Tests and lint
+
+```bash
+make test
+make test-integration
+make lint
+```
+
+## Docker
+
+```bash
+make docker-build
+```
+
+Mount your `config.json` (or config directory) into the container as documented in the `Dockerfile` comments.
