@@ -1,0 +1,45 @@
+{
+  "relay": {
+    "port": 3334
+  },
+  "admin": {
+    "port": 3335
+  },
+  "database": {
+    "type": "sqlite",
+    "dsn": "./congee.db"
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  },
+  "audit": {
+    "retention_days": 30
+  },
+  "rate_limits": {
+    "events_per_minute_per_connection": 120,
+    "bytes_per_second_per_connection": 1048576
+  },
+  "connection_limits": {
+    "max_open": 10000,
+    "max_subscriptions_per_connection": 20,
+    "read_deadline_seconds": 120,
+    "write_deadline_seconds": 30
+  },
+  "websocket": {
+    "compression_enabled": true
+  },
+  "max_subscription_id_length": 128,
+  "nip11": {
+    "name": "Congee",
+    "description": "Nostr relay (example metadata)",
+    "pubkey": "",
+    "contact": "",
+    "supported_nips": [1],
+    "software": "https://github.com/michmich112/congee",
+    "version": "0.0.0"
+  },
+  "nips": {
+    "enabled": [1]
+  }
+}
