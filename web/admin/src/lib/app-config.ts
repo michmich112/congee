@@ -29,9 +29,7 @@ export type AppConfig = {
 		description: string;
 		pubkey: string;
 		contact: string;
-		supported_nips: number[];
 		software: string;
-		version: string;
 	};
 	nips: { enabled: number[] };
 };
@@ -41,24 +39,17 @@ export function cloneConfig(c: AppConfig): AppConfig {
 }
 
 export function parseConfigJson(text: string): AppConfig {
-	const v = JSON.parse(text) as AppConfig;
+	const v = JSON.parse(text) as Record<string, unknown>;
 	if (typeof v !== 'object' || v === null) throw new Error('config root must be an object');
-	return v;
+	if (v.nip11 && typeof v.nip11 === 'object' && v.nip11 !== null) {
+		const n11 = v.nip11 as Record<string, unknown>;
+		delete n11.supported_nips;
+		delete n11.version;
+	}
+	return v as AppConfig;
 }
 
 export function parseIntSafe(raw: string, fallback: number): number {
 	const n = parseInt(raw, 10);
 	return Number.isFinite(n) ? n : fallback;
-}
-
-/** Comma / whitespace separated NIP numbers for NIP-11 metadata. */
-export function parseNipIntList(s: string): number[] {
-	const seen = new Set<number>();
-	for (const part of s.split(/[,\s]+/)) {
-		const t = part.trim();
-		if (!t) continue;
-		const n = parseInt(t, 10);
-		if (Number.isFinite(n)) seen.add(n);
-	}
-	return Array.from(seen).sort((a, b) => a - b);
 }

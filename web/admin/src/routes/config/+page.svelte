@@ -3,7 +3,7 @@
 	import Code from '@lucide/svelte/icons/code';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
-	import { parseConfigJson, parseIntSafe, parseNipIntList, type AppConfig } from '$lib/app-config';
+	import { parseConfigJson, parseIntSafe, type AppConfig } from '$lib/app-config';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -49,6 +49,7 @@
 	let rawText = $state('');
 	let rawErr = $state<string | null>(null);
 	let changelogExpanded = $state(false);
+	let relayVersion = $state<string | null>(null);
 
 	function markDirty() {
 		dirty = true;
@@ -91,6 +92,16 @@
 		saveOk = false;
 		saveMessage = null;
 		saveErr = null;
+		relayVersion = null;
+		try {
+			const statsRes = await adminFetch('/api/stats');
+			if (statsRes.ok) {
+				const st = (await statsRes.json()) as { relay_version?: string };
+				relayVersion = st.relay_version ?? null;
+			}
+		} catch {
+			relayVersion = null;
+		}
 		try {
 			const cfgRes = await adminFetch('/api/config');
 			if (!cfgRes.ok) {
@@ -568,18 +579,21 @@
 								}}
 							/>
 						</div>
-						<div class="space-y-2 md:col-span-2">
-							<Label for="n11-snips">Supported NIPs (comma-separated)</Label>
-							<Input
-								id="n11-snips"
-								class="font-mono text-xs"
-								spellcheck={false}
-								value={draft.nip11.supported_nips.join(', ')}
-								oninput={(e) => {
-									draft!.nip11.supported_nips = parseNipIntList(e.currentTarget.value);
-									markDirty();
-								}}
-							/>
+						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+							<p class="text-sm font-medium">Supported NIPs (NIP-11)</p>
+							<p class="mt-1 font-mono text-xs text-foreground">
+								{[...draft.nips.enabled].sort((a, b) => a - b).join(', ') || '—'}
+							</p>
+							<p class="mt-2 text-xs text-muted-foreground">
+								Mirrors the enabled NIPs list; not stored as a separate config field.
+							</p>
+						</div>
+						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+							<p class="text-sm font-medium">Relay version (NIP-11)</p>
+							<p class="mt-1 font-mono text-sm text-foreground">{relayVersion ?? '—'}</p>
+							<p class="mt-2 text-xs text-muted-foreground">
+								Comes from the running binary (set at build time with <code class="rounded bg-muted px-1 text-[0.7rem]">go build -ldflags</code>); not in the JSON config file.
+							</p>
 						</div>
 						<div class="space-y-2">
 							<Label for="n11-soft">Software URL</Label>
@@ -590,17 +604,6 @@
 								value={draft.nip11.software}
 								oninput={(e) => {
 									draft!.nip11.software = e.currentTarget.value;
-									markDirty();
-								}}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="n11-ver">Version</Label>
-							<Input
-								id="n11-ver"
-								value={draft.nip11.version}
-								oninput={(e) => {
-									draft!.nip11.version = e.currentTarget.value;
 									markDirty();
 								}}
 							/>

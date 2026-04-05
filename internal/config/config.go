@@ -113,11 +113,6 @@ func (c *Config) Validate() error {
 	if !slices.Contains(c.NIPs.Enabled, 1) {
 		return errors.New("config: nips.enabled must include mandatory nip 1")
 	}
-	for _, n := range c.NIP11.SupportedNIPs {
-		if !nipmeta.IsKnown(n) {
-			return fmt.Errorf("config: unknown nip %d in nip11.supported_nips", n)
-		}
-	}
 	return nil
 }
 

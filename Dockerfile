@@ -14,7 +14,8 @@ RUN go mod download
 COPY . .
 COPY --from=admin-ui /src/web/admin/build ./web/admin/build
 ENV CGO_ENABLED=0
-RUN go build -o /out/congee ./cmd/congee
+ARG VERSION=0.0.0-dev
+RUN go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=${VERSION}" -o /out/congee ./cmd/congee
 
 FROM debian:bookworm-slim
 RUN apt-get update \

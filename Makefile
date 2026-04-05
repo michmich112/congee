@@ -1,7 +1,9 @@
 .PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build
 
+VERSION ?= 0.0.0-dev
+
 build:
-	mkdir -p bin && go build -o bin/congee ./cmd/congee
+	mkdir -p bin && go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=$(VERSION)" -o bin/congee ./cmd/congee
 
 # Run relay from source (no bin/congee). Loads ./.env automatically if present — see cmd/congee/main.go.
 dev:

@@ -60,7 +60,7 @@ func minimalValidConfig() *Config {
 		},
 		WebSocket:               WebSocketSection{CompressionEnabled: true, MaxMessageBytes: 1},
 		MaxSubscriptionIDLength: 128,
-		NIP11:                   NIP11Section{Name: "t", SupportedNIPs: []int{1}},
+		NIP11:                   NIP11Section{Name: "t"},
 		NIPs:                    NIPsSection{Enabled: []int{1}},
 	}
 }

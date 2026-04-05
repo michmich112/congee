@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/version"
 )
 
 // NIP11Handler serves relay information when the client requests application/nostr+json.
@@ -26,16 +27,8 @@ type nip11Doc struct {
 
 // ServeHTTP writes JSON metadata; callers should only invoke for GET / with matching Accept.
 func (h *NIP11Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	enabled := slices.Clone(h.Cfg.NIPs.Enabled)
-	slices.Sort(enabled)
-	supported := slices.Clone(h.Cfg.NIP11.SupportedNIPs)
-	for _, n := range enabled {
-		if !slices.Contains(supported, n) {
-			supported = append(supported, n)
-		}
-	}
+	supported := slices.Clone(h.Cfg.NIPs.Enabled)
 	slices.Sort(supported)
-	supported = slices.Compact(supported)
 
 	doc := nip11Doc{
 		Name:          h.Cfg.NIP11.Name,
@@ -44,7 +37,7 @@ func (h *NIP11Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Contact:       h.Cfg.NIP11.Contact,
 		SupportedNIPs: supported,
 		Software:      h.Cfg.NIP11.Software,
-		Version:       h.Cfg.NIP11.Version,
+		Version:       version.Version,
 	}
 	w.Header().Set("Content-Type", "application/nostr+json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

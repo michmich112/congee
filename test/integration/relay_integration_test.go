@@ -56,9 +56,7 @@ func writeIntegrationConfig(dir, dsn string) string {
     "description": "integration",
     "pubkey": "",
     "contact": "",
-    "supported_nips": [1],
-    "software": "https://example.com",
-    "version": "test"
+    "software": "https://example.com"
   },
   "nips": { "enabled": [1] }
 }`)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/relay"
+	"github.com/michmich112/congee/internal/version"
 )
 
 func handleStats(cfg *config.Config, relaySrv *relay.Server) http.HandlerFunc {
@@ -23,6 +24,7 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server) http.HandlerFunc {
 			"open_connections": oc,
 			"relay_port":       cfg.Relay.Port,
 			"admin_port":       cfg.Admin.Port,
+			"relay_version":    version.Version,
 		})
 	}
 }

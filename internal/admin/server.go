@@ -7,7 +7,7 @@
 //   GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey)
 //   GET    /api/nips             — known NIPs + enabled flags
 //   PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
-//   GET    /api/stats            — relay connection count and ports
+//   GET    /api/stats            — relay connection count, ports, relay_version (binary)
 //   POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
@@ -42,7 +42,7 @@ import (
 //   GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey)
 //   GET      /nips             — known NIPs + enabled flags from config
 //   PATCH    /nips             — toggle optional NIP; restart_required in response
-//   GET      /stats            — relay connection count and ports (placeholder-friendly)
+//   GET      /stats            — relay connection count, ports, relay_version
 //   POST     /migration/start  — data migration (SSE)
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
