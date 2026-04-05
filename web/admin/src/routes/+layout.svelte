@@ -25,7 +25,6 @@
 		{ href: '/', label: 'Dashboard' },
 		{ href: '/audit', label: 'Audit' },
 		{ href: '/config', label: 'Config' },
-		{ href: '/nips', label: 'NIPs' },
 		{ href: '/migration', label: 'Migration' }
 	];
 
