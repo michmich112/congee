@@ -196,20 +196,30 @@ func filterLimit(f *nostr.Filter, applyLimits bool) int {
 }
 
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
+	return applyFilterQueryPrefix(q, f, "")
+}
+
+func applyFilterQueryPrefix(q *bun.SelectQuery, f *nostr.Filter, prefix string) *bun.SelectQuery {
+	col := func(name string) string {
+		if prefix == "" {
+			return name
+		}
+		return prefix + name
+	}
 	if len(f.IDs) > 0 {
-		q = q.Where("id IN (?)", bun.In(f.IDs))
+		q = q.Where(col("id")+" IN (?)", bun.In(f.IDs))
 	}
 	if len(f.Authors) > 0 {
-		q = q.Where("pubkey IN (?)", bun.In(f.Authors))
+		q = q.Where(col("pubkey")+" IN (?)", bun.In(f.Authors))
 	}
 	if len(f.Kinds) > 0 {
-		q = q.Where("kind IN (?)", bun.In(f.Kinds))
+		q = q.Where(col("kind")+" IN (?)", bun.In(f.Kinds))
 	}
 	if f.Since != nil {
-		q = q.Where("created_at >= ?", *f.Since)
+		q = q.Where(col("created_at")+" >= ?", *f.Since)
 	}
 	if f.Until != nil {
-		q = q.Where("created_at <= ?", *f.Until)
+		q = q.Where(col("created_at")+" <= ?", *f.Until)
 	}
 	for key, vals := range f.Tag {
 		if len(vals) == 0 {
@@ -217,13 +227,16 @@ func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
 			return q
 		}
 		name := key[1:]
-		q = q.Where("id IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN (?))",
+		q = q.Where(col("id")+" IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN (?))",
 			name, bun.In(vals))
 	}
 	return q
 }
 
 func (s *Store) selectRows(ctx context.Context, f *nostr.Filter, applyLimits bool) ([]storage.EventRow, error) {
+	if f != nil && f.HasSearch() {
+		return nil, nil
+	}
 	var rows []storage.EventRow
 	q := s.db.NewSelect().Model(&rows)
 	q = applyFilterQuery(q, f)
@@ -305,12 +318,35 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 	return len(byID), nil
 }
 
-// SearchEvents is not implemented (NIP-50).
-func (s *Store) SearchEvents(ctx context.Context, query string, limit int) ([]*nostr.Event, error) {
-	_ = ctx
-	_ = query
-	_ = limit
-	return nil, storage.ErrSearchNotImplemented
+// SearchEvents uses tsvector + GIN (NIP-50), ordered by ts_rank_cd descending.
+func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
+	q := strings.TrimSpace(searchQuery)
+	if q == "" {
+		return nil, nil
+	}
+	cons := constraints.WithoutSearch()
+
+	var rows []storage.EventRow
+	sel := s.db.NewSelect().Model(&rows)
+	sel = sel.Where("search_vector @@ websearch_to_tsquery('english', ?)", q)
+	sel = sel.OrderExpr("ts_rank_cd(search_vector, websearch_to_tsquery('english', ?)) DESC", q)
+	sel = applyFilterQueryPrefix(sel, &cons, "")
+	lim := filterLimit(&cons, true)
+	if lim < math.MaxInt32 {
+		sel = sel.Limit(lim)
+	}
+	if err := sel.Scan(ctx); err != nil {
+		return nil, err
+	}
+	out := make([]*nostr.Event, 0, len(rows))
+	for i := range rows {
+		ev, err := s.rowToEvent(ctx, &rows[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	return out, nil
 }
 
 func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error {
