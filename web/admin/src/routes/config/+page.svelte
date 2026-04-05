@@ -6,10 +6,11 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Table from '$lib/components/ui/table';
 
+	// Matches storage.ConfigChange JSON from GET /api/config/changelog (snake_case tags).
 	type ChangelogRow = {
-		CreatedAt: number;
-		Summary: string;
-		JSONDiff: string;
+		created_at: number;
+		summary: string;
+		json_diff: string;
 	};
 
 	let rawJson = $state('');
@@ -148,12 +149,12 @@
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
-							{#each changelog as row (row.CreatedAt + row.Summary)}
+							{#each changelog as row, i (`${row.created_at}-${i}`)}
 								<Table.Row>
-									<Table.Cell class="font-mono text-xs tabular-nums">{row.CreatedAt}</Table.Cell>
-									<Table.Cell class="text-sm">{row.Summary}</Table.Cell>
+									<Table.Cell class="font-mono text-xs tabular-nums">{row.created_at}</Table.Cell>
+									<Table.Cell class="text-sm">{row.summary}</Table.Cell>
 									<Table.Cell class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
-										>{row.JSONDiff}</Table.Cell
+										>{row.json_diff}</Table.Cell
 									>
 								</Table.Row>
 							{:else}
