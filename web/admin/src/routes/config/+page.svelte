@@ -627,36 +627,37 @@
 								<li class="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
 									<div class="min-w-0 flex-1 space-y-1">
 										<div class="flex flex-wrap items-center gap-2">
-											<span class="font-mono text-sm font-medium">NIP-{nip.number}</span>
+											{#if nip.github_url}
+												<a
+													href={nip.github_url}
+													class="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+													target="_blank"
+													rel="noreferrer">NIP-{nip.number}</a
+												>
+											{:else}
+												<span class="font-mono text-sm font-medium">NIP-{nip.number}</span>
+											{/if}
 											{#if nip.mandatory}
 												<Badge variant="secondary">mandatory</Badge>
-											{:else if nip.enabled}
-												<Badge>in config</Badge>
+											{:else if draft.nips.enabled.includes(nip.number)}
+												<Badge>enabled</Badge>
 											{:else}
-												<Badge variant="outline">off</Badge>
-											{/if}
-											{#if !nip.implemented}
-												<Badge variant="outline">not implemented</Badge>
+												<Badge variant="outline">disabled</Badge>
 											{/if}
 										</div>
 										<p class="text-sm text-muted-foreground">{nip.title}</p>
-										{#if nip.github_url}
-											<a
-												href={nip.github_url}
-												class="text-xs text-primary underline-offset-4 hover:underline"
-												target="_blank"
-												rel="noreferrer">spec</a
-											>
-										{/if}
 									</div>
 									<div class="flex items-center gap-3">
-										<Label class="text-muted-foreground" for="nip-{nip.number}">
-											{nip.mandatory ? 'Always on' : 'Include in nips.enabled'}
-										</Label>
+										{#if nip.mandatory}
+											<span class="text-sm text-muted-foreground">Always on</span>
+										{/if}
 										<Switch
 											id="nip-{nip.number}"
 											checked={draft.nips.enabled.includes(nip.number)}
 											disabled={nip.mandatory || (!nip.implemented && !draft.nips.enabled.includes(nip.number))}
+											aria-label={nip.mandatory
+												? `NIP-${nip.number}, mandatory (always enabled)`
+												: `Enable NIP-${nip.number} in configuration`}
 											onCheckedChange={(on) => {
 												draft!.nips.enabled = setNipEnabled(draft!.nips.enabled, nip.number, on, nip);
 												markDirty();
