@@ -115,7 +115,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodOptions && s.cfg.NIP11.CORSAllowAnyOrigin && !isWebSocketUpgrade(r) {
-		writeNIP11CORSPreflightHeaders(w)
+		writeNIP11CORSPreflightHeaders(w, r)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

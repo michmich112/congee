@@ -31,10 +31,16 @@ func writeNIP11CORSResponse(w http.ResponseWriter) {
 }
 
 // writeNIP11CORSPreflightHeaders sets CORS headers for OPTIONS preflight on GET / (NIP-11).
-func writeNIP11CORSPreflightHeaders(w http.ResponseWriter) {
+// When the browser sends Access-Control-Request-Headers, that value must be reflected in
+// Access-Control-Allow-Headers or the preflight fails (some clients list more than Accept).
+func writeNIP11CORSPreflightHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Accept")
+	if reqHdr := r.Header.Get("Access-Control-Request-Headers"); reqHdr != "" {
+		w.Header().Set("Access-Control-Allow-Headers", reqHdr)
+	} else {
+		w.Header().Set("Access-Control-Allow-Headers", "Accept")
+	}
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }
 

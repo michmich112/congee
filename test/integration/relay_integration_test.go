@@ -349,6 +349,17 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(optResp.StatusCode).To(Equal(http.StatusNoContent))
 		Expect(optResp.Header.Get("Access-Control-Allow-Origin")).To(Equal("*"))
 		Expect(optResp.Header.Get("Access-Control-Allow-Methods")).To(ContainSubstring("GET"))
+		Expect(optResp.Header.Get("Access-Control-Allow-Headers")).To(Equal("accept"))
+
+		optReq2, err := http.NewRequest(http.MethodOptions, corsBase+"/", nil)
+		Expect(err).NotTo(HaveOccurred())
+		optReq2.Header.Set("Origin", "https://example.org")
+		optReq2.Header.Set("Access-Control-Request-Method", "GET")
+		optReq2.Header.Set("Access-Control-Request-Headers", "accept, x-custom-header")
+		optResp2, err := http.DefaultClient.Do(optReq2)
+		Expect(err).NotTo(HaveOccurred())
+		defer optResp2.Body.Close()
+		Expect(optResp2.Header.Get("Access-Control-Allow-Headers")).To(Equal("accept, x-custom-header"))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
