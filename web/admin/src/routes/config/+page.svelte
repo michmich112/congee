@@ -13,6 +13,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
 	import * as Table from '$lib/components/ui/table';
 
@@ -714,45 +715,52 @@
 				<div class="min-w-0 flex-1 text-left">
 					<p class="text-base font-semibold">Config changelog</p>
 					<p class="text-sm text-muted-foreground">
-						Recent writes from the admin API (newest first). Created times use the header “Table timestamps”
-						control.
+						Recent writes from the admin API (newest first). Use the timestamps control above the table for
+						created times.
 					</p>
 				</div>
 			</summary>
 			<div class="border-t border-border">
-				<div class="overflow-x-auto p-0 sm:p-0">
-					{#if changelogLoading}
-						<p class="px-6 py-4 text-sm text-muted-foreground">Loading changelog…</p>
-					{:else}
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head class="whitespace-nowrap">Created</Table.Head>
-									<Table.Head>Summary</Table.Head>
-									<Table.Head>Payload / diff</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each changelog as row, i (`${row.created_at}-${i}`)}
+				{#if changelogLoading}
+					<p class="px-6 py-4 text-sm text-muted-foreground">Loading changelog…</p>
+				{:else}
+					<div class="overflow-hidden">
+						<div
+							class="flex flex-wrap items-center justify-end gap-3 border-b border-border bg-muted/30 px-3 py-2"
+						>
+							<TableTimestampModeSelect selectId="config-changelog-timestamps" />
+						</div>
+						<div class="overflow-x-auto">
+							<Table.Root>
+								<Table.Header>
 									<Table.Row>
-										<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
-										<Table.Cell class="text-sm">{row.summary}</Table.Cell>
-										<Table.Cell
-											class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
-											>{row.json_diff}</Table.Cell
-										>
+										<Table.Head class="whitespace-nowrap">Created</Table.Head>
+										<Table.Head>Summary</Table.Head>
+										<Table.Head>Payload / diff</Table.Head>
 									</Table.Row>
-								{:else}
-									<Table.Row>
-										<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground"
-											>No entries yet</Table.Cell
-										>
-									</Table.Row>
-								{/each}
-							</Table.Body>
-						</Table.Root>
-					{/if}
-				</div>
+								</Table.Header>
+								<Table.Body>
+									{#each changelog as row, i (`${row.created_at}-${i}`)}
+										<Table.Row>
+											<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
+											<Table.Cell class="text-sm">{row.summary}</Table.Cell>
+											<Table.Cell
+												class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
+												>{row.json_diff}</Table.Cell
+											>
+										</Table.Row>
+									{:else}
+										<Table.Row>
+											<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground"
+												>No entries yet</Table.Cell
+											>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</details>
 	{/if}

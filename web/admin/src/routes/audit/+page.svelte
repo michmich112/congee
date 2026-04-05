@@ -5,6 +5,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
 	import * as Table from '$lib/components/ui/table';
 
@@ -111,9 +112,9 @@
 	<div>
 		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). Parsed <code class="text-xs">event_id</code> values
-			appear truncated in the Event ID column (full id on hover); use Event to open stored JSON when available.
-			Timestamp columns follow the header “Table timestamps” control.
+			Filter and paginate relay audit entries (newest first). Click a truncated <code class="text-xs">event_id</code>
+			to load stored event JSON when available (full id on hover). Use the timestamps control above the table for
+			time format.
 		</p>
 	</div>
 
@@ -180,54 +181,58 @@
 	{#if loading}
 		<p class="text-sm text-muted-foreground">Loading…</p>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-border">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="whitespace-nowrap">Time</Table.Head>
-						<Table.Head>Action</Table.Head>
-						<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
-						<Table.Head>Pubkey</Table.Head>
-						<Table.Head>Detail</Table.Head>
-						<Table.Head class="w-[100px]">Event</Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each entries as row, i (i + '-' + row.created_at + '-' + row.action + '-' + row.detail)}
-						{@const eid = parseAuditEventId(row.detail)}
+		<div class="overflow-hidden rounded-lg border border-border">
+			<div
+				class="flex flex-wrap items-center justify-end gap-3 border-b border-border bg-muted/30 px-3 py-2"
+			>
+				<TableTimestampModeSelect selectId="audit-table-timestamps" />
+			</div>
+			<div class="overflow-x-auto">
+				<Table.Root>
+					<Table.Header>
 						<Table.Row>
-							<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
-							<Table.Cell class="text-sm">{row.action}</Table.Cell>
-							<Table.Cell class="font-mono text-xs" title={eid ?? undefined}>
-								{#if eid}
-									{shortEventId(eid)}
-								{:else}
-									<span class="text-muted-foreground">—</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
-								>{row.pubkey || '—'}</Table.Cell
-							>
-							<Table.Cell class="max-w-md truncate text-sm text-muted-foreground" title={row.detail}
-								>{row.detail || '—'}</Table.Cell
-							>
-							<Table.Cell>
-								{#if eid}
-									<Button type="button" variant="outline" size="sm" onclick={() => void openEventModal(eid)}>
-										View
-									</Button>
-								{:else}
-									<span class="text-xs text-muted-foreground">—</span>
-								{/if}
-							</Table.Cell>
+							<Table.Head class="whitespace-nowrap">Time</Table.Head>
+							<Table.Head>Action</Table.Head>
+							<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
+							<Table.Head>Pubkey</Table.Head>
+							<Table.Head>Detail</Table.Head>
 						</Table.Row>
-					{:else}
-						<Table.Row>
-							<Table.Cell colspan={6} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
-						</Table.Row>
-					{/each}
-				</Table.Body>
-			</Table.Root>
+					</Table.Header>
+					<Table.Body>
+						{#each entries as row, i (i + '-' + row.created_at + '-' + row.action + '-' + row.detail)}
+							{@const eid = parseAuditEventId(row.detail)}
+							<Table.Row>
+								<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
+								<Table.Cell class="text-sm">{row.action}</Table.Cell>
+								<Table.Cell class="font-mono text-xs">
+									{#if eid}
+										<button
+											type="button"
+											class="cursor-pointer text-left text-primary underline-offset-2 hover:underline"
+											title={eid}
+											onclick={() => void openEventModal(eid)}
+										>
+											{shortEventId(eid)}
+										</button>
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
+									>{row.pubkey || '—'}</Table.Cell
+								>
+								<Table.Cell class="max-w-md truncate text-sm text-muted-foreground" title={row.detail}
+									>{row.detail || '—'}</Table.Cell
+								>
+							</Table.Row>
+						{:else}
+							<Table.Row>
+								<Table.Cell colspan={5} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
 		</div>
 	{/if}
 </div>
