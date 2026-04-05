@@ -75,6 +75,23 @@ func ParseMessage(data []byte) (any, error) {
 	}
 }
 
+// PeekClientCommand returns the command string from the first element of a client JSON array
+// (e.g. "EVENT", "REQ", "COUNT") without validating the rest of the payload.
+func PeekClientCommand(data []byte) (string, error) {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", fmt.Errorf("nostr: client message: %w", err)
+	}
+	if len(raw) == 0 {
+		return "", errors.New("nostr: empty client message")
+	}
+	var typ string
+	if err := json.Unmarshal(raw[0], &typ); err != nil {
+		return "", fmt.Errorf("nostr: message type: %w", err)
+	}
+	return typ, nil
+}
+
 // Relay message types from relay to clients.
 
 // RelayEventMessage is ["EVENT", subID, event].

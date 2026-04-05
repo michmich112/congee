@@ -41,6 +41,23 @@ func TestParseMessageCLOSE(t *testing.T) {
 	}
 }
 
+func TestPeekClientCommand(t *testing.T) {
+	cmd, err := PeekClientCommand([]byte(`["REQ","x",{}]`))
+	if err != nil || cmd != "REQ" {
+		t.Fatalf("got %q %v", cmd, err)
+	}
+	cmd, err = PeekClientCommand([]byte(`["COUNT","sub",{}]`))
+	if err != nil || cmd != "COUNT" {
+		t.Fatalf("got %q %v", cmd, err)
+	}
+	if _, err := PeekClientCommand([]byte(`not json`)); err == nil {
+		t.Fatal("expected error")
+	}
+	if _, err := PeekClientCommand([]byte(`[]`)); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestMarshalRelayMessages(t *testing.T) {
 	ev := &Event{ID: repeat("1", 64), PubKey: repeat("2", 64), CreatedAt: 1, Kind: 1, Content: "c"}
 	b, err := MarshalRelayEvent("sub", ev)
