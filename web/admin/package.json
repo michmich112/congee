@@ -7,9 +7,9 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "npx svelte-kit sync || true",
-		"check": "npx svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "npx svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"prepare": "node ./node_modules/@sveltejs/kit/svelte-kit.js sync || true",
+		"check": "node ./node_modules/@sveltejs/kit/svelte-kit.js sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "node ./node_modules/@sveltejs/kit/svelte-kit.js sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"devDependencies": {
 		"@fontsource-variable/inter": "^5.2.8",
