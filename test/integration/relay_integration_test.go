@@ -268,9 +268,91 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(resp.Header.Get("Access-Control-Allow-Origin")).To(BeEmpty())
 		var doc map[string]any
 		Expect(json.NewDecoder(resp.Body).Decode(&doc)).To(Succeed())
 		Expect(doc["name"]).To(Equal("CongeeTest"))
+	})
+
+	It("adds CORS for NIP-11 when nip11.cors_allow_any_origin is true", func() {
+		tmp := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmp, "cors.db")
+		cfgPath := filepath.Join(tmp, "config.json")
+		body := []byte(`{
+  "relay": { "port": 3334 },
+  "admin": { "port": 3335 },
+  "database": { "type": "sqlite", "dsn": "` + dbPath + `" },
+  "logging": { "level": "error", "format": "json" },
+  "audit": { "retention_days": 7 },
+  "rate_limits": {
+    "events_per_minute_per_connection": 120,
+    "bytes_per_second_per_connection": 1048576,
+    "reqs_per_minute_per_connection": 60,
+    "messages_per_minute_per_ip": 6000
+  },
+  "connection_limits": {
+    "max_open": 100,
+    "max_subscriptions_per_connection": 20,
+    "max_filters_per_req": 10,
+    "connections_per_minute_per_ip": 60,
+    "read_deadline_seconds": 60,
+    "write_deadline_seconds": 30
+  },
+  "websocket": {
+    "compression_enabled": false,
+    "max_message_bytes": 1048576
+  },
+  "max_subscription_id_length": 128,
+  "nip11": {
+    "name": "CorsRelay",
+    "description": "cors test",
+    "pubkey": "",
+    "contact": "",
+    "software": "https://example.com",
+    "cors_allow_any_origin": true
+  },
+  "nips": { "enabled": [1] }
+}`)
+		Expect(os.WriteFile(cfgPath, body, 0o600)).To(Succeed())
+		corsCfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		corsSt, err := sqlite.Open(context.Background(), dbPath, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer corsSt.Close()
+		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(corsCfg, corsSrv, corsSt, zerolog.Nop())).To(Succeed())
+		corsLn, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer corsLn.Close()
+		go func() { _ = corsSrv.Serve(corsLn) }()
+		corsBase := fmt.Sprintf("http://127.0.0.1:%d", corsLn.Addr().(*net.TCPAddr).Port)
+		time.Sleep(30 * time.Millisecond)
+
+		getReq, err := http.NewRequest(http.MethodGet, corsBase+"/", nil)
+		Expect(err).NotTo(HaveOccurred())
+		getReq.Header.Set("Accept", "application/nostr+json")
+		getResp, err := http.DefaultClient.Do(getReq)
+		Expect(err).NotTo(HaveOccurred())
+		defer getResp.Body.Close()
+		Expect(getResp.StatusCode).To(Equal(http.StatusOK))
+		Expect(getResp.Header.Get("Access-Control-Allow-Origin")).To(Equal("*"))
+
+		optReq, err := http.NewRequest(http.MethodOptions, corsBase+"/", nil)
+		Expect(err).NotTo(HaveOccurred())
+		optReq.Header.Set("Origin", "https://example.org")
+		optReq.Header.Set("Access-Control-Request-Method", "GET")
+		optReq.Header.Set("Access-Control-Request-Headers", "accept")
+		optResp, err := http.DefaultClient.Do(optReq)
+		Expect(err).NotTo(HaveOccurred())
+		defer optResp.Body.Close()
+		Expect(optResp.StatusCode).To(Equal(http.StatusNoContent))
+		Expect(optResp.Header.Get("Access-Control-Allow-Origin")).To(Equal("*"))
+		Expect(optResp.Header.Get("Access-Control-Allow-Methods")).To(ContainSubstring("GET"))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(corsSrv.Shutdown(ctx)).To(Succeed())
 	})
 
 	It("serves GET /health", func() {

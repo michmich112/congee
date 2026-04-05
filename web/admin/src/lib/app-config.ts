@@ -30,6 +30,8 @@ export type AppConfig = {
 		pubkey: string;
 		contact: string;
 		software: string;
+		/** When true, relay adds CORS allowing any origin for GET / NIP-11 only. */
+		cors_allow_any_origin?: boolean;
 	};
 	nips: { enabled: number[] };
 };

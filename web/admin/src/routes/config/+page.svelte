@@ -608,6 +608,27 @@
 								}}
 							/>
 						</div>
+						<div
+							class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+						>
+							<div class="space-y-1">
+								<Label for="n11-cors" class="text-sm font-medium">NIP-11 CORS (any origin)</Label>
+								<p class="text-xs text-muted-foreground">
+									Sets <code class="rounded bg-muted px-1 text-[0.7rem]">Access-Control-Allow-Origin: *</code> on
+									NIP-11 JSON only (GET / with <code class="rounded bg-muted px-1 text-[0.7rem]">Accept:
+										application/nostr+json</code>), plus OPTIONS preflight. WebSocket and other responses are
+									unchanged.
+								</p>
+							</div>
+							<Switch
+								id="n11-cors"
+								checked={draft.nip11.cors_allow_any_origin ?? false}
+								onCheckedChange={(on) => {
+									draft!.nip11.cors_allow_any_origin = on;
+									markDirty();
+								}}
+							/>
+						</div>
 					</Card.Content>
 				</Card.Root>
 			</section>

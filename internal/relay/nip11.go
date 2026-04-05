@@ -25,8 +25,24 @@ type nip11Doc struct {
 	Version       string   `json:"version"`
 }
 
+// writeNIP11CORSResponse sets Access-Control-Allow-Origin: * for browser NIP-11 fetches.
+func writeNIP11CORSResponse(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+}
+
+// writeNIP11CORSPreflightHeaders sets CORS headers for OPTIONS preflight on GET / (NIP-11).
+func writeNIP11CORSPreflightHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Accept")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+}
+
 // ServeHTTP writes JSON metadata; callers should only invoke for GET / with matching Accept.
 func (h *NIP11Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.Cfg.NIP11.CORSAllowAnyOrigin {
+		writeNIP11CORSResponse(w)
+	}
 	supported := slices.Clone(h.Cfg.NIPs.Enabled)
 	slices.Sort(supported)
 

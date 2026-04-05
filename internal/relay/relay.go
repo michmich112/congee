@@ -114,6 +114,11 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method == http.MethodOptions && s.cfg.NIP11.CORSAllowAnyOrigin && !isWebSocketUpgrade(r) {
+		writeNIP11CORSPreflightHeaders(w)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

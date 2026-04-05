@@ -40,7 +40,8 @@
     "description": "Nostr relay (example metadata)",
     "pubkey": "",
     "contact": "",
-    "software": "https://github.com/michmich112/congee"
+    "software": "https://github.com/michmich112/congee",
+    "cors_allow_any_origin": false
   },
   "nips": {
     "enabled": [1]

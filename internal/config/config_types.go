@@ -59,11 +59,12 @@ type WebSocketSection struct {
 }
 
 type NIP11Section struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	PubKey      string `json:"pubkey"`
-	Contact     string `json:"contact"`
-	Software    string `json:"software"`
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	PubKey             string `json:"pubkey"`
+	Contact            string `json:"contact"`
+	Software           string `json:"software"`
+	CORSAllowAnyOrigin bool `json:"cors_allow_any_origin"`
 }
 
 type NIPsSection struct {
