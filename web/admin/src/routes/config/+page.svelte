@@ -15,33 +15,48 @@
 	let rawJson = $state('');
 	let changelog = $state<ChangelogRow[]>([]);
 	let loadErr = $state<string | null>(null);
+	let changelogErr = $state<string | null>(null);
 	let saveErr = $state<string | null>(null);
 	let saveOk = $state(false);
 	let loading = $state(true);
+	let changelogLoading = $state(false);
 	let saving = $state(false);
 
 	async function loadAll() {
 		loading = true;
 		loadErr = null;
+		changelogErr = null;
 		saveOk = false;
 		try {
-			const [cfgRes, chRes] = await Promise.all([
-				adminFetch('/api/config'),
-				adminFetch('/api/config/changelog?limit=50')
-			]);
+			const cfgRes = await adminFetch('/api/config');
 			if (!cfgRes.ok) {
 				loadErr = `config: HTTP ${cfgRes.status}`;
 				return;
 			}
 			rawJson = await cfgRes.text();
-			if (chRes.ok) {
-				const ch = (await chRes.json()) as { changelog?: ChangelogRow[] };
-				changelog = ch.changelog ?? [];
-			}
 		} catch (e) {
 			loadErr = e instanceof Error ? e.message : 'load failed';
 		} finally {
 			loading = false;
+		}
+
+		// Changelog is loaded separately so a slow or stuck /api/config/changelog
+		// cannot block showing the JSON editor (previously Promise.all wedged the whole page).
+		changelogLoading = true;
+		try {
+			const chRes = await adminFetch('/api/config/changelog?limit=50');
+			if (!chRes.ok) {
+				changelogErr = `changelog: HTTP ${chRes.status}`;
+				changelog = [];
+				return;
+			}
+			const ch = (await chRes.json()) as { changelog?: ChangelogRow[] };
+			changelog = ch.changelog ?? [];
+		} catch (e) {
+			changelogErr = e instanceof Error ? e.message : 'changelog load failed';
+			changelog = [];
+		} finally {
+			changelogLoading = false;
 		}
 	}
 
@@ -96,6 +111,9 @@
 	{#if loadErr}
 		<p class="text-sm text-destructive">{loadErr}</p>
 	{/if}
+	{#if changelogErr}
+		<p class="text-sm text-destructive">{changelogErr}</p>
+	{/if}
 	{#if saveErr}
 		<p class="text-sm text-destructive">{saveErr}</p>
 	{/if}
@@ -118,30 +136,36 @@
 				<Card.Description>Recent writes from the admin API (newest first).</Card.Description>
 			</Card.Header>
 			<Card.Content class="overflow-x-auto p-0 sm:p-0">
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head class="whitespace-nowrap">Created (unix)</Table.Head>
-							<Table.Head>Summary</Table.Head>
-							<Table.Head>Payload / diff</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each changelog as row (row.CreatedAt + row.Summary)}
+				{#if changelogLoading}
+					<p class="px-6 py-4 text-sm text-muted-foreground">Loading changelog…</p>
+				{:else}
+					<Table.Root>
+						<Table.Header>
 							<Table.Row>
-								<Table.Cell class="font-mono text-xs tabular-nums">{row.CreatedAt}</Table.Cell>
-								<Table.Cell class="text-sm">{row.Summary}</Table.Cell>
-								<Table.Cell class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
-									>{row.JSONDiff}</Table.Cell
-								>
+								<Table.Head class="whitespace-nowrap">Created (unix)</Table.Head>
+								<Table.Head>Summary</Table.Head>
+								<Table.Head>Payload / diff</Table.Head>
 							</Table.Row>
-						{:else}
-							<Table.Row>
-								<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground">No entries yet</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
+						</Table.Header>
+						<Table.Body>
+							{#each changelog as row (row.CreatedAt + row.Summary)}
+								<Table.Row>
+									<Table.Cell class="font-mono text-xs tabular-nums">{row.CreatedAt}</Table.Cell>
+									<Table.Cell class="text-sm">{row.Summary}</Table.Cell>
+									<Table.Cell class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
+										>{row.JSONDiff}</Table.Cell
+									>
+								</Table.Row>
+							{:else}
+								<Table.Row>
+									<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground"
+										>No entries yet</Table.Cell
+									>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	{/if}

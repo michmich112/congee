@@ -1,12 +1,14 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/storage"
@@ -84,7 +86,9 @@ func handleConfigChangelog(st storage.Store) http.HandlerFunc {
 				limit = n
 			}
 		}
-		rows, err := st.QueryConfigChangelog(r.Context(), limit)
+		qctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		rows, err := st.QueryConfigChangelog(qctx, limit)
 		if err != nil {
 			http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 			return
