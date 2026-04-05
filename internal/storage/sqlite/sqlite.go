@@ -275,20 +275,32 @@ func filterLimit(f *nostr.Filter, applyLimits bool) int {
 }
 
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
+	return applyFilterQueryPrefix(q, f, "")
+}
+
+// applyFilterQueryPrefix adds structural filter clauses. If prefix is non-empty (e.g. "events."),
+// columns are qualified for JOIN queries.
+func applyFilterQueryPrefix(q *bun.SelectQuery, f *nostr.Filter, prefix string) *bun.SelectQuery {
+	col := func(name string) string {
+		if prefix == "" {
+			return name
+		}
+		return prefix + name
+	}
 	if len(f.IDs) > 0 {
-		q = q.Where("id IN (?)", bun.In(f.IDs))
+		q = q.Where(col("id")+" IN (?)", bun.In(f.IDs))
 	}
 	if len(f.Authors) > 0 {
-		q = q.Where("pubkey IN (?)", bun.In(f.Authors))
+		q = q.Where(col("pubkey")+" IN (?)", bun.In(f.Authors))
 	}
 	if len(f.Kinds) > 0 {
-		q = q.Where("kind IN (?)", bun.In(f.Kinds))
+		q = q.Where(col("kind")+" IN (?)", bun.In(f.Kinds))
 	}
 	if f.Since != nil {
-		q = q.Where("created_at >= ?", *f.Since)
+		q = q.Where(col("created_at")+" >= ?", *f.Since)
 	}
 	if f.Until != nil {
-		q = q.Where("created_at <= ?", *f.Until)
+		q = q.Where(col("created_at")+" <= ?", *f.Until)
 	}
 	for key, vals := range f.Tag {
 		if len(vals) == 0 {
@@ -296,13 +308,16 @@ func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
 			return q
 		}
 		name := key[1:]
-		q = q.Where("id IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN (?))",
+		q = q.Where(col("id")+" IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN (?))",
 			name, bun.In(vals))
 	}
 	return q
 }
 
 func (s *Store) selectRows(ctx context.Context, f *nostr.Filter, applyLimits bool) ([]storage.EventRow, error) {
+	if f != nil && f.HasSearch() {
+		return nil, nil
+	}
 	var rows []storage.EventRow
 	q := s.db.NewSelect().Model(&rows)
 	q = applyFilterQuery(q, f)
@@ -386,12 +401,120 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 	return len(byID), nil
 }
 
-// SearchEvents is not implemented (NIP-50).
-func (s *Store) SearchEvents(ctx context.Context, query string, limit int) ([]*nostr.Event, error) {
-	_ = ctx
-	_ = query
-	_ = limit
-	return nil, storage.ErrSearchNotImplemented
+// SearchEvents runs FTS5 on mirrored content (NIP-50), ordered by bm25 rank (lower is better).
+func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
+	q := strings.TrimSpace(searchQuery)
+	if q == "" {
+		return nil, nil
+	}
+	cons := constraints.WithoutSearch()
+	matchExpr := fts5Phrase(q)
+	if matchExpr == "" {
+		return nil, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(`SELECT events.id, events.pubkey, events.created_at, events.kind, events.content, events.sig, events.d_tag
+FROM events
+INNER JOIN event_fts ON event_fts.event_id = events.id
+WHERE event_fts MATCH ?`)
+	args := []interface{}{matchExpr}
+	sqliteAppendSearchFilter(&sb, &args, &cons)
+	sb.WriteString(` ORDER BY bm25(event_fts) ASC`)
+	lim := filterLimit(&cons, true)
+	if lim < math.MaxInt32 {
+		sb.WriteString(fmt.Sprintf(" LIMIT %d", lim))
+	}
+
+	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*nostr.Event, 0, 64)
+	for rows.Next() {
+		var row storage.EventRow
+		if err := rows.Scan(&row.ID, &row.Pubkey, &row.CreatedAt, &row.Kind, &row.Content, &row.Sig, &row.DTag); err != nil {
+			return nil, err
+		}
+		ev, err := s.rowToEvent(ctx, &row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+func sqliteAppendSearchFilter(sb *strings.Builder, args *[]interface{}, f *nostr.Filter) {
+	if len(f.IDs) > 0 {
+		sb.WriteString(" AND events.id IN (")
+		for i, id := range f.IDs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("?")
+			*args = append(*args, id)
+		}
+		sb.WriteString(")")
+	}
+	if len(f.Authors) > 0 {
+		sb.WriteString(" AND events.pubkey IN (")
+		for i, a := range f.Authors {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("?")
+			*args = append(*args, a)
+		}
+		sb.WriteString(")")
+	}
+	if len(f.Kinds) > 0 {
+		sb.WriteString(" AND events.kind IN (")
+		for i, k := range f.Kinds {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("?")
+			*args = append(*args, k)
+		}
+		sb.WriteString(")")
+	}
+	if f.Since != nil {
+		sb.WriteString(" AND events.created_at >= ?")
+		*args = append(*args, *f.Since)
+	}
+	if f.Until != nil {
+		sb.WriteString(" AND events.created_at <= ?")
+		*args = append(*args, *f.Until)
+	}
+	for key, vals := range f.Tag {
+		if len(vals) == 0 {
+			sb.WriteString(" AND FALSE")
+			continue
+		}
+		name := key[1:]
+		sb.WriteString(" AND events.id IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN (")
+		*args = append(*args, name)
+		for i, v := range vals {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("?")
+			*args = append(*args, v)
+		}
+		sb.WriteString("))")
+	}
+}
+
+// fts5Phrase wraps the user string as a single FTS5 phrase (quotes escaped per SQLite rules).
+func fts5Phrase(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error {

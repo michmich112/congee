@@ -47,8 +47,15 @@ func TestSQLiteCRUD(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("count: %d %v", n, err)
 	}
-	if _, err := st.SearchEvents(ctx, "foo", 10); err != storage.ErrSearchNotImplemented {
-		t.Fatalf("search: %v", err)
+	found, err := st.SearchEvents(ctx, "hello", nostr.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].ID != ev.ID {
+		t.Fatalf("search: %+v", found)
+	}
+	if empty, err := st.SearchEvents(ctx, "", nostr.Filter{}); err != nil || len(empty) != 0 {
+		t.Fatalf("empty search: %v %d", err, len(empty))
 	}
 	if err := st.DeleteEvent(ctx, ev.ID); err != nil {
 		t.Fatal(err)
@@ -107,6 +114,48 @@ func TestSQLiteReplaceableKind0(t *testing.T) {
 	}
 	if out[0].ID != ev2.ID {
 		t.Fatalf("want latest id %s, got %s", ev2.ID, out[0].ID)
+	}
+}
+
+func TestSQLiteSearchKindsAndQuotedContent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(ctx, filepath.Join(dir, "search.db"), nil)
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	pk := nostrRepeat("p", 64)
+	sig := nostrRepeat("s", 128)
+	match := &nostr.Event{
+		ID: nostrRepeat("m", 64), PubKey: pk, CreatedAt: 10, Kind: 1,
+		Content: `say "hello" world`, Sig: sig,
+	}
+	other := &nostr.Event{
+		ID: nostrRepeat("n", 64), PubKey: pk, CreatedAt: 11, Kind: 1,
+		Content: "no match here", Sig: sig,
+	}
+	wrongKind := &nostr.Event{
+		ID: nostrRepeat("k", 64), PubKey: pk, CreatedAt: 12, Kind: 7,
+		Content: `say "hello" world`, Sig: sig,
+	}
+	for _, e := range []*nostr.Event{match, other, wrongKind} {
+		if err := st.SaveEvent(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q := "hello"
+	f := nostr.Filter{Kinds: []int{1}, Search: &q}
+	found, err := st.SearchEvents(ctx, f.SearchText(), f.WithoutSearch())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].ID != match.ID {
+		t.Fatalf("search+kinds: %+v", found)
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 func runMigrations(ctx context.Context, db *bun.DB) error {
 	var version int
@@ -15,13 +15,26 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	if err := row.Scan(&version); err != nil {
 		return fmt.Errorf("sqlite: read user_version: %w", err)
 	}
-	if version >= schemaVersion {
+	if version > schemaVersion {
+		return fmt.Errorf("sqlite: unsupported schema version %d (need <= %d)", version, schemaVersion)
+	}
+	if version == schemaVersion {
 		return nil
 	}
-	if version != 0 {
-		return fmt.Errorf("sqlite: unsupported schema version %d", version)
-	}
 
+	if version == 0 {
+		if err := migrateFresh(ctx, db); err != nil {
+			return err
+		}
+		return nil
+	}
+	if version == 1 {
+		return migrateV1ToV2(ctx, db)
+	}
+	return fmt.Errorf("sqlite: unsupported schema version %d", version)
+}
+
+func migrateFresh(ctx context.Context, db *bun.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL PRIMARY KEY,
@@ -60,12 +73,58 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 			json_diff TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
-		fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion),
 	}
-
 	for _, s := range stmts {
 		if _, err := db.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("sqlite: migrate: %w", err)
+		}
+	}
+	if err := createFTS5AndTriggers(ctx, db); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("sqlite: set user_version: %w", err)
+	}
+	return nil
+}
+
+func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
+	if err := createFTS5AndTriggers(ctx, db); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO event_fts(event_id, content) SELECT id, content FROM events`); err != nil {
+		return fmt.Errorf("sqlite: backfill event_fts: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("sqlite: set user_version: %w", err)
+	}
+	return nil
+}
+
+func createFTS5AndTriggers(ctx context.Context, db *bun.DB) error {
+	fts := []string{
+		`CREATE VIRTUAL TABLE IF NOT EXISTS event_fts USING fts5(
+			event_id UNINDEXED,
+			content,
+			tokenize = 'porter unicode61'
+		)`,
+		`DROP TRIGGER IF EXISTS events_ai_fts`,
+		`CREATE TRIGGER events_ai_fts AFTER INSERT ON events BEGIN
+			INSERT INTO event_fts(event_id, content) VALUES (new.id, new.content);
+		END`,
+		`DROP TRIGGER IF EXISTS events_au_fts`,
+		`CREATE TRIGGER events_au_fts AFTER UPDATE ON events BEGIN
+			DELETE FROM event_fts WHERE event_id = old.id;
+			INSERT INTO event_fts(event_id, content) VALUES (new.id, new.content);
+		END`,
+		`DROP TRIGGER IF EXISTS events_ad_fts`,
+		`CREATE TRIGGER events_ad_fts AFTER DELETE ON events BEGIN
+			DELETE FROM event_fts WHERE event_id = old.id;
+		END`,
+	}
+	for _, s := range fts {
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			return fmt.Errorf("sqlite: fts5: %w", err)
 		}
 	}
 	return nil
