@@ -151,6 +151,7 @@ func (s *Store) Close() error {
 	s.shutdown.Store(true)
 	s.cancel()
 	s.wg.Wait()
+	_ = s.notifier.Close()
 	return s.db.Close()
 }
 

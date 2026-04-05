@@ -43,7 +43,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 	switch c.Database.Type {
-	case "", "sqlite":
+	case "", "sqlite", "postgres":
 		if c.Database.DSN == "" {
 			return errors.New("config: database.dsn is required")
 		}
