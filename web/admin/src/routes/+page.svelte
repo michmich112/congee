@@ -1,68 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { adminFetch } from '$lib/admin-api';
-	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-
-	type Stats = {
-		open_connections?: number;
-		relay_port?: number;
-		admin_port?: number;
-	};
-
-	let stats = $state<Stats | null>(null);
-	let loadErr = $state<string | null>(null);
-	let loading = $state(true);
-
-	onMount(async () => {
-		try {
-			const r = await adminFetch('/api/stats');
-			if (!r.ok) {
-				loadErr = r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`;
-				return;
-			}
-			stats = (await r.json()) as Stats;
-		} catch (e) {
-			loadErr = e instanceof Error ? e.message : 'request failed';
-		} finally {
-			loading = false;
-		}
-	});
+	import { Button } from '$lib/components/ui/button';
 </script>
 
-<div class="space-y-6">
+<main class="mx-auto flex min-h-[70vh] max-w-lg flex-col justify-center gap-6 px-6 py-16">
+	<h1 class="text-3xl font-semibold tracking-tight">Congee admin</h1>
+	<p class="text-muted-foreground text-sm leading-relaxed">
+		SvelteKit shell for the Congee relay control plane. System appearance follows
+		<code class="bg-muted rounded px-1 py-0.5 text-xs">prefers-color-scheme</code>
+		until auth and API wiring land in later phases.
+	</p>
 	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Dashboard</h2>
-		<p class="text-sm text-muted-foreground">Relay and admin listener status.</p>
+		<Button href="https://github.com/nostr-protocol/nips" variant="outline" target="_blank" rel="noreferrer">
+			NIPs reference
+		</Button>
 	</div>
-
-	{#if loading}
-		<p class="text-sm text-muted-foreground">Loading stats…</p>
-	{:else if loadErr}
-		<p class="text-sm text-destructive">{loadErr}</p>
-	{:else if stats}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Open WebSocket connections</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.open_connections ?? 0}</Card.Title>
-				</Card.Header>
-				<Card.Content>
-					<Badge variant="secondary">live</Badge>
-				</Card.Content>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Relay port</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.relay_port ?? '—'}</Card.Title>
-				</Card.Header>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Admin port</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.admin_port ?? '—'}</Card.Title>
-				</Card.Header>
-			</Card.Root>
-		</div>
-	{/if}
-</div>
+</main>

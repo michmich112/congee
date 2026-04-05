@@ -23,7 +23,7 @@ ui-dev:
 	cd web/admin && npm run dev
 
 ui-build:
-	cd web/admin && npm ci && npm run build
+	cd web/admin && npm ci && npx svelte-kit sync && npm run build
 
 docker-build:
 	docker build -t congee:latest .
