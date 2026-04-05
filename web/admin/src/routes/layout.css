@@ -2,8 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn-svelte/tailwind.css";
 @import "@fontsource-variable/inter";
-
-/* System dark via prefers-color-scheme; `.dark` / `html:not(.light)` still supported */
 @custom-variant dark {
 	@media (prefers-color-scheme: dark) {
 		&:where(:is(html:not(.light) *)) {
@@ -162,7 +160,6 @@
 	--radius-3xl: calc(var(--radius) * 2.2);
 	--radius-4xl: calc(var(--radius) * 2.6);
 }
-
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
