@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Brackets from '@lucide/svelte/icons/brackets';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
 	import { parseConfigJson, parseIntSafe, parseNipIntList, type AppConfig } from '$lib/app-config';
 	import * as Alert from '$lib/components/ui/alert';
@@ -47,6 +48,7 @@
 	let rawOpen = $state(false);
 	let rawText = $state('');
 	let rawErr = $state<string | null>(null);
+	let changelogExpanded = $state(false);
 
 	function markDirty() {
 		dirty = true;
@@ -207,33 +209,33 @@
 </script>
 
 <div class="space-y-6">
-	<div class="flex flex-wrap items-end justify-between gap-4">
-		<div>
-			<h2 class="text-xl font-semibold tracking-tight">Configuration</h2>
-			<p class="text-sm text-muted-foreground">
-				Edit settings below, then use <span class="font-medium">Save</span> to write the file and apply changes.
-				When a full relay restart is required, saving triggers it automatically.
-			</p>
+	<div class="space-y-2">
+		<div class="flex flex-row flex-wrap items-center gap-x-4 gap-y-2">
+			<h2 class="min-w-0 flex-1 text-xl font-semibold tracking-tight">Configuration</h2>
+			<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+				<Button
+					type="button"
+					variant="outline"
+					size="icon"
+					disabled={loading || saving || !draft}
+					onclick={openRawEditor}
+					title="View and edit raw JSON (advanced)"
+				>
+					<Brackets class="size-4" />
+					<span class="sr-only">Raw JSON</span>
+				</Button>
+				<Button type="button" variant="outline" disabled={loading || saving} onclick={confirmReload}>
+					Reload
+				</Button>
+				<Button type="button" disabled={loading || saving || !draft || !dirty} onclick={() => void save()}>
+					{saving ? 'Saving…' : 'Save'}
+				</Button>
+			</div>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<Button type="button" variant="outline" disabled={loading || saving} onclick={confirmReload}>
-				Reload
-			</Button>
-			<Button
-				type="button"
-				variant="outline"
-				size="icon"
-				disabled={loading || saving || !draft}
-				onclick={openRawEditor}
-				title="View and edit raw JSON (advanced)"
-			>
-				<Brackets class="size-4" />
-				<span class="sr-only">Raw JSON</span>
-			</Button>
-			<Button type="button" disabled={loading || saving || !draft || !dirty} onclick={() => void save()}>
-				{saving ? 'Saving…' : 'Save'}
-			</Button>
-		</div>
+		<p class="text-sm text-muted-foreground">
+			Edit settings below, then use <span class="font-medium">Save</span> to write the file and apply changes.
+			When a full relay restart is required, saving triggers it automatically.
+		</p>
 	</div>
 
 	{#if loadErr}
@@ -669,45 +671,59 @@
 			</section>
 		</div>
 
-		<Card.Root class="mt-10">
-			<Card.Header>
-				<Card.Title class="text-base">Config changelog</Card.Title>
-				<Card.Description>Recent writes from the admin API (newest first).</Card.Description>
-			</Card.Header>
-			<Card.Content class="overflow-x-auto p-0 sm:p-0">
-				{#if changelogLoading}
-					<p class="px-6 py-4 text-sm text-muted-foreground">Loading changelog…</p>
-				{:else}
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="whitespace-nowrap">Created (unix)</Table.Head>
-								<Table.Head>Summary</Table.Head>
-								<Table.Head>Payload / diff</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each changelog as row, i (`${row.created_at}-${i}`)}
+		<details
+			class="bg-card text-card-foreground mt-10 rounded-xl border border-border shadow-sm"
+			bind:open={changelogExpanded}
+		>
+			<summary
+				class="flex cursor-pointer list-none items-center gap-3 px-6 py-4 marker:hidden [&::-webkit-details-marker]:hidden hover:bg-muted/40"
+			>
+				<ChevronDown
+					class="text-muted-foreground size-4 shrink-0 transition-transform duration-200 {changelogExpanded
+						? 'rotate-180'
+						: ''}"
+				/>
+				<div class="min-w-0 flex-1 text-left">
+					<p class="text-base font-semibold">Config changelog</p>
+					<p class="text-sm text-muted-foreground">Recent writes from the admin API (newest first).</p>
+				</div>
+			</summary>
+			<div class="border-t border-border">
+				<div class="overflow-x-auto p-0 sm:p-0">
+					{#if changelogLoading}
+						<p class="px-6 py-4 text-sm text-muted-foreground">Loading changelog…</p>
+					{:else}
+						<Table.Root>
+							<Table.Header>
 								<Table.Row>
-									<Table.Cell class="font-mono text-xs tabular-nums">{row.created_at}</Table.Cell>
-									<Table.Cell class="text-sm">{row.summary}</Table.Cell>
-									<Table.Cell
-										class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
-										>{row.json_diff}</Table.Cell
-									>
+									<Table.Head class="whitespace-nowrap">Created (unix)</Table.Head>
+									<Table.Head>Summary</Table.Head>
+									<Table.Head>Payload / diff</Table.Head>
 								</Table.Row>
-							{:else}
-								<Table.Row>
-									<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground"
-										>No entries yet</Table.Cell
-									>
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				{/if}
-			</Card.Content>
-		</Card.Root>
+							</Table.Header>
+							<Table.Body>
+								{#each changelog as row, i (`${row.created_at}-${i}`)}
+									<Table.Row>
+										<Table.Cell class="font-mono text-xs tabular-nums">{row.created_at}</Table.Cell>
+										<Table.Cell class="text-sm">{row.summary}</Table.Cell>
+										<Table.Cell
+											class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
+											>{row.json_diff}</Table.Cell
+										>
+									</Table.Row>
+								{:else}
+									<Table.Row>
+										<Table.Cell colspan={3} class="text-center text-sm text-muted-foreground"
+											>No entries yet</Table.Cell
+										>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					{/if}
+				</div>
+			</div>
+		</details>
 	{/if}
 </div>
 
