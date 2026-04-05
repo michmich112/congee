@@ -8,3 +8,7 @@ web/admin/.svelte-kit/
 dist/
 .env
 config.json
+
+.codex
+.cursor
+.opencode

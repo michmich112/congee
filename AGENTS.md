@@ -55,3 +55,10 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 - `docs/getting-started.md` — build and run
 - `docs/environment-variables.md` — env vars and config overview
 - `docs/plans/phase*.md` — implementation steps per phase
+
+## Agent instructions (follow fully)
+- Do not make any assumptions (if you're thinking: "the user probably wants..." then you're doing it wrong)
+- Ask any and all questions before continuing
+- Create a branch for your changes
+- Commit changes granularly with documentation on the request
+- Refer to these rules always
