@@ -19,6 +19,8 @@
 	let loading = $state(true);
 	let busyNip = $state<number | null>(null);
 	let restartRequired = $state(false);
+	/** Bumps after each fetch so Switch controls remount with server `enabled` (avoids stuck UI after failed PATCH). */
+	let listSyncKey = $state(0);
 
 	async function loadNips() {
 		loading = true;
@@ -32,6 +34,7 @@
 			}
 			const data = (await r.json()) as { nips?: NipRow[] };
 			nips = data.nips ?? [];
+			listSyncKey++;
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'request failed';
 			nips = [];
@@ -107,8 +110,12 @@
 							{#if nip.mandatory}
 								<Badge variant="secondary">mandatory</Badge>
 							{/if}
-							{#if nip.enabled}
-								<Badge>enabled</Badge>
+							{#if nip.mandatory}
+								<Badge variant="secondary">mandatory</Badge>
+							{:else if nip.enabled}
+								<Badge>in config</Badge>
+							{:else}
+								<Badge variant="outline">not in config</Badge>
 							{/if}
 						</div>
 						<p class="text-sm text-muted-foreground">{nip.title}</p>
@@ -123,17 +130,19 @@
 					</div>
 					<div class="flex items-center gap-3">
 						<Label class="text-muted-foreground" for="nip-{nip.number}">
-							{nip.mandatory ? 'Always enabled' : 'Enabled'}
+							{nip.mandatory ? 'Always on' : 'Include in nips.enabled'}
 						</Label>
-						<Switch
-							id="nip-{nip.number}"
-							checked={nip.enabled}
-							disabled={nip.mandatory || busyNip === nip.number}
-							onCheckedChange={(on: boolean) => {
-								if (nip.mandatory) return;
-								void setEnabled(nip.number, on);
-							}}
-						/>
+						{#key `${listSyncKey}-${nip.number}`}
+							<Switch
+								id="nip-{nip.number}"
+								checked={nip.enabled}
+								disabled={nip.mandatory || busyNip === nip.number}
+								onCheckedChange={(on: boolean) => {
+									if (nip.mandatory) return;
+									void setEnabled(nip.number, on);
+								}}
+							/>
+						{/key}
 					</div>
 				</li>
 			{/each}
