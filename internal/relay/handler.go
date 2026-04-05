@@ -20,6 +20,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// wsInboundDebugTypes are client commands logged at debug (logging.level=debug).
+var wsInboundDebugTypes = map[string]struct{}{
+	"REQ": {}, "EVENT": {}, "INFO": {}, "COUNT": {},
+}
+
 // ErrSlowConsumer indicates the outbound buffer is full.
 var ErrSlowConsumer = errors.New("relay: send buffer full")
 
@@ -197,6 +202,25 @@ func readOneFlateText(
 	}
 }
 
+func (c *Conn) logInboundWSDebug(payload []byte) {
+	if c.log.GetLevel() > zerolog.DebugLevel {
+		return
+	}
+	cmd, err := nostr.PeekClientCommand(payload)
+	if err != nil {
+		return
+	}
+	if _, ok := wsInboundDebugTypes[cmd]; !ok {
+		return
+	}
+	c.log.Debug().
+		Str("remote_addr", c.remoteAddr).
+		Str("ws_transport", c.wsTransport).
+		Str("ws_msg_type", cmd).
+		RawJSON("payload", payload).
+		Msg("ws inbound client message")
+}
+
 func (c *Conn) dispatchPayload(payload []byte) {
 	if !c.server.limiter.AllowMessage(c.peerIP) {
 		_ = c.sendNotice("rate limited: too many messages from this IP")
@@ -206,6 +230,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		_ = c.sendNotice("rate limited: bandwidth")
 		return
 	}
+	c.logInboundWSDebug(payload)
 	msg, err := nostr.ParseMessage(payload)
 	if err != nil {
 		c.log.Debug().Err(err).
