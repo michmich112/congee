@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Brackets from '@lucide/svelte/icons/brackets';
+	import Code from '@lucide/svelte/icons/code';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
 	import { parseConfigJson, parseIntSafe, parseNipIntList, type AppConfig } from '$lib/app-config';
@@ -221,7 +221,7 @@
 					onclick={openRawEditor}
 					title="View and edit raw JSON (advanced)"
 				>
-					<Brackets class="size-4" />
+					<Code class="size-4" />
 					<span class="sr-only">Raw JSON</span>
 				</Button>
 				<Button type="button" variant="outline" disabled={loading || saving} onclick={confirmReload}>
