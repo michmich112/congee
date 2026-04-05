@@ -15,9 +15,9 @@ import (
 	"github.com/michmich112/congee/internal/admin"
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -35,24 +35,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if cfg.Database.Type != "" && cfg.Database.Type != "sqlite" {
-		log.Fatal().Str("type", cfg.Database.Type).Msg("unsupported database.type (phase 4: sqlite only)")
-	}
-	store, err := sqlite.Open(ctx, cfg.Database.DSN, nil)
+	storeDB, err := db.Open(ctx, cfg.Database)
 	if err != nil {
-		log.Fatal().Err(err).Msg("sqlite open failed")
+		log.Fatal().Err(err).Msg("database open failed")
 	}
-	defer store.Close()
+	defer storeDB.Close()
 
-	srv, err := relay.NewServer(cfg, store, log)
+	srv, err := relay.NewServer(cfg, storeDB, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("relay server init failed")
 	}
-	if err := nips.LoadEnabled(cfg, srv, store, log); err != nil {
+	go relay.RunImportedEventFanout(ctx, srv, storeDB, storeDB.EventNotifier, log)
+	if err := nips.LoadEnabled(cfg, srv, storeDB, log); err != nil {
 		log.Fatal().Err(err).Msg("nips load failed")
 	}
 
-	audit.StartRetentionLoop(ctx, store, cfg.Audit.RetentionDays, log)
+	audit.StartRetentionLoop(ctx, storeDB, cfg.Audit.RetentionDays, log)
 
 	addr := relayListenAddr(cfg)
 	go func() {
@@ -66,7 +64,7 @@ func main() {
 	var adminSrv *admin.Server
 	if admin.Enabled() {
 		staticDir := filepath.Join("web", "admin", "build")
-		adminSrv = admin.NewServer(cfg, path, store, srv, log, admin.AdminPassword(), staticDir)
+		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir)
 		go func() {
 			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("admin server stopped")
