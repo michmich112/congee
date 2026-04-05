@@ -18,9 +18,9 @@ import (
 
 // Server is the Nostr relay HTTP and WebSocket front end.
 type Server struct {
-	cfg    *config.Config
-	store  storage.Store
-	log    zerolog.Logger
+	cfg   *config.Config
+	store storage.Store
+	log   zerolog.Logger
 
 	registry   *Registry
 	validators *ValidatorChain
@@ -240,18 +240,23 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate b
 	id := newConnID()
 	log := s.log.With().Str("conn_id", id).Logger()
 	ctx, cancel := context.WithCancel(context.Background())
+	wsTransport := "plain"
+	if useFlate {
+		wsTransport = "permessage-deflate"
+	}
 	c := &Conn{
-		ID:         id,
-		server:     s,
-		peerIP:     peerIP,
-		remoteAddr: r.RemoteAddr,
-		nc:         nc,
-		send:       make(chan []byte, 256),
-		writerDone: make(chan struct{}),
-		ctx:        ctx,
-		cancel:     cancel,
-		limiter:    s.limiter.NewConnLimiter(),
-		log:        log,
+		ID:          id,
+		server:      s,
+		peerIP:      peerIP,
+		remoteAddr:  r.RemoteAddr,
+		wsTransport: wsTransport,
+		nc:          nc,
+		send:        make(chan []byte, 256),
+		writerDone:  make(chan struct{}),
+		ctx:         ctx,
+		cancel:      cancel,
+		limiter:     s.limiter.NewConnLimiter(),
+		log:         log,
 	}
 	defer cancel()
 
@@ -310,4 +315,3 @@ func peerIP(remote string) string {
 	}
 	return host
 }
-

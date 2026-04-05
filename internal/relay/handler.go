@@ -7,9 +7,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
@@ -23,13 +25,14 @@ var ErrSlowConsumer = errors.New("relay: send buffer full")
 
 // Conn is one WebSocket client attachment to the relay.
 type Conn struct {
-	ID         string
-	server     *Server
-	peerIP     string
-	remoteAddr string
-	nc         net.Conn
-	send       chan []byte
-	writerDone chan struct{}
+	ID          string
+	server      *Server
+	peerIP      string
+	remoteAddr  string
+	wsTransport string // "plain" or "permessage-deflate" (for diagnostics)
+	nc          net.Conn
+	send        chan []byte
+	writerDone  chan struct{}
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -71,9 +74,7 @@ func (c *Conn) readLoopPlain() {
 		}
 		payload, err := readNextTextMessage(c.nc, max)
 		if err != nil {
-			if !isBenignClose(err) {
-				c.log.Debug().Err(err).Msg("read error")
-			}
+			c.logReadError(err)
 			return
 		}
 		c.dispatchPayload(payload)
@@ -91,7 +92,7 @@ func (c *Conn) readLoopFlate() {
 	rd := wsutil.Reader{
 		Source:         c.nc,
 		State:          ws.StateServerSide | ws.StateExtended,
-		CheckUTF8:      true,
+		CheckUTF8:      false,
 		MaxFrameSize:   max,
 		OnIntermediate: wsutil.ControlFrameHandler(c.nc, ws.StateServerSide),
 		Extensions:     []wsutil.RecvExtension{&msg},
@@ -108,9 +109,7 @@ func (c *Conn) readLoopFlate() {
 		}
 		payload, err := readOneFlateText(c.nc, &rd, fr, &msg, max)
 		if err != nil {
-			if !isBenignClose(err) {
-				c.log.Debug().Err(err).Msg("read error")
-			}
+			c.logReadError(err)
 			return
 		}
 		c.dispatchPayload(payload)
@@ -121,7 +120,7 @@ func readNextTextMessage(conn net.Conn, maxFrame int64) ([]byte, error) {
 	rd := wsutil.Reader{
 		Source:         conn,
 		State:          ws.StateServerSide,
-		CheckUTF8:      true,
+		CheckUTF8:      false,
 		MaxFrameSize:   maxFrame,
 		OnIntermediate: wsutil.ControlFrameHandler(conn, ws.StateServerSide),
 	}
@@ -148,7 +147,11 @@ func readNextTextMessage(conn net.Conn, maxFrame int64) ([]byte, error) {
 		if maxFrame > 0 && int64(buf.Len()) > maxFrame {
 			return nil, wsutil.ErrFrameTooLarge
 		}
-		return buf.Bytes(), nil
+		payload := buf.Bytes()
+		if !utf8.Valid(payload) {
+			return nil, newErrTextNotUTF8(payload)
+		}
+		return payload, nil
 	}
 }
 
@@ -186,7 +189,11 @@ func readOneFlateText(
 		if maxTotal > 0 && int64(payload.Len()) > maxTotal {
 			return nil, wsutil.ErrFrameTooLarge
 		}
-		return payload.Bytes(), nil
+		b := payload.Bytes()
+		if !utf8.Valid(b) {
+			return nil, newErrTextNotUTF8(b)
+		}
+		return b, nil
 	}
 }
 
@@ -201,6 +208,12 @@ func (c *Conn) dispatchPayload(payload []byte) {
 	}
 	msg, err := nostr.ParseMessage(payload)
 	if err != nil {
+		c.log.Debug().Err(err).
+			Str("remote_addr", c.remoteAddr).
+			Str("ws_transport", c.wsTransport).
+			Int("payload_bytes", len(payload)).
+			Str("payload_preview_hex", hex.EncodeToString(payloadPrefix(payload, 128))).
+			Msg("client message JSON parse failed")
 		_ = c.sendNotice("invalid message")
 		return
 	}
@@ -217,7 +230,10 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		}
 	}
 	if err := c.server.registry.Dispatch(c.ctx, c, msg); err != nil {
-		c.log.Debug().Err(err).Msg("dispatch error")
+		c.log.Debug().Err(err).
+			Str("remote_addr", c.remoteAddr).
+			Str("ws_transport", c.wsTransport).
+			Msg("dispatch error")
 		_ = c.sendNotice(err.Error())
 	}
 }
@@ -283,11 +299,75 @@ func isBenignClose(err error) bool {
 	if errors.Is(err, net.ErrClosed) {
 		return true
 	}
+	var closed wsutil.ClosedError
+	if errors.As(err, &closed) {
+		return true
+	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
 		return true
 	}
 	return false
+}
+
+// errTextNotUTF8 marks a complete WebSocket text message whose payload is not valid UTF-8 (RFC 6455).
+type errTextNotUTF8 struct {
+	lenBytes   int
+	previewHex string
+}
+
+func newErrTextNotUTF8(payload []byte) *errTextNotUTF8 {
+	n := 64
+	if len(payload) < n {
+		n = len(payload)
+	}
+	return &errTextNotUTF8{
+		lenBytes:   len(payload),
+		previewHex: hex.EncodeToString(payload[:n]),
+	}
+}
+
+func (e *errTextNotUTF8) Error() string {
+	return fmt.Sprintf("websocket text message: invalid UTF-8 (%d bytes)", e.lenBytes)
+}
+
+func (e *errTextNotUTF8) Unwrap() error { return wsutil.ErrInvalidUTF8 }
+
+func payloadPrefix(b []byte, max int) []byte {
+	if len(b) <= max {
+		return b
+	}
+	return b[:max]
+}
+
+func (c *Conn) logReadError(err error) {
+	if isBenignClose(err) {
+		return
+	}
+	var utf8Detail *errTextNotUTF8
+	evt := c.log.Debug().Err(err).
+		Str("remote_addr", c.remoteAddr).
+		Str("peer_ip", c.peerIP).
+		Str("ws_transport", c.wsTransport)
+	if errors.As(err, &utf8Detail) {
+		evt.Int("payload_bytes", utf8Detail.lenBytes).
+			Str("payload_preview_hex", utf8Detail.previewHex).
+			Msg("websocket read failed: text frame is not valid UTF-8 (RFC 6455); likely non-UTF-8/binary in a text frame, a broken client, or probes; Nostr JSON must be UTF-8")
+		return
+	}
+	if errors.Is(err, wsutil.ErrFrameTooLarge) {
+		evt.Msg("websocket read failed: frame or message exceeds max_message_bytes")
+		return
+	}
+	if errors.Is(err, ws.ErrProtocolNonZeroRsv) {
+		evt.Msg("websocket read failed: client set RSV bits but extension not negotiated for this connection (check permessage-deflate vs plain)")
+		return
+	}
+	if errors.Is(err, wsutil.ErrInvalidUTF8) {
+		evt.Msg("websocket read failed: invalid UTF-8 in text message")
+		return
+	}
+	evt.Msg("websocket read failed")
 }
 
 // Log returns the per-connection logger (full pubkeys should be logged at call sites).
