@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/michmich112/congee/internal/admin"
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nips"
@@ -53,11 +57,23 @@ func main() {
 	addr := relayListenAddr(cfg)
 	go func() {
 		log.Info().Str("addr", addr).Msg("relay listening")
-		if err := srv.ListenAndServe(addr); err != nil {
+		if err := srv.ListenAndServe(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("relay server stopped")
 			cancel()
 		}
 	}()
+
+	var adminSrv *admin.Server
+	if admin.Enabled() {
+		staticDir := filepath.Join("web", "admin", "build")
+		adminSrv = admin.NewServer(cfg, path, store, srv, log, admin.AdminPassword(), staticDir)
+		go func() {
+			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error().Err(err).Msg("admin server stopped")
+				cancel()
+			}
+		}()
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -68,6 +84,11 @@ func main() {
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("relay shutdown error")
+	}
+	if adminSrv != nil {
+		if err := adminSrv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("admin shutdown error")
+		}
 	}
 	cancel()
 	log.Info().Msg("bye")
