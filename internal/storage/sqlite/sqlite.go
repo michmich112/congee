@@ -406,17 +406,26 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 	})
 }
 
-func (s *Store) QueryAuditLog(ctx context.Context, since, until int64, limit int) ([]storage.AuditEntry, error) {
+func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
 	var rows []storage.AuditLogRow
 	q := s.db.NewSelect().Model(&rows).Order("created_at DESC")
-	if since > 0 {
-		q = q.Where("created_at >= ?", since)
+	if query.Since > 0 {
+		q = q.Where("created_at >= ?", query.Since)
 	}
-	if until > 0 {
-		q = q.Where("created_at <= ?", until)
+	if query.Until > 0 {
+		q = q.Where("created_at <= ?", query.Until)
 	}
-	if limit > 0 {
-		q = q.Limit(limit)
+	if query.Action != "" {
+		q = q.Where("action = ?", query.Action)
+	}
+	if query.Pubkey != "" {
+		q = q.Where("pubkey = ?", query.Pubkey)
+	}
+	if query.Limit > 0 {
+		q = q.Limit(query.Limit)
+	}
+	if query.Offset > 0 {
+		q = q.Offset(query.Offset)
 	}
 	if err := q.Scan(ctx); err != nil {
 		return nil, err

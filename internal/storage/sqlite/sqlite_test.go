@@ -180,7 +180,7 @@ func TestSQLiteAuditAndChangelog(t *testing.T) {
 	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 100, Action: "x", Detail: "d", Pubkey: nostrRepeat("p", 64)}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.QueryAuditLog(ctx, 0, 0, 10)
+	rows, err := st.QueryAuditLog(ctx, storage.AuditQuery{Limit: 10})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("audit: %+v %v", rows, err)
 	}
