@@ -11,7 +11,8 @@
 //   POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
-// otherwise static files from web/admin/build with SPA fallback to index.html.
+// if Vite is unreachable, falls back to web/admin/build when index.html exists (e.g. after make ui-build).
+// Otherwise static files from web/admin/build with SPA fallback to index.html.
 package admin
 
 import (
@@ -20,6 +21,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -54,6 +56,7 @@ type Server struct {
 	password  string
 	staticDir string
 	devProxy  *httputil.ReverseProxy
+	static    http.Handler // SPA file server (production, or dev fallback when Vite is down)
 
 	cfgMu sync.Mutex
 	http  *http.Server
@@ -71,9 +74,23 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 		password:  password,
 		staticDir: staticDir,
 	}
+	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
+	s.static = s.onlyGET(http.FileServer(spaFS))
+
 	if isDevEnv() {
 		target, _ := url.Parse("http://127.0.0.1:5173")
-		s.devProxy = httputil.NewSingleHostReverseProxy(target)
+		p := httputil.NewSingleHostReverseProxy(target)
+		// Avoid net/http's "http: proxy error" log line and support one-terminal dev:
+		// if Vite is not running, serve a prior `make ui-build` output when present.
+		p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			s.log.Warn().Err(err).Str("vite_url", target.String()).Msg("admin dev proxy unreachable; trying static build")
+			if hasAdminStaticIndex(s.staticDir) {
+				s.static.ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "Vite dev server is not running ("+target.Host+"). In another terminal run: cd web/admin && npm run dev\nOr build once with: make ui-build — then either keep CONGEE_ENV=development (fallback) or use production mode to serve only static files.", http.StatusBadGateway)
+		}
+		s.devProxy = p
 	}
 	mux := http.NewServeMux()
 	// API prefix: all handlers below are mounted at /api/ (StripPrefix removes "/api").
@@ -99,8 +116,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	if isDevEnv() {
 		mux.HandleFunc("/", s.serveDevProxy)
 	} else {
-		fs := spaFileSystem{dir: http.Dir(s.staticDir)}
-		mux.Handle("/", s.onlyGET(http.FileServer(fs)))
+		mux.Handle("/", s.static)
 	}
 
 	addr := ":" + strconv.Itoa(cfg.Admin.Port)
@@ -128,6 +144,11 @@ func (s *Server) serveDevProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.devProxy.ServeHTTP(w, r)
+}
+
+func hasAdminStaticIndex(staticDir string) bool {
+	st, err := os.Stat(filepath.Join(staticDir, "index.html"))
+	return err == nil && !st.IsDir()
 }
 
 func (s *Server) onlyGET(next http.Handler) http.Handler {

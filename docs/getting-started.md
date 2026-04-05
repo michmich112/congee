@@ -48,12 +48,14 @@ By default the relay listens on the port set in `config.json` (see `config.examp
 
 ## Admin UI (optional)
 
-Set `ENABLE_ADMIN_UI=true` and `ADMIN_PASSWORD` (see [environment-variables.md](environment-variables.md)). In development, `CONGEE_ENV=dev` makes the admin server proxy to the Vite dev server:
+Set `ENABLE_ADMIN_UI=true` and `ADMIN_PASSWORD` (see [environment-variables.md](environment-variables.md)). With `CONGEE_ENV=dev` (or `development` / `local`), the admin server **proxies** the browser to the Vite dev server on `http://127.0.0.1:5173`. Start Vite in a second terminal, or the UI will not load:
 
 ```bash
-make ui-dev   # in one terminal — Vite on :5173
-ENABLE_ADMIN_UI=true ADMIN_PASSWORD=secret CONGEE_ENV=dev CONFIG_PATH=./config.json ./bin/congee
+make ui-dev   # terminal 2 — Vite on :5173
+make dev      # terminal 1 — relay + admin (with .env as needed)
 ```
+
+If Vite is not running but you have already run **`make ui-build`**, the admin server **falls back** to `web/admin/build` and the UI still works (you will see a short warning in relay logs on the first failed proxy attempt).
 
 For production, build the UI and serve static files from `web/admin/build/`:
 
