@@ -8,6 +8,7 @@
 //   GET    /api/nips             — known NIPs + enabled flags
 //   PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
 //   GET    /api/stats            — relay connection count and ports
+//   POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
 // otherwise static files from web/admin/build with SPA fallback to index.html.
@@ -40,6 +41,7 @@ import (
 //   GET      /nips             — known NIPs + enabled flags from config
 //   PATCH    /nips             — toggle optional NIP; restart_required in response
 //   GET      /stats            — relay connection count and ports (placeholder-friendly)
+//   POST     /migration/start  — data migration (SSE)
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
 // otherwise static files from web/admin/build with SPA fallback to index.html.
@@ -81,6 +83,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
 	//   GET      /api/stats            — relay connection count, ports (placeholders OK)
+//   POST     /api/migration/start  — sqlite/postgres copy; SSE progress events
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
 	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store).ServeHTTP)
@@ -89,6 +92,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
+	api.HandleFunc("POST /migration/start", handleMigrationStart())
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
 
