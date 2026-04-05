@@ -12,8 +12,3 @@ func TestIntegration(t *testing.T) {
 	RunSpecs(t, "Integration Suite")
 }
 
-var _ = Describe("Scaffolding", func() {
-	It("passes until relay integration specs land in later phases", func() {
-		Expect(true).To(BeTrue())
-	})
-})
