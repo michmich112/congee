@@ -21,7 +21,7 @@ func TestValidateRejectsBadPort(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresNIP1(t *testing.T) {
+func TestValidateRequiresMandatoryNIPs(t *testing.T) {
 	c := minimalValidConfig()
 	c.NIPs.Enabled = []int{2}
 	if err := c.Validate(); err == nil {
@@ -61,7 +61,7 @@ func minimalValidConfig() *Config {
 		WebSocket:               WebSocketSection{CompressionEnabled: true, MaxMessageBytes: 1},
 		MaxSubscriptionIDLength: 128,
 		NIP11:                   NIP11Section{Name: "t"},
-		NIPs:                    NIPsSection{Enabled: []int{1}},
+		NIPs:                    NIPsSection{Enabled: []int{1, 11}},
 	}
 }
 

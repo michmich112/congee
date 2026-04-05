@@ -44,6 +44,6 @@
     "cors_allow_any_origin": false
   },
   "nips": {
-    "enabled": [1]
+    "enabled": [1, 11]
   }
 }

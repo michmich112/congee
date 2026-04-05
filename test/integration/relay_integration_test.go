@@ -58,7 +58,7 @@ func writeIntegrationConfig(dir, dsn string) string {
     "contact": "",
     "software": "https://example.com"
   },
-  "nips": { "enabled": [1] }
+  "nips": { "enabled": [1, 11] }
 }`)
 	Expect(os.WriteFile(p, body, 0o600)).To(Succeed())
 	return p
@@ -311,7 +311,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
     "software": "https://example.com",
     "cors_allow_any_origin": true
   },
-  "nips": { "enabled": [1] }
+  "nips": { "enabled": [1, 11] }
 }`)
 		Expect(os.WriteFile(cfgPath, body, 0o600)).To(Succeed())
 		corsCfg, err := config.LoadJSON(cfgPath)

@@ -110,8 +110,13 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: unknown nip %d in nips.enabled (not in registry)", n)
 		}
 	}
-	if !slices.Contains(c.NIPs.Enabled, 1) {
-		return errors.New("config: nips.enabled must include mandatory nip 1")
+	for n, m := range nipmeta.KnownNIPs {
+		if !m.Mandatory {
+			continue
+		}
+		if !slices.Contains(c.NIPs.Enabled, n) {
+			return fmt.Errorf("config: nips.enabled must include mandatory nip %d", n)
+		}
 	}
 	return nil
 }

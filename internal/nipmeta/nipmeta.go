@@ -22,6 +22,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/02.md",
 		Mandatory: false,
 	},
+	11: {
+		Number:    11,
+		Title:     "Relay Information Document",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/11.md",
+		Mandatory: true,
+	},
 	50: {
 		Number:    50,
 		Title:     "Search Capability",
