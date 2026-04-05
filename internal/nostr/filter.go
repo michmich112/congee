@@ -15,8 +15,41 @@ type Filter struct {
 	Since   *int64              `json:"since,omitempty"`
 	Until   *int64              `json:"until,omitempty"`
 	Limit   *int                `json:"limit,omitempty"`
+	// Search is NIP-50 full-text query text. When set to a non-empty trimmed string,
+	// historical REQ results are produced via SearchEvents; Matches ignores it (see Matches).
+	Search *string `json:"search,omitempty"`
 	// Tag filters: "#e", "#p", or "#" + single letter (a-zA-Z).
 	Tag map[string][]string `json:"-"`
+}
+
+// HasSearch reports whether this filter carries an active NIP-50 search string.
+func (f *Filter) HasSearch() bool {
+	return f != nil && strings.TrimSpace(ptrStr(f.Search)) != ""
+}
+
+// SearchText returns the trimmed search query, or empty when absent.
+func (f *Filter) SearchText() string {
+	if f == nil {
+		return ""
+	}
+	return strings.TrimSpace(ptrStr(f.Search))
+}
+
+// WithoutSearch returns a copy of f with Search cleared (for structural DB constraints).
+func (f *Filter) WithoutSearch() Filter {
+	if f == nil {
+		return Filter{Tag: make(map[string][]string)}
+	}
+	g := *f
+	g.Search = nil
+	return g
+}
+
+func ptrStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // UnmarshalJSON decodes a filter object, including "#x" tag keys.
@@ -52,6 +85,12 @@ func (f *Filter) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(v, &f.Limit); err != nil {
 				return fmt.Errorf("nostr: filter limit: %w", err)
 			}
+		case "search":
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				return fmt.Errorf("nostr: filter search: %w", err)
+			}
+			f.Search = &s
 		default:
 			// NIP-01: "#<single-letter (a-zA-Z)>"
 			if len(k) == 2 && k[0] == '#' && unicode.IsLetter(rune(k[1])) {
@@ -87,6 +126,9 @@ func (f *Filter) MarshalJSON() ([]byte, error) {
 	if f.Limit != nil {
 		m["limit"] = *f.Limit
 	}
+	if f.Search != nil {
+		m["search"] = *f.Search
+	}
 	for k, v := range f.Tag {
 		m[k] = v
 	}
@@ -95,8 +137,14 @@ func (f *Filter) MarshalJSON() ([]byte, error) {
 
 // Matches reports whether e satisfies all set conditions of the filter.
 // Limit is not applied (it governs query result size, not per-event matching).
+// NIP-50: the search field is not evaluated here; full-text matching runs in the store
+// for REQ snapshots. Live subscriptions with a search filter therefore receive no EVENT
+// fan-out from Matches (search-only matching is not applied on the hot path).
 func (f *Filter) Matches(e *Event) bool {
 	if f == nil || e == nil {
+		return false
+	}
+	if f.HasSearch() {
 		return false
 	}
 	if len(f.IDs) > 0 {
