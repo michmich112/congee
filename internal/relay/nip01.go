@@ -27,7 +27,7 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 		return handleEVENT(ctx, s, store, c, msg.(*nostr.EventMessage), log)
 	})
 	s.RegisterMessageHandler("REQ", func(ctx context.Context, c *Conn, msg any) error {
-		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage), log)
+		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage), log, false)
 	})
 	s.RegisterMessageHandler("CLOSE", func(ctx context.Context, c *Conn, msg any) error {
 		handleCLOSE(ctx, s, c, msg.(*nostr.CloseMessage), log)
@@ -69,7 +69,12 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	return nil
 }
 
-func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, log zerolog.Logger) error {
+func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, log zerolog.Logger, searchEnabled bool) error {
+	for i := range msg.Filters {
+		if msg.Filters[i].HasSearch() && !searchEnabled {
+			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
+		}
+	}
 	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
 		switch {
 		case errors.Is(err, ErrSubscriptionIDTooLong):
@@ -83,7 +88,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 			return c.sendClosed(msg.SubID, err.Error())
 		}
 	}
-	events, err := s.store.QueryEvents(ctx, msg.Filters)
+	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled)
 	if err != nil {
 		log.Error().Err(err).Str("conn_id", c.ID).Msg("query failed")
 		return c.sendClosed(msg.SubID, "internal error")

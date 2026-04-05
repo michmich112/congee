@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/config"
@@ -36,6 +37,15 @@ func TestSubscriptionManagerMaxSubs(t *testing.T) {
 	}
 	if err := m.Add("c1", "b", nil); err != ErrTooManySubscriptions {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestFiltersMatch_SearchNeverMatchesLive(t *testing.T) {
+	ev := &nostr.Event{ID: strings.Repeat("1", 64), PubKey: strings.Repeat("2", 64), CreatedAt: 1, Kind: 1, Content: "hello"}
+	q := "hello"
+	f := nostr.Filter{Kinds: []int{1}, Search: &q}
+	if filtersMatch([]nostr.Filter{f}, ev) {
+		t.Fatal("subscription fan-out must not treat search as a live filter")
 	}
 }
 
