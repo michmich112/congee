@@ -21,7 +21,6 @@ type Filter struct {
 
 // UnmarshalJSON decodes a filter object, including "#x" tag keys.
 func (f *Filter) UnmarshalJSON(data []byte) error {
-	type alias Filter
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
