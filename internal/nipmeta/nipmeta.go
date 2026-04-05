@@ -22,6 +22,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/02.md",
 		Mandatory: false,
 	},
+	50: {
+		Number:    50,
+		Title:     "Search Capability",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/50.md",
+		Mandatory: false,
+	},
 }
 
 // IsKnown reports whether n is present in the registry.
