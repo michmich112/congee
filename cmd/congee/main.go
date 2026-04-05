@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -43,7 +44,12 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("database open failed")
 	}
-	defer storeDB.Close()
+	dbClosed := false
+	defer func() {
+		if !dbClosed {
+			_ = storeDB.Close()
+		}
+	}()
 
 	srv, err := relay.NewServer(cfg, storeDB, log)
 	if err != nil {
@@ -65,10 +71,18 @@ func main() {
 		}
 	}()
 
+	restartCh := make(chan struct{}, 1)
+	scheduleRestart := func() {
+		select {
+		case restartCh <- struct{}{}:
+		default:
+		}
+	}
+
 	var adminSrv *admin.Server
 	if admin.Enabled() {
 		staticDir := filepath.Join("web", "admin", "build")
-		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir)
+		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart)
 		go func() {
 			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("admin server stopped")
@@ -79,8 +93,15 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	log.Info().Msg("shutdown signal")
+
+	doRestart := false
+	select {
+	case <-sig:
+		log.Info().Msg("shutdown signal")
+	case <-restartCh:
+		log.Info().Msg("restart requested from admin api")
+		doRestart = true
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
@@ -93,6 +114,14 @@ func main() {
 		}
 	}
 	cancel()
+
+	if doRestart {
+		dbClosed = true
+		_ = storeDB.Close()
+		restartProcess(log)
+		return
+	}
+
 	log.Info().Msg("bye")
 }
 
@@ -123,6 +152,23 @@ func relayListenAddr(cfg *config.Config) string {
 		return ":3334"
 	}
 	return ":" + strconv.Itoa(cfg.Relay.Port)
+}
+
+func restartProcess(log zerolog.Logger) {
+	if runtime.GOOS == "windows" {
+		log.Warn().Msg("automatic restart is not supported on windows; exiting")
+		os.Exit(0)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		log.Error().Err(err).Msg("restart: executable path")
+		os.Exit(1)
+	}
+	env := os.Environ()
+	if err := syscall.Exec(exe, os.Args, env); err != nil {
+		log.Error().Err(err).Msg("restart: exec failed")
+		os.Exit(1)
+	}
 }
 
 func setupLogger(cfg *config.Config) zerolog.Logger {

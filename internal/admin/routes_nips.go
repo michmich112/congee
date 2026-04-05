@@ -14,11 +14,12 @@ import (
 )
 
 type nipRow struct {
-	Number    int    `json:"number"`
-	Title     string `json:"title"`
-	GitHubURL string `json:"github_url"`
-	Mandatory bool   `json:"mandatory"`
-	Enabled   bool   `json:"enabled"`
+	Number        int    `json:"number"`
+	Title         string `json:"title"`
+	GitHubURL     string `json:"github_url"`
+	Mandatory     bool   `json:"mandatory"`
+	Implemented   bool   `json:"implemented"`
+	Enabled       bool   `json:"enabled"`
 }
 
 type patchNIPBody struct {
@@ -51,11 +52,12 @@ func handleNIPsGet(cfgPath string) http.HandlerFunc {
 			m := nipmeta.KnownNIPs[n]
 			_, on := enabledSet[n]
 			out = append(out, nipRow{
-				Number:    m.Number,
-				Title:     m.Title,
-				GitHubURL: m.GitHubURL,
-				Mandatory: m.Mandatory,
-				Enabled:   on,
+				Number:      m.Number,
+				Title:       m.Title,
+				GitHubURL:   m.GitHubURL,
+				Mandatory:   m.Mandatory,
+				Implemented: nips.IsImplemented(n),
+				Enabled:     on,
 			})
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -63,7 +65,7 @@ func handleNIPsGet(cfgPath string) http.HandlerFunc {
 	}
 }
 
-func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store) http.HandlerFunc {
+func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -135,10 +137,14 @@ func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store) http.H
 			http.Error(w, `{"error":"changelog write failed"}`, http.StatusInternalServerError)
 			return
 		}
+		if scheduleRestart != nil {
+			go scheduleRestartSoon(scheduleRestart)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":               true,
 			"restart_required": true,
+			"restarting":       scheduleRestart != nil,
 		})
 	}
 }

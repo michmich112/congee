@@ -64,7 +64,9 @@ type Server struct {
 
 // NewServer builds an admin server. staticDir is the filesystem root for production
 // assets (e.g. web/admin/build). relaySrv may be nil (stats will show 0 connections).
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string) *Server {
+// scheduleRestart is invoked after a successful config write or NIP toggle when the
+// running process should be replaced (nil in tests or when restart is disabled).
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func()) *Server {
 	s := &Server{
 		cfg:       cfg,
 		cfgPath:   cfgPath,
@@ -103,11 +105,11 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 //   POST     /api/migration/start  — sqlite/postgres copy; SSE progress events
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
-	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store).ServeHTTP)
+	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
 	api.HandleFunc("GET /audit", handleAudit(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
-	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store).ServeHTTP)
+	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
 	api.HandleFunc("POST /migration/start", handleMigrationStart())
 

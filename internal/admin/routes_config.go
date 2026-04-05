@@ -30,7 +30,7 @@ func handleGetConfig(cfgPath string) http.HandlerFunc {
 	}
 }
 
-func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store) http.HandlerFunc {
+func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -50,10 +50,12 @@ func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store) http.H
 		}
 
 		cfgMu.Lock()
-		defer cfgMu.Unlock()
 
 		prev, _ := os.ReadFile(cfgPath)
+		needRestart := configRestartNeeded(prev, newCfg)
+
 		if err := config.WriteConfigAtomic(cfgPath, newCfg); err != nil {
+			cfgMu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -65,13 +67,39 @@ func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store) http.H
 			diff = "previous_bytes=" + strconv.Itoa(len(prev)) + "\n" + string(body)
 		}
 		if err := config.SaveConfigChange(r.Context(), st, "PUT /api/config", diff); err != nil {
+			cfgMu.Unlock()
 			http.Error(w, `{"error":"changelog write failed"}`, http.StatusInternalServerError)
 			return
 		}
+		cfgMu.Unlock()
+
+		if needRestart && scheduleRestart != nil {
+			go scheduleRestartSoon(scheduleRestart)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":               true,
+			"restart_required": needRestart,
+			"restarting":       needRestart && scheduleRestart != nil,
+		})
 	}
+}
+
+func configRestartNeeded(prevFile []byte, newCfg *config.Config) bool {
+	if len(prevFile) == 0 {
+		return true
+	}
+	prevCfg, err := config.ParseConfigJSON(prevFile)
+	if err != nil {
+		return true
+	}
+	return !config.Equal(prevCfg, newCfg)
+}
+
+func scheduleRestartSoon(scheduleRestart func()) {
+	time.Sleep(150 * time.Millisecond)
+	scheduleRestart()
 }
 
 func handleConfigChangelog(st storage.Store) http.HandlerFunc {
