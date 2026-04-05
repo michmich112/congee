@@ -3,13 +3,9 @@
 .codex
 .opencode
 bin
-build
-dist
-**/.svelte-kit
-**/node_modules
+web/admin/node_modules
+web/admin/.svelte-kit
 web/admin/build
-*.db
-*.db-wal
-*.db-shm
+*.db*
+dist
 .env
-config.json
