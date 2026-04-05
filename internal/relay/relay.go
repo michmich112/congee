@@ -83,6 +83,9 @@ func (s *Server) AppendPostHook(h PostStoreHook) {
 // Subscriptions exposes the subscription manager (e.g. for tests).
 func (s *Server) Subscriptions() *SubscriptionManager { return s.subs }
 
+// OpenConnections returns the number of active WebSocket relay connections.
+func (s *Server) OpenConnections() int64 { return s.open.Load() }
+
 // Addr returns the bound listener address when serving.
 func (s *Server) Addr() string {
 	if s.http == nil {
