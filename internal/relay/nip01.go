@@ -15,7 +15,7 @@ import (
 func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	s.AppendValidator(EventValidatorFunc(nip01ValidateSig))
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
-		detail := fmt.Sprintf("conn_id=%s stored=%v kind=%d", env.Conn.ID, env.Stored, env.Event.Kind)
+		detail := fmt.Sprintf("event_id=%s conn_id=%s stored=%v kind=%d", env.Event.ID, env.Conn.ID, env.Stored, env.Event.Kind)
 		return audit.Log(ctx, store, "event_accepted", detail, env.Event.PubKey)
 	})
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {

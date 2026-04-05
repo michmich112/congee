@@ -5,6 +5,7 @@
 //   PUT    /api/config           — replace file (validated, atomic, changelog)
 //   GET    /api/config/changelog — recent config changes (?limit=)
 //   GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey)
+//   GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //   GET    /api/nips             — known NIPs + enabled flags
 //   PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
 //   GET    /api/stats            — relay connection count, ports, relay_version (binary)
@@ -40,6 +41,7 @@ import (
 //   GET/PUT  /config           — raw JSON file; PUT validates, atomic write, changelog row
 //   GET      /config/changelog — recent config change records (?limit=)
 //   GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey)
+//   GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //   GET      /nips             — known NIPs + enabled flags from config
 //   PATCH    /nips             — toggle optional NIP; restart_required in response
 //   GET      /stats            — relay connection count, ports, relay_version
@@ -99,6 +101,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET|PUT  /api/config           — raw JSON file; PUT validates, atomic write, changelog row
 	//   GET      /api/config/changelog — recent config change rows (?limit=)
 	//   GET      /api/audit            — audit log (?limit=&offset=&since=&until=&action=&pubkey=)
+	//   GET      /api/events/{id}      — one event from storage by id
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
 	//   GET      /api/stats            — relay connection count, ports (placeholders OK)
@@ -108,6 +111,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
 	api.HandleFunc("GET /audit", handleAudit(store).ServeHTTP)
+	api.HandleFunc("GET /events/{id}", handleGetEvent(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
