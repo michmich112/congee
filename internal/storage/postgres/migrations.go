@@ -88,16 +88,3 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	}
 	return nil
 }
-
-// TableExists reports whether a table exists in the current schema (for tests / tooling).
-func TableExists(ctx context.Context, db *bun.DB, name string) (bool, error) {
-	var ok bool
-	err := db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1)`,
-		name,
-	).Scan(&ok)
-	if err != nil {
-		return false, err
-	}
-	return ok, nil
-}
