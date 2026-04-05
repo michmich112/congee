@@ -5,6 +5,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import TimestampCell from '$lib/components/TimestampCell.svelte';
 	import * as Table from '$lib/components/ui/table';
 
 	type Entry = {
@@ -19,6 +20,10 @@
 	function parseAuditEventId(detail: string): string | null {
 		const m = detail.match(eventIDInDetail);
 		return m ? m[1].toLowerCase() : null;
+	}
+
+	function shortEventId(hex: string): string {
+		return hex.length <= 10 ? hex : `${hex.slice(0, 8)}…`;
 	}
 
 	let entries = $state<Entry[]>([]);
@@ -106,8 +111,9 @@
 	<div>
 		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). For <code class="text-xs">event_accepted</code> rows
-			with an <code class="text-xs">event_id</code> in the detail, open the stored Nostr event in a modal.
+			Filter and paginate relay audit entries (newest first). Parsed <code class="text-xs">event_id</code> values
+			appear truncated in the Event ID column (full id on hover); use Event to open stored JSON when available.
+			Timestamp columns follow the header “Table timestamps” control.
 		</p>
 	</div>
 
@@ -178,8 +184,9 @@
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
-						<Table.Head class="whitespace-nowrap">Time (unix)</Table.Head>
+						<Table.Head class="whitespace-nowrap">Time</Table.Head>
 						<Table.Head>Action</Table.Head>
+						<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
 						<Table.Head>Pubkey</Table.Head>
 						<Table.Head>Detail</Table.Head>
 						<Table.Head class="w-[100px]">Event</Table.Head>
@@ -189,8 +196,15 @@
 					{#each entries as row, i (i + '-' + row.created_at + '-' + row.action + '-' + row.detail)}
 						{@const eid = parseAuditEventId(row.detail)}
 						<Table.Row>
-							<Table.Cell class="font-mono text-xs tabular-nums">{row.created_at}</Table.Cell>
+							<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
 							<Table.Cell class="text-sm">{row.action}</Table.Cell>
+							<Table.Cell class="font-mono text-xs" title={eid ?? undefined}>
+								{#if eid}
+									{shortEventId(eid)}
+								{:else}
+									<span class="text-muted-foreground">—</span>
+								{/if}
+							</Table.Cell>
 							<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
 								>{row.pubkey || '—'}</Table.Cell
 							>
@@ -209,7 +223,7 @@
 						</Table.Row>
 					{:else}
 						<Table.Row>
-							<Table.Cell colspan={5} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
+							<Table.Cell colspan={6} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
 						</Table.Row>
 					{/each}
 				</Table.Body>

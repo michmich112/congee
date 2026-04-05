@@ -13,6 +13,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import TimestampCell from '$lib/components/TimestampCell.svelte';
 	import * as Table from '$lib/components/ui/table';
 
 	type ChangelogRow = {
@@ -712,7 +713,10 @@
 				/>
 				<div class="min-w-0 flex-1 text-left">
 					<p class="text-base font-semibold">Config changelog</p>
-					<p class="text-sm text-muted-foreground">Recent writes from the admin API (newest first).</p>
+					<p class="text-sm text-muted-foreground">
+						Recent writes from the admin API (newest first). Created times use the header “Table timestamps”
+						control.
+					</p>
 				</div>
 			</summary>
 			<div class="border-t border-border">
@@ -723,7 +727,7 @@
 						<Table.Root>
 							<Table.Header>
 								<Table.Row>
-									<Table.Head class="whitespace-nowrap">Created (unix)</Table.Head>
+									<Table.Head class="whitespace-nowrap">Created</Table.Head>
 									<Table.Head>Summary</Table.Head>
 									<Table.Head>Payload / diff</Table.Head>
 								</Table.Row>
@@ -731,7 +735,7 @@
 							<Table.Body>
 								{#each changelog as row, i (`${row.created_at}-${i}`)}
 									<Table.Row>
-										<Table.Cell class="font-mono text-xs tabular-nums">{row.created_at}</Table.Cell>
+										<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
 										<Table.Cell class="text-sm">{row.summary}</Table.Cell>
 										<Table.Cell
 											class="max-w-lg whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground"
