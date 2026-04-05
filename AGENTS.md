@@ -41,7 +41,7 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 5. **NIPs**: Implement NIPs by registering validators, post-store hooks, and message handlers via the NIP registry — avoid hard-coding optional behavior in core relay loops.
 6. **NIP toggles**: Enabling/disabling optional NIPs updates config and requires a **relay restart**; no hot-reload of pipeline registration.
 7. **Svelte**: Svelte 5 runes only; use shadcn-svelte patterns; Tailwind for styling.
-8. **Environment vs JSON config**: Only `ENABLE_ADMIN_UI`, `ADMIN_PASSWORD`, `CONFIG_PATH`, and `CONGEE_ENV` are env-only. Everything else belongs in the JSON config file.
+8. **Environment vs JSON config**: Only `ENABLE_ADMIN_UI`, `ADMIN_PASSWORD`, `CONFIG_PATH`, and `CONGEE_ENV` are env-only. Everything else belongs in the JSON config file. For local dev, an optional **`.env`** in the process working directory is loaded on startup (see `cmd/congee/main.go`); it does not override variables already set in the environment.
 9. **Config format**: JSON (not YAML). Validate on load and before admin API writes.
 10. **Audit & logs**: Use **full pubkeys** in logs (never truncate). Persist relay activity to `audit_log` with configurable retention.
 11. **Logging style**: zerolog — production JSON, dev console when `CONGEE_ENV` is dev-like; lowercase terse messages; include `conn_id` on connection-scoped lines; `duration_ms` for DB/network; `.Err(err)` for errors.

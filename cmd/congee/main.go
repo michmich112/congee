@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/michmich112/congee/internal/admin"
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
@@ -22,6 +24,8 @@ import (
 )
 
 func main() {
+	tryLoadDotenv()
+
 	path := os.Getenv("CONFIG_PATH")
 	if path == "" {
 		path = "./config.json"
@@ -90,6 +94,28 @@ func main() {
 	}
 	cancel()
 	log.Info().Msg("bye")
+}
+
+// tryLoadDotenv loads ./.env from the process working directory when the file exists.
+// Variables already set in the environment are not overridden (same as godotenv default).
+// Missing .env is normal (e.g. production); parse/read errors are printed to stderr.
+func tryLoadDotenv() {
+	const name = ".env"
+	st, err := os.Stat(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		fmt.Fprintf(os.Stderr, "congee: %s: %v\n", name, err)
+		return
+	}
+	if st.IsDir() {
+		fmt.Fprintf(os.Stderr, "congee: %s is a directory, skipping\n", name)
+		return
+	}
+	if err := godotenv.Load(name); err != nil {
+		fmt.Fprintf(os.Stderr, "congee: loading %s: %v\n", name, err)
+	}
 }
 
 func relayListenAddr(cfg *config.Config) string {

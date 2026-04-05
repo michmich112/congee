@@ -2,6 +2,14 @@
 
 These variables are **outside** the JSON config file by design: they gate boot-time behavior or secrets that should not live in the mounted config file.
 
+## `.env` file (local development)
+
+If a file named **`.env`** exists in the **current working directory** when the binary starts, Congee loads it with [godotenv](https://github.com/joho/godotenv) before reading `CONFIG_PATH` or other settings. A missing `.env` is ignored (for example in production containers that inject env vars directly).
+
+- Run from the repository root so `./.env` is found (`make dev` does this).
+- Copy [`.env.example`](../.env.example) to `.env` and uncomment or set values. `.env` is gitignored.
+- Variables **already set** in the parent environment are **not** replaced by `.env` (godotenv default).
+
 | Variable | Purpose | Default / notes |
 |----------|---------|------------------|
 | `CONGEE_ENV` | Runtime mode | `production` if unset or empty. Values `dev`, `development`, or `local` enable dev behavior (e.g. admin proxy to Vite, console logs). Values `prod` or `production` force production behavior. |

@@ -26,11 +26,21 @@ cp config.example.json config.json
 
 The active config path defaults to `./config.json` and can be overridden with the `CONFIG_PATH` environment variable.
 
+Optional **local** environment (admin UI, dev mode, secrets) can live in a **`.env`** file in the project root — see [environment-variables.md](environment-variables.md). Copy `.env.example` to `.env` and adjust. The relay loads `.env` automatically when you start it from that directory.
+
 ## Run the relay
+
+**Development (no `bin/` build):** from the repo root, with optional `.env` picked up automatically:
+
+```bash
+make dev
+```
+
+**Production-style binary:**
 
 ```bash
 make run
-# or
+# or after make build:
 ./bin/congee
 ```
 

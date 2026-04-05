@@ -4,8 +4,8 @@ Congee is a Nostr relay written in Go with SQLite (default) or PostgreSQL storag
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md) — prerequisites, build, run, and connecting a client
-- [Environment variables](docs/environment-variables.md) — env-only settings and how they relate to JSON config
+- [Getting started](docs/getting-started.md) — prerequisites, build, run (`make dev`), and connecting a client
+- [Environment variables](docs/environment-variables.md) — env-only settings, optional `.env` file, and JSON config
 - [AGENTS.md](AGENTS.md) — project context and conventions for contributors and automation
 
 Phase implementation checklists live in [`docs/plans/`](docs/plans/).

@@ -1,7 +1,11 @@
-.PHONY: build run test test-integration test-perf lint ui-dev ui-build docker-build
+.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build
 
 build:
 	mkdir -p bin && go build -o bin/congee ./cmd/congee
+
+# Run relay from source (no bin/congee). Loads ./.env automatically if present — see cmd/congee/main.go.
+dev:
+	go run ./cmd/congee
 
 run: build
 	./bin/congee
