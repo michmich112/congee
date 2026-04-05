@@ -40,17 +40,22 @@ type AuditSection struct {
 type RateLimitsSection struct {
 	EventsPerMinutePerConnection int `json:"events_per_minute_per_connection"`
 	BytesPerSecondPerConnection  int `json:"bytes_per_second_per_connection"`
+	ReqsPerMinutePerConnection   int `json:"reqs_per_minute_per_connection"`
+	MessagesPerMinutePerIP       int `json:"messages_per_minute_per_ip"`
 }
 
 type ConnectionLimitsSection struct {
 	MaxOpen                       int `json:"max_open"`
 	MaxSubscriptionsPerConnection int `json:"max_subscriptions_per_connection"`
+	MaxFiltersPerReq              int `json:"max_filters_per_req"`
+	ConnectionsPerMinutePerIP     int `json:"connections_per_minute_per_ip"`
 	ReadDeadlineSeconds           int `json:"read_deadline_seconds"`
 	WriteDeadlineSeconds          int `json:"write_deadline_seconds"`
 }
 
 type WebSocketSection struct {
 	CompressionEnabled bool `json:"compression_enabled"`
+	MaxMessageBytes    int `json:"max_message_bytes"`
 }
 
 type NIP11Section struct {

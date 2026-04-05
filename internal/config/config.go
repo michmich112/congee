@@ -7,7 +7,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/michmich112/congee/internal/nips"
+	"github.com/michmich112/congee/internal/nipmeta"
 )
 
 // Load reads and validates JSON config from path (e.g. from CONFIG_PATH).
@@ -69,17 +69,32 @@ func (c *Config) Validate() error {
 	if c.RateLimits.BytesPerSecondPerConnection <= 0 {
 		return errors.New("config: rate_limits.bytes_per_second_per_connection must be > 0")
 	}
+	if c.RateLimits.ReqsPerMinutePerConnection <= 0 {
+		return errors.New("config: rate_limits.reqs_per_minute_per_connection must be > 0")
+	}
+	if c.RateLimits.MessagesPerMinutePerIP <= 0 {
+		return errors.New("config: rate_limits.messages_per_minute_per_ip must be > 0")
+	}
 	if c.ConnectionLimits.MaxOpen <= 0 {
 		return errors.New("config: connection_limits.max_open must be > 0")
 	}
 	if c.ConnectionLimits.MaxSubscriptionsPerConnection <= 0 {
 		return errors.New("config: connection_limits.max_subscriptions_per_connection must be > 0")
 	}
+	if c.ConnectionLimits.MaxFiltersPerReq <= 0 {
+		return errors.New("config: connection_limits.max_filters_per_req must be > 0")
+	}
+	if c.ConnectionLimits.ConnectionsPerMinutePerIP <= 0 {
+		return errors.New("config: connection_limits.connections_per_minute_per_ip must be > 0")
+	}
 	if c.ConnectionLimits.ReadDeadlineSeconds <= 0 {
 		return errors.New("config: connection_limits.read_deadline_seconds must be > 0")
 	}
 	if c.ConnectionLimits.WriteDeadlineSeconds <= 0 {
 		return errors.New("config: connection_limits.write_deadline_seconds must be > 0")
+	}
+	if c.WebSocket.MaxMessageBytes <= 0 {
+		return errors.New("config: websocket.max_message_bytes must be > 0")
 	}
 	if c.MaxSubscriptionIDLength <= 0 {
 		return errors.New("config: max_subscription_id_length must be > 0")
@@ -91,7 +106,7 @@ func (c *Config) Validate() error {
 		return errors.New("config: nips.enabled must be non-empty")
 	}
 	for _, n := range c.NIPs.Enabled {
-		if !nips.IsKnown(n) {
+		if !nipmeta.IsKnown(n) {
 			return fmt.Errorf("config: unknown nip %d in nips.enabled (not in registry)", n)
 		}
 	}
@@ -99,7 +114,7 @@ func (c *Config) Validate() error {
 		return errors.New("config: nips.enabled must include mandatory nip 1")
 	}
 	for _, n := range c.NIP11.SupportedNIPs {
-		if !nips.IsKnown(n) {
+		if !nipmeta.IsKnown(n) {
 			return fmt.Errorf("config: unknown nip %d in nip11.supported_nips", n)
 		}
 	}
