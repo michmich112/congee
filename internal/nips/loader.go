@@ -26,3 +26,13 @@ func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log z
 	}
 	return nil
 }
+
+// IsImplemented reports whether the relay loader can register this NIP today.
+func IsImplemented(n int) bool {
+	switch n {
+	case 1:
+		return true
+	default:
+		return false
+	}
+}

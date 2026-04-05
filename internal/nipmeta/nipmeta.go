@@ -16,6 +16,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/01.md",
 		Mandatory: true,
 	},
+	2: {
+		Number:    2,
+		Title:     "Follow list",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/02.md",
+		Mandatory: false,
+	},
 }
 
 // IsKnown reports whether n is present in the registry.
