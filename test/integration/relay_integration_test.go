@@ -337,6 +337,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		defer getResp.Body.Close()
 		Expect(getResp.StatusCode).To(Equal(http.StatusOK))
 		Expect(getResp.Header.Get("Access-Control-Allow-Origin")).To(Equal("*"))
+		Expect(getResp.Header.Get("Access-Control-Allow-Private-Network")).To(Equal("true"))
 
 		optReq, err := http.NewRequest(http.MethodOptions, corsBase+"/", nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -360,6 +361,17 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer optResp2.Body.Close()
 		Expect(optResp2.Header.Get("Access-Control-Allow-Headers")).To(Equal("accept, x-custom-header"))
+
+		optPNA, err := http.NewRequest(http.MethodOptions, corsBase+"/", nil)
+		Expect(err).NotTo(HaveOccurred())
+		optPNA.Header.Set("Origin", "https://www.nostrdeck.com")
+		optPNA.Header.Set("Access-Control-Request-Method", "GET")
+		optPNA.Header.Set("Access-Control-Request-Headers", "accept")
+		optPNA.Header.Set("Access-Control-Request-Private-Network", "true")
+		pnaResp, err := http.DefaultClient.Do(optPNA)
+		Expect(err).NotTo(HaveOccurred())
+		defer pnaResp.Body.Close()
+		Expect(pnaResp.Header.Get("Access-Control-Allow-Private-Network")).To(Equal("true"))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

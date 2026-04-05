@@ -25,9 +25,12 @@ type nip11Doc struct {
 	Version       string   `json:"version"`
 }
 
-// writeNIP11CORSResponse sets Access-Control-Allow-Origin: * for browser NIP-11 fetches.
+// writeNIP11CORSResponse sets CORS headers for browser NIP-11 fetches.
+// Access-Control-Allow-Private-Network is required when the relay is reached via Tailscale,
+// RFC1918, etc., and the page is on a public origin (Chrome Private Network Access).
 func writeNIP11CORSResponse(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Private-Network", "true")
 }
 
 // writeNIP11CORSPreflightHeaders sets CORS headers for OPTIONS preflight on GET / (NIP-11).
@@ -40,6 +43,10 @@ func writeNIP11CORSPreflightHeaders(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Headers", reqHdr)
 	} else {
 		w.Header().Set("Access-Control-Allow-Headers", "Accept")
+	}
+	// PNA preflight: browser sends Access-Control-Request-Private-Network: true
+	if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
 	}
 	w.Header().Set("Access-Control-Max-Age", "86400")
 }

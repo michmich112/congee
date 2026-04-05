@@ -616,8 +616,10 @@
 								<p class="text-xs text-muted-foreground">
 									Sets <code class="rounded bg-muted px-1 text-[0.7rem]">Access-Control-Allow-Origin: *</code> on
 									NIP-11 JSON only (GET / with <code class="rounded bg-muted px-1 text-[0.7rem]">Accept:
-										application/nostr+json</code>), plus OPTIONS preflight. WebSocket and other responses are
-									unchanged.
+										application/nostr+json</code>), plus OPTIONS preflight. Also sends
+									<code class="rounded bg-muted px-1 text-[0.7rem]">Access-Control-Allow-Private-Network: true</code> so
+									public sites (e.g. relay checkers) can reach relays on Tailscale or private IPs (Chrome Private
+									Network Access). WebSocket and other responses are unchanged.
 								</p>
 							</div>
 							<Switch
