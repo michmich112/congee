@@ -20,6 +20,9 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	})
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
 		_ = ctx
+		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
+			return nil
+		}
 		s.subs.Broadcast(env.Event)
 		return nil
 	})
@@ -74,6 +77,9 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		if msg.Filters[i].HasSearch() && !searchEnabled {
 			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
 		}
+	}
+	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
+		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
 	}
 	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
 		switch {

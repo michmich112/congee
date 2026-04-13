@@ -10,6 +10,7 @@ func TestIsImplemented(t *testing.T) {
 		{1, true},
 		{2, true},
 		{11, true},
+		{42, true},
 		{50, true},
 		{99, false},
 	} {
