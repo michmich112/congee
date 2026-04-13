@@ -114,6 +114,40 @@ func tagFirst(tags [][]string, name string) string {
 	return ""
 }
 
+// nip42EnsureChallengeLocked returns the connection challenge, generating one if
+// needed. Caller must hold c.authMu (write lock).
+func (c *Conn) nip42EnsureChallengeLocked() string {
+	if c.nip42Challenge == "" {
+		var b [24]byte
+		_, _ = rand.Read(b[:])
+		c.nip42Challenge = hex.EncodeToString(b[:])
+	}
+	return c.nip42Challenge
+}
+
+// nip42EnqueueAuthChallenge ensures this connection has a challenge and sends
+// ["AUTH", challenge] at most once per connection (until the connection ends).
+// Used on connect when configured, and on auth-required responses when
+// send_challenge_on_connect is false.
+func nip42EnqueueAuthChallenge(c *Conn, cfg *config.Config) error {
+	if !relayNIP42Enabled(cfg) || c == nil {
+		return nil
+	}
+	c.authMu.Lock()
+	if c.nip42AuthSent {
+		c.authMu.Unlock()
+		return nil
+	}
+	ch := c.nip42EnsureChallengeLocked()
+	c.nip42AuthSent = true
+	c.authMu.Unlock()
+	b, err := nostr.MarshalRelayAuth(ch)
+	if err != nil {
+		return err
+	}
+	return c.enqueue(b)
+}
+
 // RegisterNIP42 registers AUTH handling and publish policy validation (NIP-42).
 func RegisterNIP42(s *Server, _ storage.Store, log zerolog.Logger) {
 	s.RegisterMessageHandler("AUTH", func(ctx context.Context, c *Conn, msg any) error {
@@ -147,12 +181,7 @@ func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMes
 func (c *Conn) nip42IssueChallengeIfUnset() string {
 	c.authMu.Lock()
 	defer c.authMu.Unlock()
-	if c.nip42Challenge == "" {
-		var b [24]byte
-		_, _ = rand.Read(b[:])
-		c.nip42Challenge = hex.EncodeToString(b[:])
-	}
-	return c.nip42Challenge
+	return c.nip42EnsureChallengeLocked()
 }
 
 func (c *Conn) nip42CurrentChallenge() string {

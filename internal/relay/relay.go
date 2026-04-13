@@ -286,10 +286,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate b
 
 	go c.writeLoop()
 	if slices.Contains(s.cfg.NIPs.Enabled, 42) && s.cfg.NIP42.SendChallengeOnConnect {
-		ch := c.nip42IssueChallengeIfUnset()
-		if b, err := nostr.MarshalRelayAuth(ch); err == nil {
-			_ = c.enqueue(b)
-		}
+		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 	}
 	if useFlate {
 		c.readLoopFlate()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/nostr"
@@ -47,7 +48,11 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
 	if err := s.validators.Validate(ctx, c, ev); err != nil {
-		return c.sendOK(ev.ID, false, err.Error())
+		msg := err.Error()
+		if strings.HasPrefix(msg, "auth-required:") {
+			_ = nip42EnqueueAuthChallenge(c, s.cfg)
+		}
+		return c.sendOK(ev.ID, false, msg)
 	}
 	if nostr.IsEphemeral(ev.Kind) {
 		if err := c.sendOK(ev.ID, true, ""); err != nil {
@@ -79,6 +84,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		}
 	}
 	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
+		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
 	}
 	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
@@ -115,4 +121,3 @@ func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessag
 	s.subs.Remove(c.ID, msg.SubID)
 	log.Debug().Str("conn_id", c.ID).Str("sub_id", msg.SubID).Msg("subscription closed")
 }
-
