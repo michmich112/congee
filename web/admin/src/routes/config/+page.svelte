@@ -683,8 +683,17 @@
 							<div class="space-y-1">
 								<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
 								<p class="text-xs text-muted-foreground">
-									When enabled, the relay sends <code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with
-									a challenge as soon as the WebSocket opens.
+									<strong class="font-medium text-foreground">On:</strong> the relay sends
+									<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with a challenge as soon as the
+									WebSocket opens, so clients can authenticate before any gated
+									<code class="rounded bg-muted px-1 text-[0.7rem]">REQ</code> or
+									<code class="rounded bg-muted px-1 text-[0.7rem]">EVENT</code>.
+									<strong class="font-medium text-foreground">Off:</strong> the relay still sends
+									<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> immediately before a
+									<code class="rounded bg-muted px-1 text-[0.7rem]">CLOSED</code> or
+									<code class="rounded bg-muted px-1 text-[0.7rem]">OK</code> that returns
+									<code class="rounded bg-muted px-1 text-[0.7rem]">auth-required:</code>, so connections that
+									never touch protected kinds avoid an extra message (NIP-42 lazy auth).
 								</p>
 							</div>
 							<Switch
