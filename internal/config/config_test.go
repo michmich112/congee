@@ -37,6 +37,15 @@ func TestValidateUnknownNIP(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsNIP29NegativeLatePublication(t *testing.T) {
+	c := minimalValidConfig()
+	c.NIPs.Enabled = []int{1, 11, 29}
+	c.NIP29.LatePublicationMaxPastSeconds = -1
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func minimalValidConfig() *Config {
 	return &Config{
 		Relay:                   RelaySection{Port: 3334},

@@ -85,4 +85,38 @@ func TestNIP29StoreQueries(t *testing.T) {
 	if err != nil || got == nil || got.Kind != 39000 {
 		t.Fatalf("metadata: %v %v", got, err)
 	}
+
+	md2 := &nostr.Event{
+		ID:        strings.Repeat("4", 64),
+		PubKey:    relayPK,
+		CreatedAt: 400,
+		Kind:      39000,
+		Tags:      [][]string{{"d", gid}, {"name", "Newer"}},
+		Content:   "",
+		Sig:       sig,
+	}
+	if err := st.SaveEvent(ctx, md2); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := st.GetLatestGroupMetadata39000(ctx, relayPK, gid)
+	if err != nil || got2 == nil || got2.ID != md2.ID {
+		t.Fatalf("latest metadata: want newer id %s got %v err=%v", md2.ID, got2, err)
+	}
+
+	rm := &nostr.Event{
+		ID:        strings.Repeat("5", 64),
+		PubKey:    relayPK,
+		CreatedAt: 500,
+		Kind:      9001,
+		Tags:      [][]string{{"h", gid}, {"p", userPK}},
+		Content:   "",
+		Sig:       sig,
+	}
+	if err := st.SaveEvent(ctx, rm); err != nil {
+		t.Fatal(err)
+	}
+	member2, err2 := st.IsGroupMember(ctx, relayPK, gid, userPK)
+	if err2 != nil || member2 {
+		t.Fatalf("after 9001: member=%v err=%v", member2, err2)
+	}
 }
