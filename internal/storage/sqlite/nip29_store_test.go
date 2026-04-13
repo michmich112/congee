@@ -103,6 +103,39 @@ func TestNIP29StoreQueries(t *testing.T) {
 		t.Fatalf("latest metadata: want newer id %s got %v err=%v", md2.ID, got2, err)
 	}
 
+	ad1 := &nostr.Event{
+		ID:        strings.Repeat("6", 64),
+		PubKey:    relayPK,
+		CreatedAt: 450,
+		Kind:      nostr.NIP29KindGroupAdmins,
+		Tags:      [][]string{{"d", gid}, {"p", userPK, "admin"}},
+		Content:   "",
+		Sig:       sig,
+	}
+	if err := st.SaveEvent(ctx, ad1); err != nil {
+		t.Fatal(err)
+	}
+	ga, err := st.GetLatestGroupAdmins39001(ctx, relayPK, gid)
+	if err != nil || ga == nil || ga.ID != ad1.ID {
+		t.Fatalf("admins: %v %v", ga, err)
+	}
+	ad2 := &nostr.Event{
+		ID:        strings.Repeat("7", 64),
+		PubKey:    relayPK,
+		CreatedAt: 550,
+		Kind:      nostr.NIP29KindGroupAdmins,
+		Tags:      [][]string{{"d", gid}, {"p", userPK}},
+		Content:   "",
+		Sig:       sig,
+	}
+	if err := st.SaveEvent(ctx, ad2); err != nil {
+		t.Fatal(err)
+	}
+	ga2, err := st.GetLatestGroupAdmins39001(ctx, relayPK, gid)
+	if err != nil || ga2 == nil || ga2.ID != ad2.ID {
+		t.Fatalf("latest admins: want %s got %v err=%v", ad2.ID, ga2, err)
+	}
+
 	rm := &nostr.Event{
 		ID:        strings.Repeat("5", 64),
 		PubKey:    relayPK,

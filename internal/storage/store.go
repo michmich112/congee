@@ -54,6 +54,8 @@ type Store interface {
 	EventIDPrefixExists(ctx context.Context, prefix string, groupID string, requireSameH bool) (bool, error)
 	// GetLatestGroupMetadata39000 returns the newest kind-39000 addressable row for relayPubkey + group d-tag.
 	GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
+	// GetLatestGroupAdmins39001 returns the newest kind-39001 addressable row for relayPubkey + group d-tag.
+	GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
 	// IsGroupMember uses the latest relay-signed kind 9000 or 9001 for the group with p=memberPubkey.
 	IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error)
 }

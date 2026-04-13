@@ -388,6 +388,23 @@ func (s *Store) GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, gr
 	return s.rowToEvent(ctx, &row)
 }
 
+// GetLatestGroupAdmins39001 implements storage.Store (NIP-29).
+func (s *Store) GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error) {
+	var row storage.EventRow
+	err := s.db.NewSelect().Model(&row).
+		Where("pubkey = ? AND kind = ? AND d_tag = ?", relayPubkey, nostr.NIP29KindGroupAdmins, groupID).
+		Order("created_at DESC", "id ASC").
+		Limit(1).
+		Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s.rowToEvent(ctx, &row)
+}
+
 // IsGroupMember implements storage.Store (NIP-29).
 func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error) {
 	var row storage.EventRow
