@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -22,7 +23,7 @@ import (
 
 // wsInboundDebugTypes are client commands logged at debug (logging.level=debug).
 var wsInboundDebugTypes = map[string]struct{}{
-	"REQ": {}, "EVENT": {}, "INFO": {}, "COUNT": {},
+	"REQ": {}, "EVENT": {}, "AUTH": {}, "INFO": {}, "COUNT": {},
 }
 
 // ErrSlowConsumer indicates the outbound buffer is full.
@@ -44,6 +45,10 @@ type Conn struct {
 
 	limiter *ConnLimiter
 	log     zerolog.Logger
+
+	authMu         sync.RWMutex
+	nip42Challenge string
+	nip42Pubkeys   map[string]struct{}
 }
 
 func newConnID() string {
@@ -249,6 +254,11 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			return
 		}
 	case *nostr.ReqMessage:
+		if !c.limiter.AllowReq() {
+			_ = c.sendNotice("rate limited: subscription requests")
+			return
+		}
+	case *nostr.AuthMessage:
 		if !c.limiter.AllowReq() {
 			_ = c.sendNotice("rate limited: subscription requests")
 			return
