@@ -303,7 +303,7 @@
 						<Card.Title class="text-base">Signing keypair</Card.Title>
 						<Card.Description>
 							Read-only. Loaded from <code class="rounded bg-muted px-1 text-[0.7rem]">relay.secrets.json</code>;
-							used for NIP-11, relay-signed NIP-29 events, and matching the NIP-11 public key field below.
+							used for the pubkey in NIP-11 relay information, relay-signed NIP-29 events, and related checks.
 						</Card.Description>
 					</Card.Header>
 					<Card.Content class="space-y-3">
@@ -608,26 +608,13 @@
 								}}
 							/>
 						</div>
-						<div class="space-y-2">
-							<Label for="n11-pk">Public key (hex)</Label>
-							<Input
-								id="n11-pk"
-								class="font-mono text-xs"
-								spellcheck={false}
-								value={draft.nip11.pubkey}
-								oninput={(e) => {
-									draft!.nip11.pubkey = e.currentTarget.value;
-									markDirty();
-								}}
-							/>
-							<p class="text-xs text-muted-foreground">
-								Must match the hex pubkey under
-								<a
-									href="#section-relay-identity"
-									class="font-medium text-primary underline-offset-4 hover:underline">Relay identity</a>
-								or stay empty (same rule as saving this form).
-							</p>
-						</div>
+						<p class="text-xs text-muted-foreground md:col-span-2">
+							The public key in NIP-11 responses comes from
+							<a
+								href="#section-relay-identity"
+								class="font-medium text-primary underline-offset-4 hover:underline">Relay identity</a>
+							(not from <span class="font-mono">nip11.pubkey</span>; that field is cleared when you save).
+						</p>
 						<div class="space-y-2">
 							<Label for="n11-contact">Contact</Label>
 							<Input

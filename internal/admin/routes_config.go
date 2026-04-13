@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -50,15 +49,10 @@ func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
+		// NIP-11 pubkey is always derived from relay identity at runtime (ReconcileNIP11PubKey);
+		// do not persist a separate operator-controlled value in the JSON file.
 		if relayID != nil {
-			if p := strings.TrimSpace(newCfg.NIP11.PubKey); p != "" && !strings.EqualFold(p, relayID.PubKeyHex()) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"error": "nip11.pubkey must match relay identity " + relayID.PubKeyHex() + " or be empty",
-				})
-				return
-			}
+			newCfg.NIP11.PubKey = ""
 		}
 
 		cfgMu.Lock()
