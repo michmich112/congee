@@ -1,6 +1,7 @@
 package nostr
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,12 @@ type CloseMessage struct {
 	SubID string
 }
 
-// ParseMessage parses a NIP-01 client JSON array: EVENT, REQ, or CLOSE.
+// AuthMessage is a client ["AUTH", <signed-event-json>] (NIP-42).
+type AuthMessage struct {
+	Event Event
+}
+
+// ParseMessage parses a NIP-01 client JSON array: EVENT, REQ, CLOSE, or AUTH.
 func ParseMessage(data []byte) (any, error) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -70,6 +76,19 @@ func ParseMessage(data []byte) (any, error) {
 			return nil, fmt.Errorf("nostr: CLOSE sub id: %w", err)
 		}
 		return &CloseMessage{SubID: subID}, nil
+	case "AUTH":
+		if len(raw) < 2 {
+			return nil, errors.New("nostr: AUTH missing signed event")
+		}
+		payload := bytes.TrimSpace(raw[1])
+		if len(payload) == 0 || payload[0] != '{' {
+			return nil, errors.New("nostr: client AUTH must carry a signed event JSON object")
+		}
+		var ev Event
+		if err := json.Unmarshal(raw[1], &ev); err != nil {
+			return nil, fmt.Errorf("nostr: AUTH event: %w", err)
+		}
+		return &AuthMessage{Event: ev}, nil
 	default:
 		return nil, fmt.Errorf("nostr: unknown message type %q", typ)
 	}
@@ -120,4 +139,12 @@ func MarshalRelayClosed(subID, msg string) ([]byte, error) {
 // RelayNoticeMessage is ["NOTICE", message].
 func MarshalRelayNotice(msg string) ([]byte, error) {
 	return json.Marshal([]any{"NOTICE", msg})
+}
+
+// MarshalRelayAuth encodes ["AUTH", challenge] from relay to client (NIP-42).
+func MarshalRelayAuth(challenge string) ([]byte, error) {
+	if challenge == "" {
+		return nil, errors.New("nostr: empty AUTH challenge")
+	}
+	return json.Marshal([]any{"AUTH", challenge})
 }
