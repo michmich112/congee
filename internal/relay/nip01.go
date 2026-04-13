@@ -35,7 +35,7 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	})
 }
 
-func nip01ValidateSig(ctx context.Context, ev *nostr.Event) error {
+func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
 	_ = ctx
 	return ev.VerifySig()
 }
@@ -43,7 +43,7 @@ func nip01ValidateSig(ctx context.Context, ev *nostr.Event) error {
 func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage, log zerolog.Logger) error {
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
-	if err := s.validators.Validate(ctx, ev); err != nil {
+	if err := s.validators.Validate(ctx, c, ev); err != nil {
 		return c.sendOK(ev.ID, false, err.Error())
 	}
 	if nostr.IsEphemeral(ev.Kind) {
