@@ -33,11 +33,34 @@ export type AppConfig = {
 		/** When true, relay adds CORS allowing any origin for GET / NIP-11 only. */
 		cors_allow_any_origin?: boolean;
 	};
+	/** NIP-42 client authentication; required fields apply when NIP 42 is enabled. */
+	nip42: {
+		relay_url: string;
+		send_challenge_on_connect: boolean;
+		created_at_skew_seconds: number;
+		require_auth_subscribe_kinds: number[];
+		require_auth_publish_kinds: number[];
+		allowlisted_pubkeys: string[];
+	};
 	nips: { enabled: number[] };
 };
 
 export function cloneConfig(c: AppConfig): AppConfig {
 	return JSON.parse(JSON.stringify(c)) as AppConfig;
+}
+
+const defaultNip42 = (): AppConfig['nip42'] => ({
+	relay_url: '',
+	send_challenge_on_connect: false,
+	created_at_skew_seconds: 600,
+	require_auth_subscribe_kinds: [],
+	require_auth_publish_kinds: [],
+	allowlisted_pubkeys: []
+});
+
+/** Ensures nip42 exists for older config files and the config form. */
+export function ensureNip42Draft(cfg: AppConfig): void {
+	cfg.nip42 ??= defaultNip42();
 }
 
 export function parseConfigJson(text: string): AppConfig {
@@ -48,7 +71,9 @@ export function parseConfigJson(text: string): AppConfig {
 		delete n11.supported_nips;
 		delete n11.version;
 	}
-	return v as AppConfig;
+	const cfg = v as AppConfig;
+	ensureNip42Draft(cfg);
+	return cfg;
 }
 
 export function parseIntSafe(raw: string, fallback: number): number {

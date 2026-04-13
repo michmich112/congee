@@ -639,6 +639,122 @@
 
 			<Separator />
 
+			<section id="section-nip42" class="space-y-4 scroll-mt-8">
+				<h3 class="text-sm font-medium text-muted-foreground">NIP-42 authentication</h3>
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="text-base">Client authentication</Card.Title>
+						<Card.Description>
+							Used when NIP-42 is enabled under Enabled NIPs. Set the public WebSocket URL clients put in the
+							<code class="rounded bg-muted px-1 text-[0.7rem]">relay</code> tag (for example
+							<code class="rounded bg-muted px-1 text-[0.7rem]">wss://relay.example.com/</code>).
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-relay-url">Canonical relay URL (ws / wss)</Label>
+							<Input
+								id="nip42-relay-url"
+								class="font-mono text-xs"
+								spellcheck={false}
+								value={draft.nip42.relay_url}
+								oninput={(e) => {
+									draft!.nip42.relay_url = e.currentTarget.value;
+									markDirty();
+								}}
+							/>
+						</div>
+						<div
+							class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+						>
+							<div class="space-y-1">
+								<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
+								<p class="text-xs text-muted-foreground">
+									When enabled, the relay sends <code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with
+									a challenge as soon as the WebSocket opens.
+								</p>
+							</div>
+							<Switch
+								id="nip42-chal"
+								checked={draft.nip42.send_challenge_on_connect}
+								onCheckedChange={(on) => {
+									draft!.nip42.send_challenge_on_connect = on;
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="nip42-skew">Created-at skew (seconds)</Label>
+							<Input
+								id="nip42-skew"
+								type="number"
+								min="0"
+								value={String(draft.nip42.created_at_skew_seconds)}
+								oninput={(e) => {
+									draft!.nip42.created_at_skew_seconds = parseIntSafe(
+										e.currentTarget.value,
+										draft!.nip42.created_at_skew_seconds
+									);
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-sub-kinds">Require auth for subscribe (kinds)</Label>
+							<Input
+								id="nip42-sub-kinds"
+								class="font-mono text-xs"
+								spellcheck={false}
+								placeholder="e.g. 4, 40"
+								value={draft.nip42.require_auth_subscribe_kinds.join(', ')}
+								oninput={(e) => {
+									draft!.nip42.require_auth_subscribe_kinds = e.currentTarget.value
+										.split(/[\s,]+/)
+										.map((s) => parseInt(s.trim(), 10))
+										.filter((n) => Number.isFinite(n));
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-pub-kinds">Require auth for publish (kinds)</Label>
+							<Input
+								id="nip42-pub-kinds"
+								class="font-mono text-xs"
+								spellcheck={false}
+								placeholder="e.g. 1"
+								value={draft.nip42.require_auth_publish_kinds.join(', ')}
+								oninput={(e) => {
+									draft!.nip42.require_auth_publish_kinds = e.currentTarget.value
+										.split(/[\s,]+/)
+										.map((s) => parseInt(s.trim(), 10))
+										.filter((n) => Number.isFinite(n));
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-allow">Allowlisted pubkeys (hex, one per line)</Label>
+							<Textarea
+								id="nip42-allow"
+								class="min-h-[100px] font-mono text-xs"
+								spellcheck={false}
+								value={draft.nip42.allowlisted_pubkeys.join('\n')}
+								oninput={(e) => {
+									draft!.nip42.allowlisted_pubkeys = e.currentTarget.value
+										.split('\n')
+										.map((s) => s.trim())
+										.filter(Boolean);
+									markDirty();
+								}}
+							/>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			</section>
+
+			<Separator />
+
 			<section id="section-nips" class="space-y-4 scroll-mt-8">
 				<h3 class="text-sm font-medium text-muted-foreground">NIPs</h3>
 				<Card.Root>
