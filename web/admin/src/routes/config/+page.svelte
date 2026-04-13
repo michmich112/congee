@@ -582,6 +582,10 @@
 									markDirty();
 								}}
 							/>
+							<p class="text-xs text-muted-foreground">
+								Must match <span class="font-mono">GET /api/relay-identity</span> or stay empty (same rule as saving
+								this form).
+							</p>
 						</div>
 						<div class="space-y-2">
 							<Label for="n11-contact">Contact</Label>
