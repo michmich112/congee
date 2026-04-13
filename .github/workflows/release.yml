@@ -1,0 +1,71 @@
+# Push to branch `release`: require a semantic version in the commit message (e.g. 1.2.3 or v1.2.3).
+# Optional lines after the first line are prepended to the GitHub release notes (before auto-generated notes).
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      version_tag: ${{ steps.semver.outputs.version_tag }}
+      release_body: ${{ steps.semver.outputs.release_body }}
+      sha: ${{ github.sha }}
+    steps:
+      - name: Parse SemVer from commit message
+        id: semver
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          RAW="$(printf '%s\n' "$MSG" | grep -oE '(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)' | head -n1 || true)"
+          if [ -z "$RAW" ]; then
+            echo "::error::No semantic version found in the commit message. Include a version such as 1.2.3 or v1.2.3."
+            exit 1
+          fi
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version_tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          BODY="$(printf '%s\n' "$MSG" | tail -n +2)"
+          {
+            echo "release_body<<REL_BODY_EOF"
+            printf '%s\n' "$BODY"
+            echo "REL_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: parse
+    uses: ./.github/workflows/reusable-go-test.yml
+    secrets: inherit
+
+  image:
+    needs: [parse, test]
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: ${{ needs.parse.outputs.version }}
+      push: true
+      tag_latest: true
+    secrets: inherit
+
+  github_release:
+    needs: [parse, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.parse.outputs.version_tag }}
+          target_commitish: ${{ needs.parse.outputs.sha }}
+          body: ${{ needs.parse.outputs.release_body }}
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
