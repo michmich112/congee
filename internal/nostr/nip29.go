@@ -7,11 +7,13 @@ import (
 
 const (
 	NIP29KindGroupMetadata = 39000
-	NIP29KindPutUser     = 9000
-	NIP29KindRemoveUser  = 9001
-	NIP29KindCreateGroup = 9007
-	NIP29KindJoinRequest = 9021
-	NIP29KindLeaveReq    = 9022
+	NIP29KindGroupAdmins   = 39001
+	NIP29KindPutUser       = 9000
+	NIP29KindRemoveUser    = 9001
+	NIP29KindCreateGroup   = 9007
+	NIP29KindDeleteGroup   = 9008
+	NIP29KindJoinRequest   = 9021
+	NIP29KindLeaveReq      = 9022
 )
 
 // NIP29GroupHTag returns the first "h" tag value on ev, or empty.
@@ -81,4 +83,29 @@ func NIP29MetadataIsPrivate(md *Event) bool {
 // NIP29MetadataIsRestricted reports whether kind-39000 metadata marks the group restricted (write).
 func NIP29MetadataIsRestricted(md *Event) bool {
 	return md != nil && md.Kind == NIP29KindGroupMetadata && NIP29MetadataHasBareTag(md, "restricted")
+}
+
+// NIP29MetadataIsClosed reports whether kind-39000 metadata marks the group closed (join requests not honored without relay policy such as invite codes).
+func NIP29MetadataIsClosed(md *Event) bool {
+	return md != nil && md.Kind == NIP29KindGroupMetadata && NIP29MetadataHasBareTag(md, "closed")
+}
+
+// NIP29Admins39001ContainsPubkey reports whether admins (kind 39001) lists pubkey in any "p" tag (hex compared with strings.EqualFold).
+func NIP29Admins39001ContainsPubkey(admins *Event, pubkey string) bool {
+	if admins == nil || admins.Kind != NIP29KindGroupAdmins || pubkey == "" {
+		return false
+	}
+	want := strings.TrimSpace(pubkey)
+	if want == "" {
+		return false
+	}
+	for _, t := range admins.Tags {
+		if len(t) < 2 || t[0] != "p" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(t[1]), want) {
+			return true
+		}
+	}
+	return false
 }

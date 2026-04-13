@@ -1,6 +1,9 @@
 package nostr
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNIP29GroupHTag(t *testing.T) {
 	ev := &Event{Tags: [][]string{{"h", "abc"}, {"p", "x"}}}
@@ -48,5 +51,35 @@ func TestNIP29MetadataTags(t *testing.T) {
 	}
 	if NIP29MetadataIsPrivate(&Event{Kind: 1}) {
 		t.Fatal("wrong kind")
+	}
+}
+
+func TestNIP29MetadataIsClosed(t *testing.T) {
+	md := &Event{Kind: NIP29KindGroupMetadata, Tags: [][]string{{"d", "g"}, {"closed"}}}
+	if !NIP29MetadataIsClosed(md) {
+		t.Fatal("expected closed")
+	}
+	if NIP29MetadataIsClosed(&Event{Kind: NIP29KindGroupMetadata, Tags: [][]string{{"d", "g"}}}) {
+		t.Fatal("open group")
+	}
+	if NIP29MetadataIsClosed(&Event{Kind: 1}) {
+		t.Fatal("wrong kind")
+	}
+}
+
+func TestNIP29Admins39001ContainsPubkey(t *testing.T) {
+	pk := "Ab" + strings.Repeat("c", 62)
+	admins := &Event{
+		Kind: NIP29KindGroupAdmins,
+		Tags: [][]string{{"d", "g"}, {"p", strings.ToLower(pk), "admin"}, {"p", "other"}},
+	}
+	if !NIP29Admins39001ContainsPubkey(admins, strings.ToUpper(pk[:2])+pk[2:]) {
+		t.Fatal("EqualFold match")
+	}
+	if NIP29Admins39001ContainsPubkey(admins, strings.Repeat("f", 64)) {
+		t.Fatal("non-member")
+	}
+	if NIP29Admins39001ContainsPubkey(nil, pk) || NIP29Admins39001ContainsPubkey(&Event{Kind: 1}, pk) {
+		t.Fatal("invalid admins event")
 	}
 }
