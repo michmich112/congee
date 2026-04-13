@@ -34,11 +34,14 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "version_tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           BODY="$(printf '%s\n' "$MSG" | tail -n +2)"
-          {
-            echo "release_body<<REL_BODY_EOF"
-            printf '%s\n' "$BODY"
-            echo "REL_BODY_EOF"
-          } >> "$GITHUB_OUTPUT"
+          STRIPPED="$(printf '%s' "$BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ -n "$STRIPPED" ]; then
+            {
+              echo "release_body<<REL_BODY_EOF"
+              printf '%s\n' "$BODY"
+              echo "REL_BODY_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   test:
     needs: parse
