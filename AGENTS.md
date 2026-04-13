@@ -12,6 +12,7 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `internal/nostr/` — event, filter, message parsing, kind classification (NIP-01).
 - `internal/storage/` — `Store` interface; SQLite and PostgreSQL implementations (Bun ORM).
 - `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
+- `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
 - `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).
 - `internal/audit/` — audit log writes and retention cleanup.
 - `internal/admin/` — standalone admin HTTP server (API + static UI or dev proxy).
@@ -41,7 +42,7 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 5. **NIPs**: Implement NIPs by registering validators, post-store hooks, and message handlers via the NIP registry — avoid hard-coding optional behavior in core relay loops.
 6. **NIP toggles**: Enabling/disabling optional NIPs updates config and requires a **relay restart**; no hot-reload of pipeline registration.
 7. **Svelte**: Svelte 5 runes only; use shadcn-svelte patterns; Tailwind for styling.
-8. **Environment vs JSON config**: Only `ENABLE_ADMIN_UI`, `ADMIN_PASSWORD`, `CONFIG_PATH`, and `CONGEE_ENV` are env-only. Everything else belongs in the JSON config file. For local dev, an optional **`.env`** in the process working directory is loaded on startup (see `cmd/congee/main.go`); it does not override variables already set in the environment.
+8. **Environment vs JSON config**: Only `ENABLE_ADMIN_UI`, `ADMIN_PASSWORD`, `CONFIG_PATH`, `RELAY_SECRETS_PATH`, and `CONGEE_ENV` are env-only (plus PostgreSQL test DSN and instance id as documented). Everything else belongs in the JSON config file. For local dev, an optional **`.env`** in the process working directory is loaded on startup (see `cmd/congee/main.go`); it does not override variables already set in the environment.
 9. **Config format**: JSON (not YAML). Validate on load and before admin API writes.
 10. **Audit & logs**: Use **full pubkeys** in logs (never truncate). Persist relay activity to `audit_log` with configurable retention.
 11. **Logging style**: zerolog — production JSON, dev console when `CONGEE_ENV` is dev-like; lowercase terse messages; include `conn_id` on connection-scoped lines; `duration_ms` for DB/network; `.Err(err)` for errors.
