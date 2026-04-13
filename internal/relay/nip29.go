@@ -23,9 +23,11 @@ func nip29MaxPastSec(cfg *config.Config) int64 {
 	return int64(cfg.NIP29.LatePublicationMaxPastSeconds)
 }
 
-// RegisterNIP29 registers NIP-29 validators and hooks (previous, late publish, restricted write,
-// relay-only moderation kinds 9000–9020, 9021/9022 handling, relay-signed follow-ups, private read gating).
-// Gaps vs full NIP-29: no 39001/39003 admin resolution (moderation is relay-key only); join automation (9021) not implemented.
+// RegisterNIP29 registers NIP-29 validators and hooks (previous, late publish, restricted write, moderation
+// by relay key or latest kind-39001 admin list, open-group 9021 join flow with relay-signed 9000, 9022 with
+// relay-signed 9001, private read gating).
+// Remaining optional gaps: closed-group invite codes (9009 + code tag), publishing/updating 39003 roles,
+// keeping 39001 in sync on every moderation action.
 func RegisterNIP29(s *Server, store storage.Store, log zerolog.Logger) {
 	if !nip29Enabled(s.cfg) {
 		return
@@ -128,10 +130,23 @@ func nip29ValidateModerationAndJoinLeave(ctx context.Context, store storage.Stor
 		if s.relayID == nil {
 			return fmt.Errorf("nip-29: relay identity required for moderation kinds")
 		}
-		if ev.PubKey != s.relayID.PubKeyHex() {
-			return fmt.Errorf("nip-29: moderation kind must be signed by the relay")
+		rpk := s.relayID.PubKeyHex()
+		if ev.PubKey == rpk {
+			return nil
 		}
-		return nil
+		switch ev.Kind {
+		case nostr.NIP29KindCreateGroup, nostr.NIP29KindDeleteGroup:
+			return fmt.Errorf("nip-29: moderation kind %d must be signed by the relay", ev.Kind)
+		default:
+			admins, err := store.GetLatestGroupAdmins39001(ctx, rpk, gid)
+			if err != nil {
+				return fmt.Errorf("nip-29: group admins lookup failed: %w", err)
+			}
+			if admins == nil || !nostr.NIP29Admins39001ContainsPubkey(admins, ev.PubKey) {
+				return fmt.Errorf("nip-29: moderation not permitted for this pubkey")
+			}
+			return nil
+		}
 	}
 	switch ev.Kind {
 	case nostr.NIP29KindJoinRequest:
@@ -149,7 +164,14 @@ func nip29ValidateModerationAndJoinLeave(ctx context.Context, store storage.Stor
 		if member {
 			return fmt.Errorf("duplicate: already a group member")
 		}
-		return fmt.Errorf("rejected: join requests are not accepted by this relay (v1)")
+		md, err := store.GetLatestGroupMetadata39000(ctx, rpk, gid)
+		if err != nil {
+			return fmt.Errorf("nip-29: group metadata lookup failed: %w", err)
+		}
+		if md != nil && nostr.NIP29MetadataIsClosed(md) {
+			return fmt.Errorf("nip-29: group is closed; join requests are not accepted (invite flow not implemented)")
+		}
+		return nil
 	case nostr.NIP29KindLeaveReq:
 		if gid == "" {
 			return fmt.Errorf("nip-29: leave request requires an h tag")
@@ -180,6 +202,11 @@ func nip29PostStoreHook(ctx context.Context, s *Server, store storage.Store, env
 	if gid != "" {
 		if err := nip29EnsureGroupMetadata(ctx, s, store, gid); err != nil {
 			log.Debug().Err(err).Str("group_id", gid).Msg("nip29 ensure group metadata failed")
+		}
+	}
+	if ev.Kind == nostr.NIP29KindJoinRequest {
+		if err := nip29RelayPutUser(ctx, s, store, ev); err != nil {
+			log.Debug().Err(err).Str("group_id", gid).Msg("nip29 relay put-user after join failed")
 		}
 	}
 	if ev.Kind == nostr.NIP29KindLeaveReq {
@@ -213,6 +240,27 @@ func nip29EnsureGroupMetadata(ctx context.Context, s *Server, store storage.Stor
 		return err
 	}
 	s.broadcastEvent(meta)
+	return nil
+}
+
+func nip29RelayPutUser(ctx context.Context, s *Server, store storage.Store, join *nostr.Event) error {
+	gid := nostr.NIP29GroupHTag(join)
+	if gid == "" {
+		return nil
+	}
+	put := &nostr.Event{
+		CreatedAt: time.Now().Unix(),
+		Kind:      nostr.NIP29KindPutUser,
+		Tags:      [][]string{{"h", gid}, {"p", join.PubKey}},
+		Content:   "",
+	}
+	if err := s.relayID.SignEvent(put); err != nil {
+		return err
+	}
+	if err := store.SaveEvent(ctx, put); err != nil {
+		return err
+	}
+	s.broadcastEvent(put)
 	return nil
 }
 
