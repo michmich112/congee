@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -280,6 +281,12 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate b
 	})
 
 	go c.writeLoop()
+	if slices.Contains(s.cfg.NIPs.Enabled, 42) && s.cfg.NIP42.SendChallengeOnConnect {
+		ch := c.nip42IssueChallengeIfUnset()
+		if b, err := nostr.MarshalRelayAuth(ch); err == nil {
+			_ = c.enqueue(b)
+		}
+	}
 	if useFlate {
 		c.readLoopFlate()
 	} else {
