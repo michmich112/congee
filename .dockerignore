@@ -9,3 +9,4 @@ web/admin/build
 *.db*
 dist
 .env
+relay.secrets.json
