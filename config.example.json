@@ -43,6 +43,14 @@
     "software": "https://github.com/michmich112/congee",
     "cors_allow_any_origin": false
   },
+  "nip42": {
+    "relay_url": "",
+    "send_challenge_on_connect": false,
+    "created_at_skew_seconds": 600,
+    "require_auth_subscribe_kinds": [],
+    "require_auth_publish_kinds": [],
+    "allowlisted_pubkeys": []
+  },
   "nips": {
     "enabled": [1, 11]
   }

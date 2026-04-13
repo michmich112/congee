@@ -62,6 +62,7 @@ func minimalValidConfig() *Config {
 		MaxSubscriptionIDLength: 128,
 		NIP11:                   NIP11Section{Name: "t"},
 		NIPs:                    NIPsSection{Enabled: []int{1, 11}},
+		NIP42:                   NIP42Section{},
 	}
 }
 

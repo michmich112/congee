@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/michmich112/congee/internal/nipmeta"
 )
@@ -117,6 +118,17 @@ func (c *Config) Validate() error {
 		if !slices.Contains(c.NIPs.Enabled, n) {
 			return fmt.Errorf("config: nips.enabled must include mandatory nip %d", n)
 		}
+	}
+	if slices.Contains(c.NIPs.Enabled, 42) {
+		if strings.TrimSpace(c.NIP42.RelayURL) == "" {
+			return errors.New("config: nip42.relay_url is required when NIP 42 is enabled")
+		}
+		if _, err := NormalizeNIP42RelayURL(c.NIP42.RelayURL); err != nil {
+			return fmt.Errorf("config: nip42.relay_url: %w", err)
+		}
+	}
+	if c.NIP42.CreatedAtSkewSeconds < 0 {
+		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")
 	}
 	return nil
 }
