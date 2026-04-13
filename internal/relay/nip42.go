@@ -137,7 +137,7 @@ func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMes
 	}
 	if err := verifyNIP42AuthEvent(s.cfg, ev, ch, time.Now()); err != nil {
 		log.Debug().Err(err).Str("conn_id", c.ID).Str("pubkey", ev.PubKey).Msg("nip42 auth rejected")
-		return c.sendOK(ev.ID, false, err.Error())
+		return c.sendOK(ev.ID, false, "auth-required: "+err.Error())
 	}
 	c.nip42AddPubkey(ev.PubKey)
 	log.Info().Str("conn_id", c.ID).Str("pubkey", ev.PubKey).Msg("nip42 authenticated")
