@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -65,6 +66,54 @@ func writeIntegrationConfig(dir, dsn string) string {
 	return p
 }
 
+func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string) string {
+	p := filepath.Join(dir, "config-nip42.json")
+	body := `{
+  "relay": { "port": 3334 },
+  "admin": { "port": 3335 },
+  "database": { "type": "sqlite", "dsn": "` + dsn + `" },
+  "logging": { "level": "error", "format": "json" },
+  "audit": { "retention_days": 7 },
+  "rate_limits": {
+    "events_per_minute_per_connection": 120,
+    "bytes_per_second_per_connection": 1048576,
+    "reqs_per_minute_per_connection": 60,
+    "messages_per_minute_per_ip": 6000
+  },
+  "connection_limits": {
+    "max_open": 100,
+    "max_subscriptions_per_connection": 20,
+    "max_filters_per_req": 10,
+    "connections_per_minute_per_ip": 60,
+    "read_deadline_seconds": 60,
+    "write_deadline_seconds": 30
+  },
+  "websocket": {
+    "compression_enabled": false,
+    "max_message_bytes": 1048576
+  },
+  "max_subscription_id_length": 128,
+  "nip11": {
+    "name": "CongeeNIP42",
+    "description": "integration",
+    "pubkey": "",
+    "contact": "",
+    "software": "https://example.com"
+  },
+  "nip42": {
+    "relay_url": ` + strconv.Quote(relayWSURL) + `,
+    "send_challenge_on_connect": true,
+    "created_at_skew_seconds": 600,
+    "require_auth_subscribe_kinds": [4],
+    "require_auth_publish_kinds": [1],
+    "allowlisted_pubkeys": []
+  },
+  "nips": { "enabled": [1, 11, 42] }
+}`
+	Expect(os.WriteFile(p, []byte(body), 0o600)).To(Succeed())
+	return p
+}
+
 func signedEvent(priv *btcec.PrivateKey, kind int, content string, tags [][]string) nostr.Event {
 	pub := priv.PubKey()
 	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
@@ -74,6 +123,24 @@ func signedEvent(priv *btcec.PrivateKey, kind int, content string, tags [][]stri
 		Kind:      kind,
 		Tags:      tags,
 		Content:   content,
+	}
+	_, _ = ev.ComputeID()
+	Expect(ev.Sign(priv)).To(Succeed())
+	return ev
+}
+
+func nip42AuthEvent(priv *btcec.PrivateKey, relayURL, challenge string, createdAt int64) nostr.Event {
+	pub := priv.PubKey()
+	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
+	ev := nostr.Event{
+		PubKey:    pubHex,
+		CreatedAt: createdAt,
+		Kind:      22242,
+		Tags: [][]string{
+			{"relay", relayURL},
+			{"challenge", challenge},
+		},
+		Content: "",
 	}
 	_, _ = ev.ComputeID()
 	Expect(ev.Sign(priv)).To(Succeed())
@@ -392,5 +459,103 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	})
+})
+
+var _ = Describe("NIP-42 authentication", func() {
+	It("sends AUTH challenge, rejects REQ until AUTH, then accepts REQ and EVENT", func() {
+		tmpDir := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmpDir, "nip42.db")
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer ln.Close()
+		port := ln.Addr().(*net.TCPAddr).Port
+		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL)
+
+		cfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		secPath := relayidentity.ResolvePath(cfgPath)
+		rid, err := relayidentity.Load(secPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
+
+		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer st.Close()
+
+		log := zerolog.Nop()
+		srv, err := relay.NewServer(cfg, st, log)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
+
+		go func() { _ = srv.Serve(ln) }()
+		baseWS := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		time.Sleep(30 * time.Millisecond)
+
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+
+		_, data, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var authChal []any
+		Expect(json.Unmarshal(data, &authChal)).To(Succeed())
+		Expect(authChal[0]).To(Equal("AUTH"))
+		challenge, ok := authChal[1].(string)
+		Expect(ok).To(BeTrue())
+		Expect(challenge).NotTo(BeEmpty())
+
+		reqPayload, err := json.Marshal([]any{"REQ", "sub-dm", map[string]any{"kinds": []int{4}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
+
+		_, closedData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var closed []any
+		Expect(json.Unmarshal(closedData, &closed)).To(Succeed())
+		Expect(closed[0]).To(Equal("CLOSED"))
+		Expect(closed[1]).To(Equal("sub-dm"))
+		msg, ok := closed[2].(string)
+		Expect(ok).To(BeTrue())
+		Expect(msg).To(HavePrefix("auth-required:"))
+
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		authEv := nip42AuthEvent(priv, relayWSURL, challenge, time.Now().Unix())
+		authPayload, err := json.Marshal([]any{"AUTH", authEv})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, authPayload)).To(Succeed())
+
+		_, okData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okmsg []any
+		Expect(json.Unmarshal(okData, &okmsg)).To(Succeed())
+		Expect(okmsg[0]).To(Equal("OK"))
+		Expect(okmsg[1]).To(Equal(authEv.ID))
+		Expect(okmsg[2]).To(Equal(true))
+
+		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
+		_, eoseData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var eose []any
+		Expect(json.Unmarshal(eoseData, &eose)).To(Succeed())
+		Expect(eose[0]).To(Equal("EOSE"))
+		Expect(eose[1]).To(Equal("sub-dm"))
+
+		note := signedEvent(priv, 1, "hello", nil)
+		evPayload, err := json.Marshal([]any{"EVENT", note})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, evPayload)).To(Succeed())
+		_, noteOkData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var noteOk []any
+		Expect(json.Unmarshal(noteOkData, &noteOk)).To(Succeed())
+		Expect(noteOk[0]).To(Equal("OK"))
+		Expect(noteOk[2]).To(Equal(true))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(srv.Shutdown(ctx)).To(Succeed())
 	})
 })
