@@ -52,6 +52,7 @@
 	let rawErr = $state<string | null>(null);
 	let changelogExpanded = $state(false);
 	let relayVersion = $state<string | null>(null);
+	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
 
 	function markDirty() {
 		dirty = true;
@@ -95,6 +96,7 @@
 		saveMessage = null;
 		saveErr = null;
 		relayVersion = null;
+		relayIdentity = null;
 		try {
 			const statsRes = await adminFetch('/api/stats');
 			if (statsRes.ok) {
@@ -103,6 +105,17 @@
 			}
 		} catch {
 			relayVersion = null;
+		}
+		try {
+			const idRes = await adminFetch('/api/relay-identity');
+			if (idRes.ok) {
+				const j = (await idRes.json()) as { pubkey_hex?: string; npub?: string };
+				if (j.pubkey_hex && j.npub) {
+					relayIdentity = { pubkey_hex: j.pubkey_hex, npub: j.npub };
+				}
+			}
+		} catch {
+			relayIdentity = null;
 		}
 		try {
 			const cfgRes = await adminFetch('/api/config');
@@ -806,6 +819,23 @@
 									markDirty();
 								}}
 							/>
+						</div>
+						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+							<p class="text-sm font-medium">Relay signing identity (read-only)</p>
+							<p class="text-xs text-muted-foreground">
+								Same keypair as NIP-11 and relay-signed NIP-29 events (<code class="rounded bg-muted px-1 text-[0.7rem]"
+									>relay.secrets.json</code>).
+							</p>
+							{#if relayIdentity}
+								<p class="mt-2 font-mono text-xs break-all text-foreground">
+									<span class="text-muted-foreground">npub</span> {relayIdentity.npub}
+								</p>
+								<p class="mt-1 font-mono text-xs break-all text-muted-foreground">
+									<span class="text-muted-foreground">pubkey</span> {relayIdentity.pubkey_hex}
+								</p>
+							{:else}
+								<p class="mt-2 text-xs text-muted-foreground">Not available (check admin API / relay identity file).</p>
+							{/if}
 						</div>
 					</Card.Content>
 				</Card.Root>
