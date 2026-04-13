@@ -60,7 +60,7 @@ func main() {
 		}
 	}()
 
-	srv, err := relay.NewServer(cfg, storeDB, log)
+	srv, err := relay.NewServer(cfg, storeDB, log, relayID)
 	if err != nil {
 		log.Fatal().Err(err).Msg("relay server init failed")
 	}

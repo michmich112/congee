@@ -34,7 +34,7 @@ func RunImportedEventFanout(ctx context.Context, s *Server, store storage.Store,
 				log.Debug().Err(err).Str("event_id", id).Msg("imported event fetch skipped")
 				continue
 			}
-			s.subs.Broadcast(evs[0])
+			s.broadcastEvent(evs[0])
 		}
 	}
 }

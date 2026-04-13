@@ -114,6 +114,58 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string) string {
 	return p
 }
 
+func writeNIP29IntegrationConfig(dir, dsn string) string {
+	p := filepath.Join(dir, "config-nip29.json")
+	body := []byte(`{
+  "relay": { "port": 3334 },
+  "admin": { "port": 3335 },
+  "database": { "type": "sqlite", "dsn": "` + dsn + `" },
+  "logging": { "level": "error", "format": "json" },
+  "audit": { "retention_days": 7 },
+  "rate_limits": {
+    "events_per_minute_per_connection": 120,
+    "bytes_per_second_per_connection": 1048576,
+    "reqs_per_minute_per_connection": 60,
+    "messages_per_minute_per_ip": 6000
+  },
+  "connection_limits": {
+    "max_open": 100,
+    "max_subscriptions_per_connection": 20,
+    "max_filters_per_req": 10,
+    "connections_per_minute_per_ip": 60,
+    "read_deadline_seconds": 60,
+    "write_deadline_seconds": 30
+  },
+  "websocket": {
+    "compression_enabled": false,
+    "max_message_bytes": 1048576
+  },
+  "max_subscription_id_length": 128,
+  "nip11": {
+    "name": "CongeeNIP29",
+    "description": "integration",
+    "pubkey": "",
+    "contact": "",
+    "software": "https://example.com"
+  },
+  "nip29": {
+    "late_publication_max_past_seconds": 7200,
+    "strict_previous_same_h": false
+  },
+  "nip42": {
+    "relay_url": "",
+    "send_challenge_on_connect": false,
+    "created_at_skew_seconds": 600,
+    "require_auth_subscribe_kinds": [],
+    "require_auth_publish_kinds": [],
+    "allowlisted_pubkeys": []
+  },
+  "nips": { "enabled": [1, 11, 29] }
+}`)
+	Expect(os.WriteFile(p, body, 0o600)).To(Succeed())
+	return p
+}
+
 func signedEvent(priv *btcec.PrivateKey, kind int, content string, tags [][]string) nostr.Event {
 	pub := priv.PubKey()
 	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
@@ -175,7 +227,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		log = zerolog.Nop()
-		srv, err = relay.NewServer(cfg, st, log)
+		srv, err = relay.NewServer(cfg, st, log, rid)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
 
@@ -395,7 +447,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsSt, err := sqlite.Open(context.Background(), dbPath, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer corsSt.Close()
-		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop())
+		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop(), corsRid)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(nips.LoadEnabled(corsCfg, corsSrv, corsSt, zerolog.Nop())).To(Succeed())
 		corsLn, err := net.Listen("tcp", "127.0.0.1:0")
@@ -485,7 +537,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer st.Close()
 
 		log := zerolog.Nop()
-		srv, err := relay.NewServer(cfg, st, log)
+		srv, err := relay.NewServer(cfg, st, log, rid)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
 
@@ -553,6 +605,97 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(json.Unmarshal(noteOkData, &noteOk)).To(Succeed())
 		Expect(noteOk[0]).To(Equal("OK"))
 		Expect(noteOk[2]).To(Equal(true))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(srv.Shutdown(ctx)).To(Succeed())
+	})
+})
+
+var _ = Describe("NIP-29 relay groups", func() {
+	It("enforces previous and late publication for h-tagged events", func() {
+		tmpDir := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmpDir, "nip29-int.db")
+		cfgPath := writeNIP29IntegrationConfig(tmpDir, dbPath)
+		cfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		secPath := relayidentity.ResolvePath(cfgPath)
+		rid, err := relayidentity.Load(secPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
+
+		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer st.Close()
+
+		log := zerolog.Nop()
+		srv, err := relay.NewServer(cfg, st, log, rid)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer ln.Close()
+		go func() { _ = srv.Serve(ln) }()
+		baseWS := fmt.Sprintf("ws://127.0.0.1:%d/", ln.Addr().(*net.TCPAddr).Port)
+		time.Sleep(30 * time.Millisecond)
+
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		ev1 := signedEvent(priv, 1, "first", [][]string{{"h", "grp1"}})
+		payload1, err := json.Marshal([]any{"EVENT", ev1})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, payload1)).To(Succeed())
+		_, data1, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var ok1 []any
+		Expect(json.Unmarshal(data1, &ok1)).To(Succeed())
+		Expect(ok1[0]).To(Equal("OK"))
+		Expect(ok1[2]).To(Equal(true))
+
+		evBad := signedEvent(priv, 1, "badprev", [][]string{{"h", "grp1"}, {"previous", "aaaaaaaa"}})
+		payloadBad, err := json.Marshal([]any{"EVENT", evBad})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, payloadBad)).To(Succeed())
+		_, dataBad, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okBad []any
+		Expect(json.Unmarshal(dataBad, &okBad)).To(Succeed())
+		Expect(okBad[0]).To(Equal("OK"))
+		Expect(okBad[2]).To(Equal(false))
+
+		prefix := ev1.ID
+		if len(prefix) > 8 {
+			prefix = prefix[:8]
+		}
+		evGood := signedEvent(priv, 1, "goodprev", [][]string{{"h", "grp1"}, {"previous", prefix}})
+		payloadGood, err := json.Marshal([]any{"EVENT", evGood})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, payloadGood)).To(Succeed())
+		_, dataGood, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okGood []any
+		Expect(json.Unmarshal(dataGood, &okGood)).To(Succeed())
+		Expect(okGood[0]).To(Equal("OK"))
+		Expect(okGood[2]).To(Equal(true))
+
+		evLate := signedEvent(priv, 1, "late", [][]string{{"h", "grp1"}})
+		evLate.CreatedAt = time.Now().Unix() - 100000
+		_, _ = evLate.ComputeID()
+		Expect(evLate.Sign(priv)).To(Succeed())
+		payloadLate, err := json.Marshal([]any{"EVENT", evLate})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, payloadLate)).To(Succeed())
+		_, dataLate, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okLate []any
+		Expect(json.Unmarshal(dataLate, &okLate)).To(Succeed())
+		Expect(okLate[0]).To(Equal("OK"))
+		Expect(okLate[2]).To(Equal(false))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

@@ -13,15 +13,17 @@ import (
 	"github.com/gobwas/ws/wsflate"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
 // Server is the Nostr relay HTTP and WebSocket front end.
 type Server struct {
-	cfg   *config.Config
-	store storage.Store
-	log   zerolog.Logger
+	cfg     *config.Config
+	store   storage.Store
+	log     zerolog.Logger
+	relayID *relayidentity.Identity
 
 	registry   *Registry
 	validators *ValidatorChain
@@ -37,7 +39,8 @@ type Server struct {
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
-func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger) (*Server, error) {
+// relayID may be nil in tests; NIP-29 relay-signed paths require a non-nil identity.
+func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, relayID *relayidentity.Identity) (*Server, error) {
 	if cfg == nil {
 		return nil, errors.New("relay: nil config")
 	}
@@ -48,6 +51,7 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger) (*Se
 		cfg:        cfg,
 		store:      store,
 		log:        log,
+		relayID:    relayID,
 		registry:   NewRegistry(),
 		validators: &ValidatorChain{},
 		hooks:      &HookChain{},

@@ -182,3 +182,16 @@ func (c *Conn) nip42HasAnyAuth() bool {
 	defer c.authMu.RUnlock()
 	return len(c.nip42Pubkeys) > 0
 }
+
+func (c *Conn) nip42AuthedPubkeys() []string {
+	c.authMu.RLock()
+	defer c.authMu.RUnlock()
+	if len(c.nip42Pubkeys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(c.nip42Pubkeys))
+	for pk := range c.nip42Pubkeys {
+		out = append(out, pk)
+	}
+	return out
+}

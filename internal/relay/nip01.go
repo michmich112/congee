@@ -23,7 +23,7 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
 			return nil
 		}
-		s.subs.Broadcast(env.Event)
+		s.broadcastEvent(env.Event)
 		return nil
 	})
 	s.RegisterMessageHandler("EVENT", func(ctx context.Context, c *Conn, msg any) error {
@@ -100,6 +100,9 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		return c.sendClosed(msg.SubID, "internal error")
 	}
 	for _, ev := range events {
+		if !s.EventVisibleToSubscription(c.ID, ev) {
+			continue
+		}
 		if err := c.sendEvent(msg.SubID, ev); err != nil {
 			log.Debug().Err(err).Str("conn_id", c.ID).Msg("send event skipped")
 		}
