@@ -21,6 +21,7 @@ import (
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
+	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/rs/zerolog"
 )
 
@@ -34,6 +35,14 @@ func main() {
 	cfg, err := config.Load(path)
 	if err != nil {
 		panic("config: " + err.Error())
+	}
+	secretsPath := relayidentity.ResolvePath(path)
+	relayID, err := relayidentity.Load(secretsPath)
+	if err != nil {
+		panic("relay identity: " + err.Error())
+	}
+	if err := relayidentity.ReconcileNIP11PubKey(cfg, relayID); err != nil {
+		panic("relay identity: " + err.Error())
 	}
 	log := setupLogger(cfg)
 
@@ -82,7 +91,7 @@ func main() {
 	var adminSrv *admin.Server
 	if admin.Enabled() {
 		staticDir := filepath.Join("web", "admin", "build")
-		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, nil)
+		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, relayID)
 		go func() {
 			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("admin server stopped")
