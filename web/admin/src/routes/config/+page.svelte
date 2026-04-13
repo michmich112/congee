@@ -755,6 +755,64 @@
 
 			<Separator />
 
+			<section id="section-nip29" class="space-y-4 scroll-mt-8">
+				<h3 class="text-sm font-medium text-muted-foreground">NIP-29 relay groups</h3>
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="text-base">Group timeline and publication</Card.Title>
+						<Card.Description>
+							Used when NIP-29 is enabled under Enabled NIPs. Private group reads require NIP-42 authentication
+							so the relay can match viewers to membership (kind 9000 / 9001 chain).
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
+						<div class="space-y-2">
+							<Label for="nip29-late">Late publication window (seconds)</Label>
+							<Input
+								id="nip29-late"
+								type="number"
+								min="0"
+								value={String(draft.nip29.late_publication_max_past_seconds)}
+								oninput={(e) => {
+									draft!.nip29.late_publication_max_past_seconds = parseIntSafe(
+										e.currentTarget.value,
+										draft!.nip29.late_publication_max_past_seconds
+									);
+									markDirty();
+								}}
+							/>
+							<p class="text-xs text-muted-foreground">
+								Reject group events whose <code class="rounded bg-muted px-1 text-[0.7rem]">created_at</code> is
+								older than this vs relay time. Use <span class="font-mono">0</span> for the built-in default
+								(86400).
+							</p>
+						</div>
+						<div
+							class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+						>
+							<div class="space-y-1">
+								<Label for="nip29-strict-prev" class="text-sm font-medium">Strict previous scope</Label>
+								<p class="text-xs text-muted-foreground">
+									When enabled, each <code class="rounded bg-muted px-1 text-[0.7rem]">previous</code> prefix
+									must resolve to an event in the same group (<code class="rounded bg-muted px-1 text-[0.7rem]">h</code>
+									tag).
+								</p>
+							</div>
+							<Switch
+								id="nip29-strict-prev"
+								checked={draft.nip29.strict_previous_same_h}
+								onCheckedChange={(on) => {
+									draft!.nip29.strict_previous_same_h = on;
+									markDirty();
+								}}
+							/>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			</section>
+
+			<Separator />
+
 			<section id="section-nips" class="space-y-4 scroll-mt-8">
 				<h3 class="text-sm font-medium text-muted-foreground">NIPs</h3>
 				<Card.Root>

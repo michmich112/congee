@@ -42,6 +42,11 @@ export type AppConfig = {
 		require_auth_publish_kinds: number[];
 		allowlisted_pubkeys: string[];
 	};
+	/** NIP-29 relay groups; used when NIP 29 is enabled. */
+	nip29: {
+		late_publication_max_past_seconds: number;
+		strict_previous_same_h: boolean;
+	};
 	nips: { enabled: number[] };
 };
 
@@ -58,9 +63,19 @@ const defaultNip42 = (): AppConfig['nip42'] => ({
 	allowlisted_pubkeys: []
 });
 
+const defaultNip29 = (): AppConfig['nip29'] => ({
+	late_publication_max_past_seconds: 86400,
+	strict_previous_same_h: false
+});
+
 /** Ensures nip42 exists for older config files and the config form. */
 export function ensureNip42Draft(cfg: AppConfig): void {
 	cfg.nip42 ??= defaultNip42();
+}
+
+/** Ensures nip29 exists for older config files and the config form. */
+export function ensureNip29Draft(cfg: AppConfig): void {
+	cfg.nip29 ??= defaultNip29();
 }
 
 export function parseConfigJson(text: string): AppConfig {
@@ -73,6 +88,7 @@ export function parseConfigJson(text: string): AppConfig {
 	}
 	const cfg = v as AppConfig;
 	ensureNip42Draft(cfg);
+	ensureNip29Draft(cfg);
 	return cfg;
 }
 
