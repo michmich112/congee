@@ -77,6 +77,8 @@ type NIPsSection struct {
 type NIP42Section struct {
 	RelayURL                  string   `json:"relay_url"`
 	SendChallengeOnConnect    bool     `json:"send_challenge_on_connect"`
+	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
+	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`
 	RequireAuthSubscribeKinds []int    `json:"require_auth_subscribe_kinds"`
 	RequireAuthPublishKinds   []int    `json:"require_auth_publish_kinds"`
