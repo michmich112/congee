@@ -20,6 +20,7 @@ import (
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relay"
+	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
@@ -98,6 +99,10 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		var err error
 		cfg, err = config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
+		secPath := relayidentity.ResolvePath(cfgPath)
+		rid, err := relayidentity.Load(secPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, err = sqlite.Open(context.Background(), dbPath, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -316,6 +321,10 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(os.WriteFile(cfgPath, body, 0o600)).To(Succeed())
 		corsCfg, err := config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
+		corsSec := relayidentity.ResolvePath(cfgPath)
+		corsRid, err := relayidentity.Load(corsSec)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
 		corsSt, err := sqlite.Open(context.Background(), dbPath, nil)
 		Expect(err).NotTo(HaveOccurred())
 		defer corsSt.Close()
