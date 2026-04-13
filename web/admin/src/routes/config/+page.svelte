@@ -53,6 +53,7 @@
 	let changelogExpanded = $state(false);
 	let relayVersion = $state<string | null>(null);
 	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
+	let relayIdErr = $state<string | null>(null);
 
 	function markDirty() {
 		dirty = true;
@@ -97,6 +98,7 @@
 		saveErr = null;
 		relayVersion = null;
 		relayIdentity = null;
+		relayIdErr = null;
 		try {
 			const statsRes = await adminFetch('/api/stats');
 			if (statsRes.ok) {
@@ -112,10 +114,17 @@
 				const j = (await idRes.json()) as { pubkey_hex?: string; npub?: string };
 				if (j.pubkey_hex && j.npub) {
 					relayIdentity = { pubkey_hex: j.pubkey_hex, npub: j.npub };
+				} else {
+					relayIdErr = 'Relay identity response was incomplete.';
 				}
+			} else if (idRes.status === 503) {
+				relayIdErr = 'Relay identity is not available on this process.';
+			} else {
+				relayIdErr = idRes.status === 401 ? 'Unauthorized' : `HTTP ${idRes.status}`;
 			}
 		} catch {
 			relayIdentity = null;
+			relayIdErr = 'Relay identity request failed.';
 		}
 		try {
 			const cfgRes = await adminFetch('/api/config');
@@ -287,6 +296,35 @@
 		<p class="text-sm text-muted-foreground">Loading…</p>
 	{:else}
 		<div class="space-y-8">
+			<section id="section-relay-identity" class="space-y-4 scroll-mt-8">
+				<h3 class="text-sm font-medium text-muted-foreground">Relay identity</h3>
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="text-base">Signing keypair</Card.Title>
+						<Card.Description>
+							Read-only. Loaded from <code class="rounded bg-muted px-1 text-[0.7rem]">relay.secrets.json</code>;
+							used for NIP-11, relay-signed NIP-29 events, and matching the NIP-11 public key field below.
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="space-y-3">
+						{#if relayIdentity}
+							<div>
+								<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">npub</p>
+								<p class="mt-1 break-all font-mono text-sm leading-relaxed">{relayIdentity.npub}</p>
+							</div>
+							<div>
+								<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hex pubkey</p>
+								<p class="mt-1 break-all font-mono text-sm leading-relaxed">{relayIdentity.pubkey_hex}</p>
+							</div>
+						{:else}
+							<p class="text-sm text-destructive">{relayIdErr ?? 'Relay identity could not be loaded.'}</p>
+						{/if}
+					</Card.Content>
+				</Card.Root>
+			</section>
+
+			<Separator />
+
 			<section class="space-y-4">
 				<h3 class="text-sm font-medium text-muted-foreground">Network</h3>
 				<div class="grid gap-6 md:grid-cols-2">
@@ -583,8 +621,11 @@
 								}}
 							/>
 							<p class="text-xs text-muted-foreground">
-								Must match <span class="font-mono">GET /api/relay-identity</span> or stay empty (same rule as saving
-								this form).
+								Must match the hex pubkey under
+								<a
+									href="#section-relay-identity"
+									class="font-medium text-primary underline-offset-4 hover:underline">Relay identity</a>
+								or stay empty (same rule as saving this form).
 							</p>
 						</div>
 						<div class="space-y-2">
@@ -832,23 +873,6 @@
 									markDirty();
 								}}
 							/>
-						</div>
-						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-							<p class="text-sm font-medium">Relay signing identity (read-only)</p>
-							<p class="text-xs text-muted-foreground">
-								Same keypair as NIP-11 and relay-signed NIP-29 events (<code class="rounded bg-muted px-1 text-[0.7rem]"
-									>relay.secrets.json</code>).
-							</p>
-							{#if relayIdentity}
-								<p class="mt-2 font-mono text-xs break-all text-foreground">
-									<span class="text-muted-foreground">npub</span> {relayIdentity.npub}
-								</p>
-								<p class="mt-1 font-mono text-xs break-all text-muted-foreground">
-									<span class="text-muted-foreground">pubkey</span> {relayIdentity.pubkey_hex}
-								</p>
-							{:else}
-								<p class="mt-2 text-xs text-muted-foreground">Not available (check admin API / relay identity file).</p>
-							{/if}
 						</div>
 					</Card.Content>
 				</Card.Root>
