@@ -22,6 +22,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/02.md",
 		Mandatory: false,
 	},
+	42: {
+		Number:    42,
+		Title:     "Authentication of clients to relays",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/42.md",
+		Mandatory: false,
+	},
 	11: {
 		Number:    11,
 		Title:     "Relay Information Document",
