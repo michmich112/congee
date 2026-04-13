@@ -517,6 +517,72 @@ func fts5Phrase(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+func normalizeIDPrefix8(prefix string) string {
+	p := strings.TrimSpace(strings.ToLower(prefix))
+	if len(p) > 8 {
+		p = p[:8]
+	}
+	return p
+}
+
+// EventIDPrefixExists implements storage.Store (NIP-29).
+func (s *Store) EventIDPrefixExists(ctx context.Context, prefix string, groupID string, requireSameH bool) (bool, error) {
+	p := normalizeIDPrefix8(prefix)
+	if p == "" {
+		return false, nil
+	}
+	q := s.db.NewSelect().Model((*storage.EventRow)(nil)).
+		Where("LOWER(SUBSTR(id, 1, 8)) = ?", p)
+	if requireSameH && groupID != "" {
+		q = q.Where("id IN (SELECT event_id FROM event_tags WHERE name = 'h' AND value = ?)", groupID)
+	}
+	return q.Exists(ctx)
+}
+
+// GetLatestGroupMetadata39000 implements storage.Store (NIP-29).
+func (s *Store) GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error) {
+	var row storage.EventRow
+	err := s.db.NewSelect().Model(&row).
+		Where("pubkey = ? AND kind = ? AND d_tag = ?", relayPubkey, 39000, groupID).
+		Order("created_at DESC", "id ASC").
+		Limit(1).
+		Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s.rowToEvent(ctx, &row)
+}
+
+// IsGroupMember implements storage.Store (NIP-29).
+func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error) {
+	var row storage.EventRow
+	err := s.db.NewSelect().Model(&row).
+		Where("pubkey = ?", relayPubkey).
+		Where("kind IN (?, ?)", 9000, 9001).
+		Where("id IN (SELECT event_id FROM event_tags WHERE name = 'h' AND value = ?)", groupID).
+		Where("id IN (SELECT event_id FROM event_tags WHERE name = 'p' AND value = ?)", memberPubkey).
+		Order("created_at DESC", "id ASC").
+		Limit(1).
+		Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	switch row.Kind {
+	case 9000:
+		return true, nil
+	case 9001:
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
 func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error {
 	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
 		row := storage.AuditLogRow{
