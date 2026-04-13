@@ -130,6 +130,11 @@ func (c *Config) Validate() error {
 	if c.NIP42.CreatedAtSkewSeconds < 0 {
 		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")
 	}
+	if slices.Contains(c.NIPs.Enabled, 29) {
+		if c.NIP29.LatePublicationMaxPastSeconds < 0 {
+			return errors.New("config: nip29.late_publication_max_past_seconds must be >= 0 (0 uses relay default)")
+		}
+	}
 	return nil
 }
 

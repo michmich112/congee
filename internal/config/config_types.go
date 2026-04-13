@@ -13,6 +13,7 @@ type Config struct {
 	MaxSubscriptionIDLength int                     `json:"max_subscription_id_length"`
 	NIP11                   NIP11Section            `json:"nip11"`
 	NIP42                   NIP42Section            `json:"nip42"`
+	NIP29                   NIP29Section            `json:"nip29"`
 	NIPs                    NIPsSection             `json:"nips"`
 }
 
@@ -80,4 +81,12 @@ type NIP42Section struct {
 	RequireAuthSubscribeKinds []int    `json:"require_auth_subscribe_kinds"`
 	RequireAuthPublishKinds   []int    `json:"require_auth_publish_kinds"`
 	AllowlistedPubkeys        []string `json:"allowlisted_pubkeys"`
+}
+
+// NIP29Section configures NIP-29 relay-based groups (optional NIP).
+type NIP29Section struct {
+	// LatePublicationMaxPastSeconds rejects events whose created_at is more than this many seconds in the past vs relay time. Zero means use the built-in default (86400).
+	LatePublicationMaxPastSeconds int `json:"late_publication_max_past_seconds"`
+	// StrictPreviousSameH requires each "previous" id prefix to resolve to an event whose "h" tag matches the publishing event's group id.
+	StrictPreviousSameH bool `json:"strict_previous_same_h"`
 }

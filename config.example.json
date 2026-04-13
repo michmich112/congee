@@ -51,6 +51,10 @@
     "require_auth_publish_kinds": [],
     "allowlisted_pubkeys": []
   },
+  "nip29": {
+    "late_publication_max_past_seconds": 86400,
+    "strict_previous_same_h": false
+  },
   "nips": {
     "enabled": [1, 11]
   }
