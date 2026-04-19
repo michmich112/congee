@@ -1,5 +1,5 @@
-# On every push to main: run tests, then build and push a container to GHCR tagged with the
-# commit SHA and the moving nightly tag.
+# On every push to main: run tests, then build and push a container to GHCR tagged with a
+# short git SHA (7 chars) and the moving nightly tag.
 name: Nightly (main)
 
 on:
@@ -11,15 +11,23 @@ permissions:
   packages: write
 
 jobs:
+  git_meta:
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.sha.outputs.short_sha }}
+    steps:
+      - id: sha
+        run: echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
   test:
     uses: ./.github/workflows/reusable-go-test.yml
     secrets: inherit
 
   image:
-    needs: test
+    needs: [git_meta, test]
     uses: ./.github/workflows/reusable-docker-ghcr.yml
     with:
-      version: ${{ github.sha }}
+      version: ${{ needs.git_meta.outputs.short_sha }}
       push: true
       tag_latest: false
       extra_tag_suffixes: nightly
