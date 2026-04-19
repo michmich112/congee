@@ -6,9 +6,14 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Docker VERSION build-arg and primary image tag (no leading v)
+        description: Primary image tag segment (no leading v); also default for binary/OCI version when version_embed is empty
         type: string
         required: true
+      version_embed:
+        description: Value for embedded binary Version and OCI image.version label; empty uses version
+        type: string
+        required: false
+        default: ""
       push:
         description: Push image to ghcr.io after build
         type: boolean
@@ -93,6 +98,18 @@ jobs:
             echo "TAG_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve binary VERSION build-arg
+        id: vbin
+        env:
+          EMBED: ${{ inputs.version_embed }}
+          VER: ${{ inputs.version }}
+        run: |
+          if [ -n "$EMBED" ]; then
+            echo "build_version=$EMBED" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_version=$VER" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: build
         uses: docker/build-push-action@v7
         with:
@@ -100,5 +117,6 @@ jobs:
           push: ${{ inputs.push }}
           platforms: ${{ inputs.platforms }}
           build-args: |
-            VERSION=${{ inputs.version }}
+            VERSION=${{ steps.vbin.outputs.build_version }}
+            GIT_REVISION=${{ github.sha }}
           tags: ${{ steps.tags.outputs.lines }}
