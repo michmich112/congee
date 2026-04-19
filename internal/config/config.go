@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/michmich112/congee/internal/nipmeta"
@@ -67,6 +68,9 @@ func EnsureConfigFile(path string) error {
 	c := DefaultConfig()
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("default config invalid: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	if err := WriteConfigAtomic(path, c); err != nil {
 		return fmt.Errorf("write default %s: %w", path, err)
