@@ -1,0 +1,30 @@
+# Pull requests targeting `release` must include a semantic version in the title or description
+# (same pattern as the release push workflow). Enable this check in branch protection to block merges.
+name: PR — release (SemVer in title or body)
+
+on:
+  pull_request:
+    branches: [release]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require SemVer in PR title or body
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          MSG="${TITLE}"$'\n'"${BODY:-}"
+          RAW="$(printf '%s\n' "$MSG" | grep -oE '(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)' | head -n1 || true)"
+          if [ -z "$RAW" ]; then
+            echo "::error::Pull requests into release must include a semantic version (e.g. 1.2.3 or v2.0.0-beta.1) in the title or description, matching the release workflow."
+            exit 1
+          fi
+          echo "Found version token: ${RAW}"
