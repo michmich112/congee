@@ -67,12 +67,12 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	if err := store.SaveEvent(ctx, ev); err != nil {
 		return c.sendOK(ev.ID, false, err.Error())
 	}
-	if err := c.sendOK(ev.ID, true, ""); err != nil {
-		return err
-	}
 	env := HookEnv{Conn: c, Event: ev, Stored: true}
 	if err := s.hooks.Run(ctx, env); err != nil {
 		log.Error().Err(err).Str("pubkey", ev.PubKey).Str("conn_id", c.ID).Msg("post-hook error")
+	}
+	if err := c.sendOK(ev.ID, true, ""); err != nil {
+		return err
 	}
 	return nil
 }

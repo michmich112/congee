@@ -1,0 +1,14 @@
+# Run the same Go checks as release and nightly on every push to any branch (`go test ./...`
+# covers packages under ./test/..., including Ginkgo integration specs).
+name: Go test (push)
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/reusable-go-test.yml
+    secrets: inherit

@@ -16,5 +16,4 @@ config.json
 # Local planning / OpenSpec workflow (not versioned for now)
 docs/plans/
 openspec/
-
-relay.secrets.json
+*.secrets.json

@@ -1,0 +1,24 @@
+# Pull requests targeting `release` must include a semantic version in the title or description
+# (same logic as the release push workflow via .github/actions/parse-semver). Enable this check
+# in branch protection to block merges.
+name: PR — release (SemVer in title or body)
+
+on:
+  pull_request:
+    branches: [release]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - id: semver
+        uses: ./.github/actions/parse-semver
+        with:
+          text: |-
+            ${{ github.event.pull_request.title }}
+            ${{ github.event.pull_request.body }}
