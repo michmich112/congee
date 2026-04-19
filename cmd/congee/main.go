@@ -22,10 +22,15 @@ import (
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
+	"github.com/michmich112/congee/internal/version"
 	"github.com/rs/zerolog"
 )
 
 func main() {
+	if tryPrintVersion(os.Args) {
+		return
+	}
+
 	tryLoadDotenv()
 
 	path := os.Getenv("CONFIG_PATH")
@@ -37,6 +42,9 @@ func main() {
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
+		panic("config: " + err.Error())
+	}
+	if err := config.ApplyBootstrapEnvOverrides(cfg); err != nil {
 		panic("config: " + err.Error())
 	}
 	secretsPath := relayidentity.ResolvePath(path)
@@ -135,6 +143,20 @@ func main() {
 	}
 
 	log.Info().Msg("bye")
+}
+
+// tryPrintVersion handles "congee version" and -version/--version without touching config or the network.
+func tryPrintVersion(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	switch args[1] {
+	case "version", "-version", "--version":
+		fmt.Println(version.Version)
+		return true
+	default:
+		return false
+	}
 }
 
 // tryLoadDotenv loads ./.env from the process working directory when the file exists.
