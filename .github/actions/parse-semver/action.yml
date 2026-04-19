@@ -1,0 +1,53 @@
+name: Parse SemVer from message
+description: >-
+  Extract the first semantic version from text (commit message, or PR title plus body).
+  Exposes version without a leading v, a v-prefixed tag form, and optional release notes
+  from lines after the first line. Fails when no SemVer is found.
+
+inputs:
+  text:
+    description: Full text to scan
+    required: true
+
+outputs:
+  raw:
+    description: First matched version token (may include a leading v)
+    value: ${{ steps.parse.outputs.raw }}
+  version:
+    description: Version without a leading v
+    value: ${{ steps.parse.outputs.version }}
+  version_tag:
+    description: Version with a single leading v
+    value: ${{ steps.parse.outputs.version_tag }}
+  release_body:
+    description: Lines after the first line of the input (only set when non-whitespace)
+    value: ${{ steps.parse.outputs.release_body }}
+
+runs:
+  using: composite
+  steps:
+    - id: parse
+      shell: bash
+      env:
+        MSG: ${{ inputs.text }}
+      run: |
+        set -euo pipefail
+        RAW="$(printf '%s\n' "$MSG" | grep -oE '(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)' | head -n1 || true)"
+        echo "raw=${RAW}" >> "$GITHUB_OUTPUT"
+        if [ -z "$RAW" ]; then
+          echo "::error::No semantic version found. Include a version such as 1.2.3 or v1.2.3 (release commits and PRs targeting release must contain it in the message, title, or description)."
+          exit 1
+        fi
+        VERSION="${RAW#v}"
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "version_tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+        BODY="$(printf '%s\n' "$MSG" | tail -n +2)"
+        STRIPPED="$(printf '%s' "$BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        if [ -n "$STRIPPED" ]; then
+          {
+            echo "release_body<<REL_BODY_EOF"
+            printf '%s\n' "$BODY"
+            echo "REL_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+        fi
+        echo "Parsed SemVer: ${RAW} (normalized version ${VERSION})"
