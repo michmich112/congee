@@ -21,6 +21,8 @@ FROM debian:bookworm-slim
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+# Admin UI is served from web/admin/build relative to the process working directory (default /).
+COPY --from=go-build /src/web/admin/build /web/admin/build
 COPY --from=go-build /out/congee /usr/local/bin/congee
 EXPOSE 3334 3335
 VOLUME ["/config"]
