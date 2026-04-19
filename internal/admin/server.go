@@ -1,16 +1,17 @@
 // Package admin implements the optional HTTP admin server when ENABLE_ADMIN_UI is set.
 //
 // Authenticated JSON API (Bearer ADMIN_PASSWORD or X-Admin-Token) under /api/:
-//   GET    /api/config           — raw JSON file
-//   PUT    /api/config           — replace file (validated, atomic, changelog)
-//   GET    /api/config/changelog — recent config changes (?limit=)
-//   GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey)
-//   GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
-//   GET    /api/nips             — known NIPs + enabled flags
-//   PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
-//   GET    /api/stats            — relay connection count, ports, relay_version (binary)
-//   GET    /api/relay-identity   — relay pubkey_hex and npub (read-only)
-//   POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
+//
+//	GET    /api/config           — raw JSON file
+//	PUT    /api/config           — replace file (validated, atomic, changelog)
+//	GET    /api/config/changelog — recent config changes (?limit=)
+//	GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey)
+//	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
+//	GET    /api/nips             — known NIPs + enabled flags
+//	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
+//	GET    /api/stats            — relay connection count, ports, relay_version (binary)
+//	GET    /api/relay-identity   — relay pubkey_hex and npub (read-only)
+//	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
 // if Vite is unreachable, falls back to web/admin/build when index.html exists (e.g. after make ui-build).
@@ -40,15 +41,16 @@ import (
 // (see RequireAdminAuth): Authorization: Bearer <ADMIN_PASSWORD> or X-Admin-Token.
 //
 // Endpoints (strip prefix /api):
-//   GET/PUT  /config           — raw JSON file; PUT validates, atomic write, changelog row
-//   GET      /config/changelog — recent config change records (?limit=)
-//   GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey)
-//   GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
-//   GET      /nips             — known NIPs + enabled flags from config
-//   PATCH    /nips             — toggle optional NIP; restart_required in response
-//   GET      /stats            — relay connection count, ports, relay_version
-//   GET      /relay-identity   — relay pubkey_hex and npub (read-only)
-//   POST     /migration/start  — data migration (SSE)
+//
+//	GET/PUT  /config           — raw JSON file; PUT validates, atomic write, changelog row
+//	GET      /config/changelog — recent config change records (?limit=)
+//	GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey)
+//	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
+//	GET      /nips             — known NIPs + enabled flags from config
+//	PATCH    /nips             — toggle optional NIP; restart_required in response
+//	GET      /stats            — relay connection count, ports, relay_version
+//	GET      /relay-identity   — relay pubkey_hex and npub (read-only)
+//	POST     /migration/start  — data migration (SSE)
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
 // otherwise static files from web/admin/build with SPA fallback to index.html.
@@ -84,7 +86,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 		staticDir: staticDir,
 	}
 	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
-	s.static = s.onlyGET(http.FileServer(spaFS))
+	s.static = s.onlyGET(serveAdminStatic(s.staticDir, http.FileServer(spaFS)))
 
 	if isDevEnv() {
 		target, _ := url.Parse("http://127.0.0.1:5173")
@@ -171,6 +173,24 @@ func (s *Server) onlyGET(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// serveAdminStatic handles GET / and HEAD / without http.FileServer: spaFileSystem maps Open("/")
+// to index.html (a file), but net/http rejects that combination with:
+//
+//	http: attempting to traverse a non-directory
+//
+// Routing "/" through FileServer would also conflict with FileServer's redirect from
+// "/index.html" to canonical "./". Serving the root file explicitly avoids both issues.
+func serveAdminStatic(staticDir string, fileServer http.Handler) http.Handler {
+	indexPath := filepath.Join(staticDir, "index.html")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || r.URL.Path == "" {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
 	})
 }
 
