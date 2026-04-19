@@ -111,12 +111,19 @@ func filtersMatch(filters []nostr.Filter, ev *nostr.Event) bool {
 }
 
 // Broadcast delivers EVENT to every matching subscription.
-func (m *SubscriptionManager) Broadcast(ev *nostr.Event) {
+// If visible is nil, all connections receive matching events. Otherwise visible(connID, ev) must be true.
+func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID string, ev *nostr.Event) bool) {
+	if visible == nil {
+		visible = func(string, *nostr.Event) bool { return true }
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for connID, cmap := range m.subs {
 		send := m.senders[connID]
 		if send == nil {
+			continue
+		}
+		if !visible(connID, ev) {
 			continue
 		}
 		for subID, filters := range cmap {

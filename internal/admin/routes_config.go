@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 )
 
@@ -30,7 +32,7 @@ func handleGetConfig(cfgPath string) http.HandlerFunc {
 	}
 }
 
-func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func()) http.HandlerFunc {
+func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func(), relayID *relayidentity.Identity) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -47,6 +49,16 @@ func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
+		}
+		if relayID != nil {
+			if p := strings.TrimSpace(newCfg.NIP11.PubKey); p != "" && !strings.EqualFold(p, relayID.PubKeyHex()) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error": "nip11.pubkey must match relay identity " + relayID.PubKeyHex() + " or be empty",
+				})
+				return
+			}
 		}
 
 		cfgMu.Lock()

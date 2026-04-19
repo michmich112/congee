@@ -11,7 +11,7 @@ import (
 // MessageHandler handles a parsed NIP-01 client message for one connection.
 type MessageHandler func(ctx context.Context, c *Conn, msg any) error
 
-// Registry maps NIP-01 command names ("EVENT", "REQ", "CLOSE") to handlers.
+// Registry maps client command names ("EVENT", "REQ", "CLOSE", "AUTH", …) to handlers.
 type Registry struct {
 	mu       sync.RWMutex
 	handlers map[string]MessageHandler
@@ -39,6 +39,8 @@ func (r *Registry) Dispatch(ctx context.Context, c *Conn, msg any) error {
 		typ = "REQ"
 	case *nostr.CloseMessage:
 		typ = "CLOSE"
+	case *nostr.AuthMessage:
+		typ = "AUTH"
 	default:
 		return fmt.Errorf("relay: unknown message type %T", msg)
 	}

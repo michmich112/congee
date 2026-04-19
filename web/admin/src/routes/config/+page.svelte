@@ -52,6 +52,7 @@
 	let rawErr = $state<string | null>(null);
 	let changelogExpanded = $state(false);
 	let relayVersion = $state<string | null>(null);
+	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
 
 	function markDirty() {
 		dirty = true;
@@ -95,6 +96,7 @@
 		saveMessage = null;
 		saveErr = null;
 		relayVersion = null;
+		relayIdentity = null;
 		try {
 			const statsRes = await adminFetch('/api/stats');
 			if (statsRes.ok) {
@@ -103,6 +105,17 @@
 			}
 		} catch {
 			relayVersion = null;
+		}
+		try {
+			const idRes = await adminFetch('/api/relay-identity');
+			if (idRes.ok) {
+				const j = (await idRes.json()) as { pubkey_hex?: string; npub?: string };
+				if (j.pubkey_hex && j.npub) {
+					relayIdentity = { pubkey_hex: j.pubkey_hex, npub: j.npub };
+				}
+			}
+		} catch {
+			relayIdentity = null;
 		}
 		try {
 			const cfgRes = await adminFetch('/api/config');
@@ -569,6 +582,10 @@
 									markDirty();
 								}}
 							/>
+							<p class="text-xs text-muted-foreground">
+								Must match <span class="font-mono">GET /api/relay-identity</span> or stay empty (same rule as saving
+								this form).
+							</p>
 						</div>
 						<div class="space-y-2">
 							<Label for="n11-contact">Contact</Label>
@@ -632,6 +649,206 @@
 									markDirty();
 								}}
 							/>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			</section>
+
+			<Separator />
+
+			<section id="section-nip42" class="space-y-4 scroll-mt-8">
+				<h3 class="text-sm font-medium text-muted-foreground">NIP-42 authentication</h3>
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="text-base">Client authentication</Card.Title>
+						<Card.Description>
+							Used when NIP-42 is enabled under Enabled NIPs. Set the public WebSocket URL clients put in the
+							<code class="rounded bg-muted px-1 text-[0.7rem]">relay</code> tag (for example
+							<code class="rounded bg-muted px-1 text-[0.7rem]">wss://relay.example.com/</code>).
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-relay-url">Canonical relay URL (ws / wss)</Label>
+							<Input
+								id="nip42-relay-url"
+								class="font-mono text-xs"
+								spellcheck={false}
+								value={draft.nip42.relay_url}
+								oninput={(e) => {
+									draft!.nip42.relay_url = e.currentTarget.value;
+									markDirty();
+								}}
+							/>
+						</div>
+						<div
+							class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+						>
+							<div class="space-y-1">
+								<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
+								<p class="text-xs text-muted-foreground">
+									<strong class="font-medium text-foreground">On:</strong> the relay sends
+									<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with a challenge as soon as the
+									WebSocket opens, so clients can authenticate before any gated
+									<code class="rounded bg-muted px-1 text-[0.7rem]">REQ</code> or
+									<code class="rounded bg-muted px-1 text-[0.7rem]">EVENT</code>.
+									<strong class="font-medium text-foreground">Off:</strong> the relay still sends
+									<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> immediately before a
+									<code class="rounded bg-muted px-1 text-[0.7rem]">CLOSED</code> or
+									<code class="rounded bg-muted px-1 text-[0.7rem]">OK</code> that returns
+									<code class="rounded bg-muted px-1 text-[0.7rem]">auth-required:</code>, so connections that
+									never touch protected kinds avoid an extra message (NIP-42 lazy auth).
+								</p>
+							</div>
+							<Switch
+								id="nip42-chal"
+								checked={draft.nip42.send_challenge_on_connect}
+								onCheckedChange={(on) => {
+									draft!.nip42.send_challenge_on_connect = on;
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="nip42-skew">Created-at skew (seconds)</Label>
+							<Input
+								id="nip42-skew"
+								type="number"
+								min="0"
+								value={String(draft.nip42.created_at_skew_seconds)}
+								oninput={(e) => {
+									draft!.nip42.created_at_skew_seconds = parseIntSafe(
+										e.currentTarget.value,
+										draft!.nip42.created_at_skew_seconds
+									);
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-sub-kinds">Require auth for subscribe (kinds)</Label>
+							<Input
+								id="nip42-sub-kinds"
+								class="font-mono text-xs"
+								spellcheck={false}
+								placeholder="e.g. 4, 40"
+								value={draft.nip42.require_auth_subscribe_kinds.join(', ')}
+								oninput={(e) => {
+									draft!.nip42.require_auth_subscribe_kinds = e.currentTarget.value
+										.split(/[\s,]+/)
+										.map((s) => parseInt(s.trim(), 10))
+										.filter((n) => Number.isFinite(n));
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-pub-kinds">Require auth for publish (kinds)</Label>
+							<Input
+								id="nip42-pub-kinds"
+								class="font-mono text-xs"
+								spellcheck={false}
+								placeholder="e.g. 1"
+								value={draft.nip42.require_auth_publish_kinds.join(', ')}
+								oninput={(e) => {
+									draft!.nip42.require_auth_publish_kinds = e.currentTarget.value
+										.split(/[\s,]+/)
+										.map((s) => parseInt(s.trim(), 10))
+										.filter((n) => Number.isFinite(n));
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2">
+							<Label for="nip42-allow">Allowlisted pubkeys (hex, one per line)</Label>
+							<Textarea
+								id="nip42-allow"
+								class="min-h-[100px] font-mono text-xs"
+								spellcheck={false}
+								value={draft.nip42.allowlisted_pubkeys.join('\n')}
+								oninput={(e) => {
+									draft!.nip42.allowlisted_pubkeys = e.currentTarget.value
+										.split('\n')
+										.map((s) => s.trim())
+										.filter(Boolean);
+									markDirty();
+								}}
+							/>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			</section>
+
+			<Separator />
+
+			<section id="section-nip29" class="space-y-4 scroll-mt-8">
+				<h3 class="text-sm font-medium text-muted-foreground">NIP-29 relay groups</h3>
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="text-base">Group timeline and publication</Card.Title>
+						<Card.Description>
+							Used when NIP-29 is enabled under Enabled NIPs. Private group reads require NIP-42 authentication
+							so the relay can match viewers to membership (kind 9000 / 9001 chain).
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
+						<div class="space-y-2">
+							<Label for="nip29-late">Late publication window (seconds)</Label>
+							<Input
+								id="nip29-late"
+								type="number"
+								min="0"
+								value={String(draft.nip29.late_publication_max_past_seconds)}
+								oninput={(e) => {
+									draft!.nip29.late_publication_max_past_seconds = parseIntSafe(
+										e.currentTarget.value,
+										draft!.nip29.late_publication_max_past_seconds
+									);
+									markDirty();
+								}}
+							/>
+							<p class="text-xs text-muted-foreground">
+								Reject group events whose <code class="rounded bg-muted px-1 text-[0.7rem]">created_at</code> is
+								older than this vs relay time. Use <span class="font-mono">0</span> for the built-in default
+								(86400).
+							</p>
+						</div>
+						<div
+							class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+						>
+							<div class="space-y-1">
+								<Label for="nip29-strict-prev" class="text-sm font-medium">Strict previous scope</Label>
+								<p class="text-xs text-muted-foreground">
+									When enabled, each <code class="rounded bg-muted px-1 text-[0.7rem]">previous</code> prefix
+									must resolve to an event in the same group (<code class="rounded bg-muted px-1 text-[0.7rem]">h</code>
+									tag).
+								</p>
+							</div>
+							<Switch
+								id="nip29-strict-prev"
+								checked={draft.nip29.strict_previous_same_h}
+								onCheckedChange={(on) => {
+									draft!.nip29.strict_previous_same_h = on;
+									markDirty();
+								}}
+							/>
+						</div>
+						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+							<p class="text-sm font-medium">Relay signing identity (read-only)</p>
+							<p class="text-xs text-muted-foreground">
+								Same keypair as NIP-11 and relay-signed NIP-29 events (<code class="rounded bg-muted px-1 text-[0.7rem]"
+									>relay.secrets.json</code>).
+							</p>
+							{#if relayIdentity}
+								<p class="mt-2 font-mono text-xs break-all text-foreground">
+									<span class="text-muted-foreground">npub</span> {relayIdentity.npub}
+								</p>
+								<p class="mt-1 font-mono text-xs break-all text-muted-foreground">
+									<span class="text-muted-foreground">pubkey</span> {relayIdentity.pubkey_hex}
+								</p>
+							{:else}
+								<p class="mt-2 text-xs text-muted-foreground">Not available (check admin API / relay identity file).</p>
+							{/if}
 						</div>
 					</Card.Content>
 				</Card.Root>

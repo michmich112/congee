@@ -58,6 +58,39 @@ func TestPeekClientCommand(t *testing.T) {
 	}
 }
 
+func TestParseMessageAUTH(t *testing.T) {
+	evJSON := `{"id":"` + repeat("a", 64) + `","pubkey":"` + repeat("b", 64) + `","created_at":1,"kind":22242,"tags":[["relay","wss://r/"],["challenge","c1"]],"content":"","sig":"` + repeat("c", 128) + `"}`
+	raw := `["AUTH",` + evJSON + `]`
+	msg, err := ParseMessage([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	am, ok := msg.(*AuthMessage)
+	if !ok || am.Event.Kind != 22242 {
+		t.Fatalf("%#v", msg)
+	}
+	if _, err := ParseMessage([]byte(`["AUTH","challenge-only"]`)); err == nil {
+		t.Fatal("expected error for string payload")
+	}
+}
+
+func TestMarshalRelayAuth(t *testing.T) {
+	b, err := MarshalRelayAuth("abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var arr []any
+	if err := json.Unmarshal(b, &arr); err != nil || len(arr) != 2 {
+		t.Fatalf("%s", b)
+	}
+	if arr[0] != "AUTH" || arr[1] != "abc123" {
+		t.Fatalf("%v", arr)
+	}
+	if _, err := MarshalRelayAuth(""); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestMarshalRelayMessages(t *testing.T) {
 	ev := &Event{ID: repeat("1", 64), PubKey: repeat("2", 64), CreatedAt: 1, Kind: 1, Content: "c"}
 	b, err := MarshalRelayEvent("sub", ev)

@@ -48,4 +48,14 @@ type Store interface {
 
 	SaveConfigChange(ctx context.Context, c ConfigChange) error
 	QueryConfigChangelog(ctx context.Context, limit int) ([]ConfigChange, error)
+
+	// NIP-29: EventIDPrefixExists reports whether each 8-hex prefix matches some stored event id.
+	// If groupID is non-empty and requireSameH is true, the matching event must carry tag h=groupID.
+	EventIDPrefixExists(ctx context.Context, prefix string, groupID string, requireSameH bool) (bool, error)
+	// GetLatestGroupMetadata39000 returns the newest kind-39000 addressable row for relayPubkey + group d-tag.
+	GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
+	// GetLatestGroupAdmins39001 returns the newest kind-39001 addressable row for relayPubkey + group d-tag.
+	GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
+	// IsGroupMember uses the latest relay-signed kind 9000 or 9001 for the group with p=memberPubkey.
+	IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error)
 }

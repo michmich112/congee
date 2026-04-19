@@ -30,6 +30,13 @@ func (c *HookChain) Append(h ...PostStoreHook) {
 	c.hooks = append(c.hooks, h...)
 }
 
+// Prepend registers hooks to run before those added with Append (same registration order among prepended hooks).
+func (c *HookChain) Prepend(h ...PostStoreHook) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hooks = append(append([]PostStoreHook(nil), h...), c.hooks...)
+}
+
 // Run executes all hooks; the first error is returned.
 func (c *HookChain) Run(ctx context.Context, env HookEnv) error {
 	c.mu.RLock()

@@ -24,8 +24,12 @@ func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log z
 			// Listing NIP 2 in nips.enabled only affects NIP-11 advertisement and admin toggles.
 		case 11:
 			// NIP-11 JSON is always served on GET /; listing 11 in nips.enabled affects supported_nips and admin toggles.
+		case 42:
+			relay.RegisterNIP42(s, store, log)
 		case 50:
 			relay.RegisterNIP50(s, store, log)
+		case 29:
+			relay.RegisterNIP29(s, store, log)
 		default:
 			return fmt.Errorf("nips: NIP %d is not implemented in the loader", n)
 		}
@@ -36,7 +40,7 @@ func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log z
 // IsImplemented reports whether the relay loader can register this NIP today.
 func IsImplemented(n int) bool {
 	switch n {
-	case 1, 2, 11, 50:
+	case 1, 2, 11, 29, 42, 50:
 		return true
 	default:
 		return false

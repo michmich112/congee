@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/nostr"
@@ -20,7 +21,10 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	})
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
 		_ = ctx
-		s.subs.Broadcast(env.Event)
+		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
+			return nil
+		}
+		s.broadcastEvent(env.Event)
 		return nil
 	})
 	s.RegisterMessageHandler("EVENT", func(ctx context.Context, c *Conn, msg any) error {
@@ -35,7 +39,7 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	})
 }
 
-func nip01ValidateSig(ctx context.Context, ev *nostr.Event) error {
+func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
 	_ = ctx
 	return ev.VerifySig()
 }
@@ -43,8 +47,12 @@ func nip01ValidateSig(ctx context.Context, ev *nostr.Event) error {
 func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage, log zerolog.Logger) error {
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
-	if err := s.validators.Validate(ctx, ev); err != nil {
-		return c.sendOK(ev.ID, false, err.Error())
+	if err := s.validators.Validate(ctx, c, ev); err != nil {
+		msg := err.Error()
+		if strings.HasPrefix(msg, "auth-required:") {
+			_ = nip42EnqueueAuthChallenge(c, s.cfg)
+		}
+		return c.sendOK(ev.ID, false, msg)
 	}
 	if nostr.IsEphemeral(ev.Kind) {
 		if err := c.sendOK(ev.ID, true, ""); err != nil {
@@ -75,6 +83,10 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
 		}
 	}
+	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
+		_ = nip42EnqueueAuthChallenge(c, s.cfg)
+		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
+	}
 	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
 		switch {
 		case errors.Is(err, ErrSubscriptionIDTooLong):
@@ -94,6 +106,9 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		return c.sendClosed(msg.SubID, "internal error")
 	}
 	for _, ev := range events {
+		if !s.EventVisibleToSubscription(c.ID, ev) {
+			continue
+		}
 		if err := c.sendEvent(msg.SubID, ev); err != nil {
 			log.Debug().Err(err).Str("conn_id", c.ID).Msg("send event skipped")
 		}
@@ -106,4 +121,3 @@ func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessag
 	s.subs.Remove(c.ID, msg.SubID)
 	log.Debug().Str("conn_id", c.ID).Str("sub_id", msg.SubID).Msg("subscription closed")
 }
-

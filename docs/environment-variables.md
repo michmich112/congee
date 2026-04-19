@@ -16,6 +16,7 @@ If a file named **`.env`** exists in the **current working directory** when the 
 | `ENABLE_ADMIN_UI` | Admin HTTP server | Default `false`. When `true`, starts the admin API and UI on the port from JSON config. |
 | `ADMIN_PASSWORD` | Admin authentication | Required when admin UI is enabled (plaintext comparison at boundary — use HTTPS in production). |
 | `CONFIG_PATH` | JSON config file path | Default `./config.json`. |
+| `RELAY_SECRETS_PATH` | Relay secp256k1 secrets file | Optional. Overrides the default path for `relay.secrets.json` (32-byte secret hex JSON). When unset, the file is `relay.secrets.json` in the same directory as the config file given by `CONFIG_PATH` (or the current working directory when that directory is `.`). Created on first run if missing. |
 | `CONGEE_INSTANCE_ID` | PostgreSQL multi-instance identity | Optional. When `database.type` is `postgres`, identifies this process in `LISTEN`/`NOTIFY` payloads so the relay does not re-broadcast its own writes. Default: `hostname` + UUID. |
 | `TEST_POSTGRES_DSN` | Integration tests only | If set, enables PostgreSQL store/notifier tests (`go test`). Not used at runtime. |
 
