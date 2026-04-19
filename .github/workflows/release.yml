@@ -1,0 +1,55 @@
+# Push to branch `release`: require a semantic version in the commit message (e.g. 1.2.3 or v1.2.3).
+# Optional lines after the first line are prepended to the GitHub release notes (before auto-generated notes).
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      version_tag: ${{ steps.semver.outputs.version_tag }}
+      release_body: ${{ steps.semver.outputs.release_body }}
+      sha: ${{ github.sha }}
+    steps:
+      - id: semver
+        uses: ./.github/actions/parse-semver
+        with:
+          text: ${{ github.event.head_commit.message }}
+
+  test:
+    needs: parse
+    uses: ./.github/workflows/reusable-go-test.yml
+    secrets: inherit
+
+  image:
+    needs: [parse, test]
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: ${{ needs.parse.outputs.version }}
+      push: true
+      tag_latest: true
+    secrets: inherit
+
+  github_release:
+    needs: [parse, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.parse.outputs.version_tag }}
+          target_commitish: ${{ needs.parse.outputs.sha }}
+          body: ${{ needs.parse.outputs.release_body }}
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
