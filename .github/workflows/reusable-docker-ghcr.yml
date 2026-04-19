@@ -29,6 +29,11 @@ on:
         type: string
         required: false
         default: linux/amd64
+      extra_tag_suffixes:
+        description: Comma-separated extra tags for the same image base (e.g. nightly). Only used when push is true.
+        type: string
+        required: false
+        default: ""
     outputs:
       image_digest:
         description: Image digest when build completes (empty if unavailable)
@@ -74,6 +79,16 @@ jobs:
             echo "${BASE}:${{ inputs.version }}"
             if [ "${{ inputs.tag_latest }}" = "true" ]; then
               echo "${BASE}:latest"
+            fi
+            EXTRA="${{ inputs.extra_tag_suffixes }}"
+            if [ -n "$EXTRA" ]; then
+              IFS=',' read -ra PARTS <<< "$EXTRA"
+              for s in "${PARTS[@]}"; do
+                t="$(echo "$s" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                if [ -n "$t" ]; then
+                  echo "${BASE}:${t}"
+                fi
+              done
             fi
             echo "TAG_EOF"
           } >> "$GITHUB_OUTPUT"
