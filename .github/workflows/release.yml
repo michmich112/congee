@@ -19,29 +19,10 @@ jobs:
       release_body: ${{ steps.semver.outputs.release_body }}
       sha: ${{ github.sha }}
     steps:
-      - name: Parse SemVer from commit message
-        id: semver
-        env:
-          MSG: ${{ github.event.head_commit.message }}
-        run: |
-          set -euo pipefail
-          RAW="$(printf '%s\n' "$MSG" | grep -oE '(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)' | head -n1 || true)"
-          if [ -z "$RAW" ]; then
-            echo "::error::No semantic version found in the commit message. Include a version such as 1.2.3 or v1.2.3."
-            exit 1
-          fi
-          VERSION="${RAW#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "version_tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          BODY="$(printf '%s\n' "$MSG" | tail -n +2)"
-          STRIPPED="$(printf '%s' "$BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-          if [ -n "$STRIPPED" ]; then
-            {
-              echo "release_body<<REL_BODY_EOF"
-              printf '%s\n' "$BODY"
-              echo "REL_BODY_EOF"
-            } >> "$GITHUB_OUTPUT"
-          fi
+      - id: semver
+        uses: ./.github/actions/parse-semver
+        with:
+          text: ${{ github.event.head_commit.message }}
 
   test:
     needs: parse
