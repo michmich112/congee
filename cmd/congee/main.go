@@ -31,6 +31,9 @@ func main() {
 	if path == "" {
 		path = "./config.json"
 	}
+	if err := config.EnsureConfigFile(path); err != nil {
+		panic("config: " + err.Error())
+	}
 	cfg, err := config.Load(path)
 	if err != nil {
 		panic("config: " + err.Error())

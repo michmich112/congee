@@ -73,6 +73,58 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigValidates(t *testing.T) {
+	if err := DefaultConfig().Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureConfigFileCreatesDefault(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	if err := EnsureConfigFile(p); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Relay.Port != 3334 {
+		t.Fatalf("relay.port: got %d", cfg.Relay.Port)
+	}
+	if cfg.Database.DSN != "./congee.db" {
+		t.Fatalf("database.dsn: got %q", cfg.Database.DSN)
+	}
+	if err := EnsureConfigFile(p); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := LoadJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Relay.Port != cfg.Relay.Port {
+		t.Fatal("second EnsureConfigFile should not change file")
+	}
+}
+
+func TestEnsureConfigFileCreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "nested", "deep", "config.json")
+	if err := EnsureConfigFile(p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "nested", "deep")); err != nil {
+		t.Fatalf("expected parent dirs: %v", err)
+	}
+	cfg, err := LoadJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Relay.Port != 3334 {
+		t.Fatalf("relay.port: got %d", cfg.Relay.Port)
+	}
+}
+
 func TestLoadInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "bad.json")

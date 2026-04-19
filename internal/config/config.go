@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/michmich112/congee/internal/nipmeta"
@@ -13,6 +14,68 @@ import (
 // Load reads and validates JSON config from path (e.g. from CONFIG_PATH).
 func Load(path string) (*Config, error) {
 	return LoadJSON(path)
+}
+
+// DefaultConfig returns the stock configuration matching config.example.json.
+func DefaultConfig() *Config {
+	return &Config{
+		Relay:    RelaySection{Port: 3334},
+		Admin:    AdminSection{Port: 3335},
+		Database: DatabaseSection{Type: "sqlite", DSN: "./congee.db"},
+		Logging:  LoggingSection{Level: "info", Format: "json"},
+		Audit:    AuditSection{RetentionDays: 30},
+		RateLimits: RateLimitsSection{
+			EventsPerMinutePerConnection: 120,
+			BytesPerSecondPerConnection:  1048576,
+			ReqsPerMinutePerConnection:   60,
+			MessagesPerMinutePerIP:       6000,
+		},
+		ConnectionLimits: ConnectionLimitsSection{
+			MaxOpen:                       10000,
+			MaxSubscriptionsPerConnection: 20,
+			MaxFiltersPerReq:              10,
+			ConnectionsPerMinutePerIP:     60,
+			ReadDeadlineSeconds:           120,
+			WriteDeadlineSeconds:          30,
+		},
+		WebSocket: WebSocketSection{
+			CompressionEnabled: true,
+			MaxMessageBytes:    1048576,
+		},
+		MaxSubscriptionIDLength: 128,
+		NIP11: NIP11Section{
+			Name:               "Congee",
+			Description:        "Nostr relay (example metadata)",
+			PubKey:             "",
+			Contact:            "",
+			Software:           "https://github.com/michmich112/congee",
+			CORSAllowAnyOrigin: false,
+		},
+		NIPs: NIPsSection{Enabled: []int{1, 11}},
+	}
+}
+
+// EnsureConfigFile writes DefaultConfig to path when no file exists there yet.
+// Existing files are never modified.
+func EnsureConfigFile(path string) error {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	c := DefaultConfig()
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("default config invalid: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+	}
+	if err := WriteConfigAtomic(path, c); err != nil {
+		return fmt.Errorf("write default %s: %w", path, err)
+	}
+	return nil
 }
 
 // LoadJSON reads JSON from path and runs semantic validation.
