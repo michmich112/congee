@@ -48,6 +48,7 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 12. **Config file writes**: Atomic — write temp file in same directory, then `os.Rename`; serialize concurrent writes with a mutex.
 13. **SQLite**: WAL mode; all writes through a **single-writer goroutine** to avoid `SQLITE_BUSY`.
 14. **Lint**: `go vet` and `golangci-lint` (see `Makefile`).
+15. **External dependencies**: When adding or updating any third-party dependency (GitHub Actions, Go modules, npm packages, Docker base images, CI toolchain pins, etc.), confirm the **latest stable release** (or the current upstream-supported line) and align to it unless there is a documented compatibility or security reason to pin differently; note any intentional lag in the change description.
 
 ## Where to read next
 
