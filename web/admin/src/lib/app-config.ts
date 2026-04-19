@@ -71,6 +71,25 @@ const defaultNip29 = (): AppConfig['nip29'] => ({
 /** Ensures nip42 exists for older config files and the config form. */
 export function ensureNip42Draft(cfg: AppConfig): void {
 	cfg.nip42 ??= defaultNip42();
+	const n = cfg.nip42;
+	// Go JSON encodes nil slices as null; the admin form expects arrays.
+	if (!Array.isArray(n.require_auth_subscribe_kinds)) {
+		n.require_auth_subscribe_kinds = [];
+	}
+	if (!Array.isArray(n.require_auth_publish_kinds)) {
+		n.require_auth_publish_kinds = [];
+	}
+	if (!Array.isArray(n.allowlisted_pubkeys)) {
+		n.allowlisted_pubkeys = [];
+	}
+}
+
+/** Ensures nips.enabled exists; Go may emit null for a nil enabled slice. */
+export function ensureNipsDraft(cfg: AppConfig): void {
+	cfg.nips ??= { enabled: [] };
+	if (!Array.isArray(cfg.nips.enabled)) {
+		cfg.nips.enabled = [];
+	}
 }
 
 /** Ensures nip29 exists for older config files and the config form. */
@@ -89,6 +108,7 @@ export function parseConfigJson(text: string): AppConfig {
 	const cfg = v as AppConfig;
 	ensureNip42Draft(cfg);
 	ensureNip29Draft(cfg);
+	ensureNipsDraft(cfg);
 	return cfg;
 }
 
