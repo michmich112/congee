@@ -17,6 +17,12 @@
 		pubkey: string;
 	};
 
+	const PAGE_SIZES = [50, 100, 250, 500, 1000] as const;
+	type PageSize = (typeof PAGE_SIZES)[number];
+
+	const selectClass =
+		'border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full max-w-[140px] rounded-lg border bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50';
+
 	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
 	const kindInDetail = /\bkind=(\d+)\b/;
 
@@ -36,12 +42,17 @@
 		return hex.length <= 10 ? hex : `${hex.slice(0, 8)}…`;
 	}
 
+	function isPageSize(n: number): n is PageSize {
+		return (PAGE_SIZES as readonly number[]).includes(n);
+	}
+
 	let entries = $state<Entry[]>([]);
+	let total = $state(0);
 	let err = $state<string | null>(null);
 	let loading = $state(true);
 
-	let limit = $state('50');
-	let offset = $state('0');
+	let page = $state(1);
+	let pageSize = $state<PageSize>(50);
 	let action = $state('');
 	let pubkey = $state('');
 	let since = $state('');
@@ -53,13 +64,24 @@
 	let eventLoadErr = $state<string | null>(null);
 	let eventLoading = $state(false);
 
-	async function load() {
+	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+
+	const rangeLabel = $derived.by(() => {
+		if (total === 0) {
+			return '0 rows (with current filters)';
+		}
+		const from = (page - 1) * pageSize + 1;
+		const to = Math.min(page * pageSize, total);
+		return `Rows ${from}–${to} of ${total}`;
+	});
+
+	async function load(allowClampRetry = true) {
 		loading = true;
 		err = null;
 		try {
 			const q = new URLSearchParams();
-			if (limit) q.set('limit', limit);
-			if (offset) q.set('offset', offset);
+			q.set('limit', String(pageSize));
+			q.set('offset', String((page - 1) * pageSize));
 			if (since) q.set('since', since);
 			if (until) q.set('until', until);
 			if (action) q.set('action', action);
@@ -69,13 +91,46 @@
 				err = await res.text();
 				return;
 			}
-			const data = (await res.json()) as { entries: Entry[] };
+			const data = (await res.json()) as { entries: Entry[]; total?: number };
 			entries = data.entries ?? [];
+			total = typeof data.total === 'number' ? data.total : 0;
+			const tp = Math.max(1, Math.ceil(total / pageSize));
+			if (page > tp) {
+				page = tp;
+				if (allowClampRetry) {
+					await load(false);
+				}
+				return;
+			}
 		} catch (e) {
 			err = e instanceof Error ? e.message : String(e);
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function applyFilters() {
+		page = 1;
+		await load();
+	}
+
+	function goPrev() {
+		if (page <= 1) return;
+		page -= 1;
+		void load();
+	}
+
+	function goNext() {
+		if (page >= totalPages) return;
+		page += 1;
+		void load();
+	}
+
+	function onPageSizeChange(ev: Event) {
+		const v = Number.parseInt((ev.currentTarget as HTMLSelectElement).value, 10);
+		pageSize = isPageSize(v) ? v : 50;
+		page = 1;
+		void load();
 	}
 
 	async function openEventModal(eventId: string) {
@@ -121,23 +176,28 @@
 	<div>
 		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). <code class="text-xs">limit</code> is capped at 5000 per
-			request; use <code class="text-xs">offset</code> for more rows. Click a truncated <code class="text-xs"
-				>event_id</code>
-			to load stored event JSON when available (full id on hover). Hover a <code class="text-xs">kind</code> for a
-			short Nostr description. Use the timestamps control above the table for time format.
+			Filter and paginate relay audit entries (newest first). The API uses <code class="text-xs">limit</code> and
+			<code class="text-xs">offset</code> with a matching <code class="text-xs">total</code> count. This UI caps
+			page size at 1000. Click a truncated <code class="text-xs">event_id</code> to load stored event JSON when
+			available (full id on hover). Hover a <code class="text-xs">kind</code> for a short Nostr description. Use the
+			timestamps control above the table for time format.
 		</p>
 	</div>
 
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		<div class="space-y-2">
-			<Label for="lim">Limit</Label>
-			<Input id="lim" type="number" min="1" max="5000" bind:value={limit} />
-			<p class="text-xs text-muted-foreground">Server caps at 5000 per request.</p>
-		</div>
-		<div class="space-y-2">
-			<Label for="off">Offset</Label>
-			<Input id="off" type="number" min="0" bind:value={offset} />
+			<Label for="page-size">Events per page</Label>
+			<select
+				id="page-size"
+				class={selectClass}
+				value={String(pageSize)}
+				onchange={onPageSizeChange}
+				aria-label="Events per page"
+			>
+				{#each PAGE_SIZES as sz}
+					<option value={String(sz)}>{sz}</option>
+				{/each}
+			</select>
 		</div>
 		<div class="space-y-2">
 			<Label for="act">Action</Label>
@@ -156,7 +216,7 @@
 			<Input id="until" bind:value={until} />
 		</div>
 		<div class="flex items-end">
-			<Button type="button" onclick={() => void load()}>Apply filters</Button>
+			<Button type="button" onclick={() => void applyFilters()}>Apply filters</Button>
 		</div>
 	</div>
 
@@ -255,6 +315,20 @@
 						{/each}
 					</Table.Body>
 				</Table.Root>
+			</div>
+			<div
+				class="flex flex-col gap-3 border-t border-border bg-muted/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+			>
+				<p class="text-sm text-muted-foreground">{rangeLabel}</p>
+				<div class="flex flex-wrap items-center gap-2">
+					<Button type="button" variant="outline" size="sm" disabled={page <= 1} onclick={goPrev}>
+						Previous
+					</Button>
+					<span class="text-sm tabular-nums text-muted-foreground">Page {page} / {totalPages}</span>
+					<Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onclick={goNext}>
+						Next
+					</Button>
+				</div>
 			</div>
 		</div>
 	{/if}
