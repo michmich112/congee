@@ -51,7 +51,6 @@
 	let rawText = $state('');
 	let rawErr = $state<string | null>(null);
 	let changelogExpanded = $state(false);
-	let relayVersion = $state<string | null>(null);
 	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
 
 	function markDirty() {
@@ -95,17 +94,7 @@
 		saveOk = false;
 		saveMessage = null;
 		saveErr = null;
-		relayVersion = null;
 		relayIdentity = null;
-		try {
-			const statsRes = await adminFetch('/api/stats');
-			if (statsRes.ok) {
-				const st = (await statsRes.json()) as { relay_version?: string };
-				relayVersion = st.relay_version ?? null;
-			}
-		} catch {
-			relayVersion = null;
-		}
 		try {
 			const idRes = await adminFetch('/api/relay-identity');
 			if (idRes.ok) {
@@ -605,13 +594,6 @@
 							</p>
 							<p class="mt-2 text-xs text-muted-foreground">
 								Mirrors the enabled NIPs list; not stored as a separate config field.
-							</p>
-						</div>
-						<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-							<p class="text-sm font-medium">Relay version (NIP-11)</p>
-							<p class="mt-1 font-mono text-sm text-foreground">{relayVersion ?? '—'}</p>
-							<p class="mt-2 text-xs text-muted-foreground">
-								Comes from the running binary (set at build time with <code class="rounded bg-muted px-1 text-[0.7rem]">go build -ldflags</code>); not in the JSON config file.
 							</p>
 						</div>
 						<div class="space-y-2">

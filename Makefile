@@ -31,5 +31,10 @@ ui-dev:
 ui-build:
 	cd web/admin && npm ci && node ./node_modules/@sveltejs/kit/svelte-kit.js sync && npm run build
 
+GIT_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
+
 docker-build:
-	docker build -t congee:latest .
+	docker build -t congee:latest \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_REVISION=$(GIT_REVISION) \
+		.

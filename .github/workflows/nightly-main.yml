@@ -28,6 +28,7 @@ jobs:
     uses: ./.github/workflows/reusable-docker-ghcr.yml
     with:
       version: ${{ needs.git_meta.outputs.short_sha }}
+      version_embed: 0.0.0-nightly+${{ needs.git_meta.outputs.short_sha }}
       push: true
       tag_latest: false
       extra_tag_suffixes: nightly

@@ -17,10 +17,13 @@ If a file named **`.env`** exists in the **current working directory** when the 
 | `ADMIN_PASSWORD` | Admin authentication | Required when admin UI is enabled (plaintext comparison at boundary — use HTTPS in production). |
 | `CONFIG_PATH` | JSON config file path | Default `./config.json`. |
 | `RELAY_SECRETS_PATH` | Relay secp256k1 secrets file | Optional. Overrides the default path for `relay.secrets.json` (32-byte secret hex JSON). When unset, the file is `relay.secrets.json` in the same directory as the config file given by `CONFIG_PATH` (or the current working directory when that directory is `.`). Created on first run if missing. |
+| `CONGEE_RELAY_PORT` | Relay HTTP/WebSocket listen port | Optional. Default 3334. When set (decimal integer), overrides `relay.port` from JSON after load. Must be between 1 and 65535. |
+| `CONGEE_ADMIN_PORT` | Admin HTTP listen port | Optional. Default 3335. When set, overrides `admin.port` from JSON after load. Must be between 1 and 65535. Ignored for binding when `ENABLE_ADMIN_UI` is not enabled, but the value still overrides the in-memory config. |
+| `CONGEE_DATA_DIR` | SQLite database directory | Optional. When set and `database.type` is empty or `sqlite`, sets `database.dsn` to `<dir>/congee.db` (after path cleaning). Ignored when `database.type` is `postgres`. The official container image sets this to `/data` by default; mount a volume there for persistence. |
 | `CONGEE_INSTANCE_ID` | PostgreSQL multi-instance identity | Optional. When `database.type` is `postgres`, identifies this process in `LISTEN`/`NOTIFY` payloads so the relay does not re-broadcast its own writes. Default: `hostname` + UUID. |
 | `TEST_POSTGRES_DSN` | Integration tests only | If set, enables PostgreSQL store/notifier tests (`go test`). Not used at runtime. |
 
-All other relay behavior — listen ports, database DSN, logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, etc. — is configured in the JSON file referenced by `CONFIG_PATH`.
+Most relay behavior — logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, etc. — is configured in the JSON file referenced by `CONFIG_PATH`. Listen ports and the SQLite file path can additionally be overridden at process start by the variables above (applied after JSON load, then the merged config is validated).
 
 For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md).
 

@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import {
+		adminFetch,
 		getAdminToken,
 		setAdminToken,
 		clearAdminToken,
@@ -21,6 +22,7 @@
 	let passwordInput = $state('');
 	let loginErr = $state('');
 	let loginBusy = $state(false);
+	let relayVersion = $state<string | null>(null);
 
 	const nav = [
 		{ href: '/', label: 'Dashboard' },
@@ -75,6 +77,24 @@
 		clearAdminToken();
 		tokenOk = false;
 	}
+
+	$effect(() => {
+		if (!tokenOk) {
+			relayVersion = null;
+			return;
+		}
+		let cancelled = false;
+		void adminFetch('/api/stats').then(async (r) => {
+			if (!r.ok || cancelled) return;
+			const j = (await r.json()) as { relay_version?: string };
+			if (!cancelled) {
+				relayVersion = typeof j.relay_version === 'string' ? j.relay_version : null;
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
 </script>
 
 <svelte:head>
@@ -115,22 +135,32 @@
 			</form>
 		</main>
 	{:else}
-		<header class="border-b border-border px-6 py-4">
-			<div class="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-4">
-				<div>
-					<p class="text-sm font-medium tracking-tight text-muted-foreground">Congee</p>
-					<h1 class="text-lg font-semibold">Relay admin</h1>
+		<div class="flex min-h-dvh flex-col">
+			<header class="border-b border-border px-6 py-4">
+				<div class="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-4">
+					<div>
+						<p class="text-sm font-medium tracking-tight text-muted-foreground">Congee</p>
+						<h1 class="text-lg font-semibold">Relay admin</h1>
+					</div>
+					<Button variant="outline" size="sm" type="button" onclick={logout}>Sign out</Button>
 				</div>
-				<Button variant="outline" size="sm" type="button" onclick={logout}>Sign out</Button>
-			</div>
-			<nav class="mx-auto mt-4 flex max-w-5xl flex-wrap gap-4 text-sm">
-				{#each nav as item}
-					<a href={item.href} class={navClass(item.href)}>{item.label}</a>
-				{/each}
-			</nav>
-		</header>
-		<main class="mx-auto max-w-5xl px-6 py-8">
-			{@render children()}
-		</main>
+				<nav class="mx-auto mt-4 flex max-w-5xl flex-wrap gap-4 text-sm">
+					{#each nav as item}
+						<a href={item.href} class={navClass(item.href)}>{item.label}</a>
+					{/each}
+				</nav>
+			</header>
+			<main class="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+				{@render children()}
+			</main>
+			<footer class="border-t border-border mt-auto">
+				<div class="mx-auto max-w-5xl px-6 py-3 text-xs text-muted-foreground">
+					{#if relayVersion}
+						Relay version <span class="font-mono tabular-nums">{relayVersion}</span>
+						<span class="text-muted-foreground/80"> (NIP-11 / binary build)</span>
+					{/if}
+				</div>
+			</footer>
+		</div>
 	{/if}
 </div>
