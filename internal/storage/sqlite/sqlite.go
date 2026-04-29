@@ -613,9 +613,7 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 	})
 }
 
-func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
-	var rows []storage.AuditLogRow
-	q := s.db.NewSelect().Model(&rows).Order("created_at DESC")
+func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.SelectQuery {
 	if query.Since > 0 {
 		q = q.Where("created_at >= ?", query.Since)
 	}
@@ -628,6 +626,12 @@ func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
+	return q
+}
+
+func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
+	var rows []storage.AuditLogRow
+	q := applySQLiteAuditLogFilters(s.db.NewSelect().Model(&rows), query).Order("created_at DESC")
 	if query.Limit > 0 {
 		q = q.Limit(query.Limit)
 	}
@@ -647,6 +651,12 @@ func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) CountAuditLog(ctx context.Context, query storage.AuditQuery) (int64, error) {
+	q := applySQLiteAuditLogFilters(s.db.NewSelect().Model((*storage.AuditLogRow)(nil)), query)
+	n, err := q.Count(ctx)
+	return int64(n), err
 }
 
 func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error) {

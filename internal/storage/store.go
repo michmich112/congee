@@ -44,6 +44,9 @@ type Store interface {
 
 	SaveAuditEntry(ctx context.Context, e AuditEntry) error
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, error)
+	// CountAuditLog returns the number of rows matching the same filters as QueryAuditLog
+	// (since, until, action, pubkey). Limit and Offset are ignored.
+	CountAuditLog(ctx context.Context, q AuditQuery) (int64, error)
 	PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error)
 
 	SaveConfigChange(ctx context.Context, c ConfigChange) error

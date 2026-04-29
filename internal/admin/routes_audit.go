@@ -8,11 +8,8 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 )
 
-// maxAuditQueryLimit caps GET /api/audit ?limit= for bounded response size (admin-only).
-const maxAuditQueryLimit = 5000
-
-// parseAuditLimit returns the effective page size from ?limit=; default 50, minimum 1, capped at maxAuditQueryLimit.
-// Values above the cap clamp instead of falling back to default so a typo like 10000 still returns a large page.
+// parseAuditLimit returns the effective page size from ?limit= (default 50 when missing or invalid).
+// There is no maximum: pagination uses offset; callers should choose a sensible page size.
 func parseAuditLimit(raw string) int {
 	const defaultLimit = 50
 	if raw == "" {
@@ -21,9 +18,6 @@ func parseAuditLimit(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 {
 		return defaultLimit
-	}
-	if n > maxAuditQueryLimit {
-		return maxAuditQueryLimit
 	}
 	return n
 }
@@ -53,12 +47,18 @@ func handleAudit(st storage.Store) http.HandlerFunc {
 		q.Action = r.URL.Query().Get("action")
 		q.Pubkey = r.URL.Query().Get("pubkey")
 
-		rows, err := st.QueryAuditLog(r.Context(), q)
+		ctx := r.Context()
+		total, err := st.CountAuditLog(ctx, q)
+		if err != nil {
+			http.Error(w, `{"error":"count failed"}`, http.StatusInternalServerError)
+			return
+		}
+		rows, err := st.QueryAuditLog(ctx, q)
 		if err != nil {
 			http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"entries": rows})
+		_ = json.NewEncoder(w).Encode(map[string]any{"entries": rows, "total": total})
 	}
 }

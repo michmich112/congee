@@ -229,6 +229,10 @@ func TestSQLiteAuditAndChangelog(t *testing.T) {
 	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 100, Action: "x", Detail: "d", Pubkey: nostrRepeat("p", 64)}); err != nil {
 		t.Fatal(err)
 	}
+	nAudit, err := st.CountAuditLog(ctx, storage.AuditQuery{})
+	if err != nil || nAudit != 1 {
+		t.Fatalf("CountAuditLog: want 1, got %d %v", nAudit, err)
+	}
 	rows, err := st.QueryAuditLog(ctx, storage.AuditQuery{Limit: 10})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("audit: %+v %v", rows, err)
