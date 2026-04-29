@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { adminFetch } from '$lib/admin-api';
+	import { describeNostrKind } from '$lib/nostr-kind-descriptions';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
@@ -17,10 +18,18 @@
 	};
 
 	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
+	const kindInDetail = /\bkind=(\d+)\b/;
 
 	function parseAuditEventId(detail: string): string | null {
 		const m = detail.match(eventIDInDetail);
 		return m ? m[1].toLowerCase() : null;
+	}
+
+	function parseAuditKind(detail: string): number | null {
+		const m = detail.match(kindInDetail);
+		if (!m) return null;
+		const n = Number.parseInt(m[1], 10);
+		return Number.isFinite(n) ? n : null;
 	}
 
 	function shortEventId(hex: string): string {
@@ -112,16 +121,19 @@
 	<div>
 		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). Click a truncated <code class="text-xs">event_id</code>
-			to load stored event JSON when available (full id on hover). Use the timestamps control above the table for
-			time format.
+			Filter and paginate relay audit entries (newest first). <code class="text-xs">limit</code> is capped at 5000 per
+			request; use <code class="text-xs">offset</code> for more rows. Click a truncated <code class="text-xs"
+				>event_id</code>
+			to load stored event JSON when available (full id on hover). Hover a <code class="text-xs">kind</code> for a
+			short Nostr description. Use the timestamps control above the table for time format.
 		</p>
 	</div>
 
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		<div class="space-y-2">
 			<Label for="lim">Limit</Label>
-			<Input id="lim" type="number" min="1" max="500" bind:value={limit} />
+			<Input id="lim" type="number" min="1" max="5000" bind:value={limit} />
+			<p class="text-xs text-muted-foreground">Server caps at 5000 per request.</p>
 		</div>
 		<div class="space-y-2">
 			<Label for="off">Offset</Label>
@@ -193,6 +205,7 @@
 						<Table.Row>
 							<Table.Head class="whitespace-nowrap">Time</Table.Head>
 							<Table.Head>Action</Table.Head>
+							<Table.Head class="whitespace-nowrap text-right">Kind</Table.Head>
 							<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
 							<Table.Head>Pubkey</Table.Head>
 							<Table.Head>Detail</Table.Head>
@@ -201,9 +214,19 @@
 					<Table.Body>
 						{#each entries as row, i (i + '-' + row.created_at + '-' + row.action + '-' + row.detail)}
 							{@const eid = parseAuditEventId(row.detail)}
+							{@const kind = parseAuditKind(row.detail)}
 							<Table.Row>
 								<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
 								<Table.Cell class="text-sm">{row.action}</Table.Cell>
+								<Table.Cell class="text-right font-mono text-xs tabular-nums">
+									{#if kind !== null}
+										<span class="cursor-help border-b border-dotted border-muted-foreground/60" title={describeNostrKind(kind)}
+											>{kind}</span
+										>
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
+								</Table.Cell>
 								<Table.Cell class="font-mono text-xs">
 									{#if eid}
 										<button
@@ -227,7 +250,7 @@
 							</Table.Row>
 						{:else}
 							<Table.Row>
-								<Table.Cell colspan={5} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
+								<Table.Cell colspan={6} class="text-center text-sm text-muted-foreground">No rows</Table.Cell>
 							</Table.Row>
 						{/each}
 					</Table.Body>
