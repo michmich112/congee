@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/storage"
 )
 
 func testPostgresDSN(t *testing.T) string {
@@ -152,5 +154,58 @@ func TestPostgresNotifierForeignOrigin(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for NOTIFY")
+	}
+}
+
+func TestPostgresAuditLogCountAndPagination(t *testing.T) {
+	ctx := context.Background()
+	dsn := testPostgresDSN(t)
+	t.Setenv("CONGEE_INSTANCE_ID", "test-audit-page")
+	st, err := Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Unique action so concurrent test runs do not count unrelated rows.
+	action := "pg_audit_pagination_test"
+	if _, err := st.db.NewDelete().Model((*storage.AuditLogRow)(nil)).Where("action = ?", action).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 15; i++ {
+		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+			CreatedAt: int64(8000 - i),
+			Action:    action,
+			Detail:    nostrRepeat('d', 20) + fmt.Sprintf(" i=%d", i),
+			Pubkey:    nostrRepeat('p', 64),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	qBase := storage.AuditQuery{Action: action}
+	total, err := st.CountAuditLog(ctx, qBase)
+	if err != nil || total != 15 {
+		t.Fatalf("CountAuditLog: want 15, got %d %v", total, err)
+	}
+	page0, err := st.QueryAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 6, Offset: 0})
+	if err != nil || len(page0) != 6 {
+		t.Fatalf("page0: len=%d %v", len(page0), err)
+	}
+	if page0[0].CreatedAt != 8000 || page0[5].CreatedAt != 7995 {
+		t.Fatalf("page0 window: first=%d last=%d", page0[0].CreatedAt, page0[5].CreatedAt)
+	}
+	page1, err := st.QueryAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 6, Offset: 6})
+	if err != nil || len(page1) != 6 {
+		t.Fatalf("page1: len=%d %v", len(page1), err)
+	}
+	if page1[0].CreatedAt != 7994 {
+		t.Fatalf("page1 first: want 7994, got %d", page1[0].CreatedAt)
+	}
+	total2, err := st.CountAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 6, Offset: 6})
+	if err != nil || total2 != 15 {
+		t.Fatalf("CountAuditLog ignores limit/offset: want 15, got %d %v", total2, err)
+	}
+	if _, err := st.db.NewDelete().Model((*storage.AuditLogRow)(nil)).Where("action = ?", action).Exec(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

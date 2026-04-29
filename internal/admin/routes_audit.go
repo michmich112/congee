@@ -22,7 +22,8 @@ func parseAuditLimit(raw string) int {
 	return n
 }
 
-func handleAudit(st storage.Store) http.HandlerFunc {
+// HandleAudit serves GET /audit (mounted under /api/ after StripPrefix, wrapped by RequireAdminAuth).
+func HandleAudit(st storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

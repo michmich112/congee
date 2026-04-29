@@ -118,7 +118,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
 	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart, relayID).ServeHTTP)
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
-	api.HandleFunc("GET /audit", handleAudit(store).ServeHTTP)
+	api.HandleFunc("GET /audit", HandleAudit(store).ServeHTTP)
 	api.HandleFunc("GET /events/{id}", handleGetEvent(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
