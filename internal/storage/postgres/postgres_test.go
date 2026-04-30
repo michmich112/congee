@@ -176,7 +176,7 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 			CreatedAt: int64(8000 - i),
 			Action:    action,
-			Detail:    nostrRepeat('d', 20) + fmt.Sprintf(" i=%d", i),
+			Detail:    fmt.Sprintf("event_id=%s conn_id=c stored=true kind=%d", nostrRepeat('e', 64), i%3),
 			Pubkey:    nostrRepeat('p', 64),
 		}); err != nil {
 			t.Fatal(err)
@@ -204,6 +204,11 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 	total2, err := st.CountAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 6, Offset: 6})
 	if err != nil || total2 != 15 {
 		t.Fatalf("CountAuditLog ignores limit/offset: want 15, got %d %v", total2, err)
+	}
+	k0 := 0
+	nKind0, err := st.CountAuditLog(ctx, storage.AuditQuery{Action: action, Kind: &k0})
+	if err != nil || nKind0 != 5 {
+		t.Fatalf("CountAuditLog kind=0: want 5, got %d %v", nKind0, err)
 	}
 	if _, err := st.db.NewDelete().Model((*storage.AuditLogRow)(nil)).Where("action = ?", action).Exec(ctx); err != nil {
 		t.Fatal(err)

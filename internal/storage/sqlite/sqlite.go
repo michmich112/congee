@@ -626,6 +626,11 @@ func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *b
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
+	if query.Kind != nil {
+		suffix := fmt.Sprintf("kind=%d", *query.Kind)
+		n := len(suffix)
+		q = q.Where("substr(detail, -?) = ?", n, suffix)
+	}
 	return q
 }
 

@@ -73,3 +73,15 @@ export function describeNostrKind(kind: number): string {
 	}
 	return `Kind ${kind} — ${nip01StorageHint(kind)}`;
 }
+
+/** Sorted list for audit log kind filter dropdown (number + short description). */
+export function knownKindDropdownEntries(): { kind: number; label: string }[] {
+	const kinds = Object.keys(WELL_KNOWN_KINDS)
+		.map((k) => Number.parseInt(k, 10))
+		.filter((n) => Number.isFinite(n))
+		.sort((a, b) => a - b);
+	return kinds.map((kind) => ({
+		kind,
+		label: `${kind} — ${WELL_KNOWN_KINDS[kind]}`
+	}));
+}

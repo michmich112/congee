@@ -25,6 +25,7 @@ import (
 //   - action= exact filter on total and entries
 //   - since / until unix filters on total and entries
 //   - pubkey= exact filter
+//   - kind= matches rows whose detail ends with NIP-01-style "... kind=<n>"
 //   - POST returns 405; missing auth returns 401
 //   - JSON body includes entries and total
 
@@ -63,6 +64,7 @@ func getAuditJSON(t *testing.T, h http.Handler, query string) (auditAPIResponse,
 // seedAuditHTTPTestData writes 32 rows: created_at 3000..2969 (newest first by id order),
 // rows i in [0,26] action event_accepted; i in [27,31] action onlyme (5 rows).
 // Rows i in [0,2] use pubkey pkRare; others use pkCommon.
+// Detail matches NIP-01 audit post-hook shape and ends with kind=(i mod 5).
 func seedAuditHTTPTestData(ctx context.Context, t *testing.T, st *sqlite.Store) {
 	t.Helper()
 	pkCommon := strings.Repeat("a", 64)
@@ -77,10 +79,12 @@ func seedAuditHTTPTestData(ctx context.Context, t *testing.T, st *sqlite.Store) 
 		if i < 3 {
 			pub = pkRare
 		}
+		kindN := i % 5
+		detail := fmt.Sprintf("event_id=%s conn_id=c%d stored=true kind=%d", id, i, kindN)
 		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 			CreatedAt: int64(3000 - i),
 			Action:    action,
-			Detail:    fmt.Sprintf("event_id=%s kind=1 idx=%d", id, i),
+			Detail:    detail,
 			Pubkey:    pub,
 		}); err != nil {
 			t.Fatal(err)
@@ -282,6 +286,22 @@ func TestHandleAudit_HTTP(t *testing.T) {
 		for _, e := range body.Entries {
 			if e.Pubkey != pkRare {
 				t.Fatalf("pubkey leak")
+			}
+		}
+	})
+
+	t.Run("kind_filter_suffix_match", func(t *testing.T) {
+		// kind=0 for indices i where i%5==0: 0,5,10,15,20,25,30 => 7 rows
+		body, code := getAuditJSON(t, h, "kind=0&limit=100&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 7 || len(body.Entries) != 7 {
+			t.Fatalf("kind=0: want total 7 len 7, got %d %d", body.Total, len(body.Entries))
+		}
+		for _, e := range body.Entries {
+			if !strings.HasSuffix(e.Detail, "kind=0") {
+				t.Fatalf("detail should end with kind=0: %q", e.Detail)
 			}
 		}
 	})

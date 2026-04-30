@@ -5,7 +5,7 @@
 //	GET    /api/config           — raw JSON file
 //	PUT    /api/config           — replace file (validated, atomic, changelog)
 //	GET    /api/config/changelog — recent config changes (?limit=)
-//	GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey); JSON {entries,total}
+//	GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey,&kind); JSON {entries,total}
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
@@ -44,7 +44,7 @@ import (
 //
 //	GET/PUT  /config           — raw JSON file; PUT validates, atomic write, changelog row
 //	GET      /config/changelog — recent config change records (?limit=)
-//	GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey); body {entries,total}
+//	GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey,&kind); body {entries,total}
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
@@ -107,7 +107,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	// API prefix: all handlers below are mounted at /api/ (StripPrefix removes "/api").
 	//   GET|PUT  /api/config           — raw JSON file; PUT validates, atomic write, changelog row
 	//   GET      /api/config/changelog — recent config change rows (?limit=)
-	//   GET      /api/audit            — audit log (?limit=&offset=&since=&until=&action=&pubkey=); {entries,total}
+	//   GET      /api/audit            — audit log (?limit=&offset=&since=&until=&action=&pubkey=&kind=); {entries,total}
 	//   GET      /api/events/{id}      — one event from storage by id
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required

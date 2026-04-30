@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -455,6 +456,11 @@ func applyPostgresAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) 
 	}
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
+	}
+	if query.Kind != nil {
+		suffix := fmt.Sprintf("kind=%d", *query.Kind)
+		n := len(suffix)
+		q = q.Where("right(detail, ?) = ?", n, suffix)
 	}
 	return q
 }

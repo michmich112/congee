@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { adminFetch } from '$lib/admin-api';
-	import { describeNostrKind } from '$lib/nostr-kind-descriptions';
+	import { describeNostrKind, knownKindDropdownEntries } from '$lib/nostr-kind-descriptions';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
@@ -21,7 +21,17 @@
 	type PageSize = (typeof PAGE_SIZES)[number];
 
 	const selectClass =
-		'border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full max-w-[140px] rounded-lg border bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50';
+		'border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50';
+
+	const selectClassNarrow =
+		selectClass + ' max-w-[140px]';
+
+	const AUDIT_ACTION_OPTIONS = [
+		{ value: '', label: 'Any action' },
+		{ value: 'event_accepted', label: 'event_accepted' }
+	] as const;
+
+	const KIND_FILTER_OPTIONS = knownKindDropdownEntries();
 
 	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
 	const kindInDetail = /\bkind=(\d+)\b/;
@@ -55,8 +65,9 @@
 	let pageSize = $state<PageSize>(50);
 	let action = $state('');
 	let pubkey = $state('');
-	let since = $state('');
-	let until = $state('');
+	let sinceDate = $state('');
+	let untilDate = $state('');
+	let kindFilter = $state('');
 
 	let dialogOpen = $state(false);
 	let selectedEventId = $state<string | null>(null);
@@ -64,7 +75,15 @@
 	let eventLoadErr = $state<string | null>(null);
 	let eventLoading = $state(false);
 
-	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+	function localDayStartUnix(isoDate: string): number {
+		const [y, m, d] = isoDate.split('-').map((x) => Number.parseInt(x, 10));
+		return Math.floor(new Date(y, m - 1, d, 0, 0, 0, 0).getTime() / 1000);
+	}
+
+	function localDayEndUnix(isoDate: string): number {
+		const [y, m, d] = isoDate.split('-').map((x) => Number.parseInt(x, 10));
+		return Math.floor(new Date(y, m - 1, d, 23, 59, 59, 999).getTime() / 1000);
+	}
 
 	const rangeLabel = $derived.by(() => {
 		if (total === 0) {
@@ -75,6 +94,8 @@
 		return `Rows ${from}–${to} of ${total}`;
 	});
 
+	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+
 	async function load(allowClampRetry = true) {
 		loading = true;
 		err = null;
@@ -82,10 +103,11 @@
 			const q = new URLSearchParams();
 			q.set('limit', String(pageSize));
 			q.set('offset', String((page - 1) * pageSize));
-			if (since) q.set('since', since);
-			if (until) q.set('until', until);
+			if (sinceDate) q.set('since', String(localDayStartUnix(sinceDate)));
+			if (untilDate) q.set('until', String(localDayEndUnix(untilDate)));
 			if (action) q.set('action', action);
 			if (pubkey) q.set('pubkey', pubkey);
+			if (kindFilter !== '') q.set('kind', kindFilter);
 			const res = await adminFetch(`/api/audit?${q}`);
 			if (!res.ok) {
 				err = await res.text();
@@ -176,11 +198,12 @@
 	<div>
 		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). The API uses <code class="text-xs">limit</code> and
-			<code class="text-xs">offset</code> with a matching <code class="text-xs">total</code> count. This UI caps
-			page size at 1000. Click a truncated <code class="text-xs">event_id</code> to load stored event JSON when
-			available (full id on hover). Hover a <code class="text-xs">kind</code> for a short Nostr description. Use the
-			timestamps control above the table for time format.
+			Filter and paginate relay audit entries (newest first). Since/until use your local calendar day (midnight
+			through end of day in the browser timezone, sent as unix bounds). The API returns <code class="text-xs">total</code> for
+			pagination. Page size is capped at 1000 here. Optional <code class="text-xs">kind</code> matches stored audit
+			detail lines that end with <code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). Click a truncated
+			<code class="text-xs">event_id</code> to load stored event JSON. Hover a <code class="text-xs">kind</code> in the
+			table for a short Nostr description. Use the timestamps control above the table for column time format.
 		</p>
 	</div>
 
@@ -189,7 +212,7 @@
 			<Label for="page-size">Events per page</Label>
 			<select
 				id="page-size"
-				class={selectClass}
+				class={selectClassNarrow}
 				value={String(pageSize)}
 				onchange={onPageSizeChange}
 				aria-label="Events per page"
@@ -201,19 +224,32 @@
 		</div>
 		<div class="space-y-2">
 			<Label for="act">Action</Label>
-			<Input id="act" bind:value={action} placeholder="exact match" />
+			<select id="act" class={selectClass} bind:value={action} aria-label="Audit action filter">
+				{#each AUDIT_ACTION_OPTIONS as opt}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="space-y-2">
+			<Label for="kind-filter">Kind</Label>
+			<select id="kind-filter" class={selectClass} bind:value={kindFilter} aria-label="Event kind filter">
+				<option value="">Any kind</option>
+				{#each KIND_FILTER_OPTIONS as k}
+					<option value={String(k.kind)} title={k.label}>{k.label}</option>
+				{/each}
+			</select>
 		</div>
 		<div class="space-y-2">
 			<Label for="pk">Pubkey</Label>
 			<Input id="pk" bind:value={pubkey} placeholder="exact hex" />
 		</div>
 		<div class="space-y-2">
-			<Label for="since">Since (unix)</Label>
-			<Input id="since" bind:value={since} />
+			<Label for="since-date">Since (date)</Label>
+			<Input id="since-date" type="date" bind:value={sinceDate} class="block" />
 		</div>
 		<div class="space-y-2">
-			<Label for="until">Until (unix)</Label>
-			<Input id="until" bind:value={until} />
+			<Label for="until-date">Until (date)</Label>
+			<Input id="until-date" type="date" bind:value={untilDate} class="block" />
 		</div>
 		<div class="flex items-end">
 			<Button type="button" onclick={() => void applyFilters()}>Apply filters</Button>

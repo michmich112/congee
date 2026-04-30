@@ -29,6 +29,8 @@ type AuditQuery struct {
 	Offset int
 	Action string
 	Pubkey string
+	// Kind, when non-nil, matches audit rows whose detail ends with "kind=<n>" (NIP-01 post-hook format).
+	Kind *int
 }
 
 // Store is the relay persistence API (SQLite, PostgreSQL, etc.).

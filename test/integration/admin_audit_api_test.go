@@ -37,7 +37,7 @@ func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Stor
 		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 			CreatedAt: int64(5000 - i),
 			Action:    "event_accepted",
-			Detail:    fmt.Sprintf("event_id=%s kind=1 n=%d", id, i),
+			Detail:    fmt.Sprintf("event_id=%s conn_id=c stored=true kind=%d", id, i%4),
 			Pubkey:    strings.Repeat("9", 64),
 		}); err != nil {
 			t.Fatal(err)
