@@ -34,7 +34,8 @@
 	const KIND_FILTER_OPTIONS = knownKindDropdownEntries();
 
 	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
-	const kindInDetail = /\bkind=(\d+)\b/;
+	/** Trailing field from NIP-01 post-hook detail (same suffix the /api/audit?kind= filter uses). */
+	const kindSuffixInDetail = / kind=(\d+)$/;
 
 	function parseAuditEventId(detail: string): string | null {
 		const m = detail.match(eventIDInDetail);
@@ -42,7 +43,7 @@
 	}
 
 	function parseAuditKind(detail: string): number | null {
-		const m = detail.match(kindInDetail);
+		const m = detail.match(kindSuffixInDetail);
 		if (!m) return null;
 		const n = Number.parseInt(m[1], 10);
 		return Number.isFinite(n) ? n : null;
@@ -224,7 +225,13 @@
 		</div>
 		<div class="space-y-2">
 			<Label for="act">Action</Label>
-			<select id="act" class={selectClass} bind:value={action} aria-label="Audit action filter">
+			<select
+				id="act"
+				class={selectClass}
+				bind:value={action}
+				aria-label="Audit action filter"
+				onchange={() => void applyFilters()}
+			>
 				{#each AUDIT_ACTION_OPTIONS as opt}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
@@ -232,7 +239,13 @@
 		</div>
 		<div class="space-y-2">
 			<Label for="kind-filter">Kind</Label>
-			<select id="kind-filter" class={selectClass} bind:value={kindFilter} aria-label="Event kind filter">
+			<select
+				id="kind-filter"
+				class={selectClass}
+				bind:value={kindFilter}
+				aria-label="Event kind filter"
+				onchange={() => void applyFilters()}
+			>
 				<option value="">Any kind</option>
 				{#each KIND_FILTER_OPTIONS as k}
 					<option value={String(k.kind)} title={k.label}>{k.label}</option>
