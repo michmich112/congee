@@ -103,6 +103,9 @@ func (c *Config) Validate() error {
 	if err := validatePort("relay.port", c.Relay.Port); err != nil {
 		return err
 	}
+	if err := validateRelayInstanceIDField(c.Relay.InstanceID); err != nil {
+		return err
+	}
 	if err := validatePort("admin.port", c.Admin.Port); err != nil {
 		return err
 	}
@@ -204,6 +207,20 @@ func (c *Config) Validate() error {
 func validatePort(field string, p int) error {
 	if p < 1 || p > 65535 {
 		return fmt.Errorf("config: %s must be between 1 and 65535", field)
+	}
+	return nil
+}
+
+func validateRelayInstanceIDField(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	if len(s) > 256 {
+		return errors.New("config: relay.instance_id must be at most 256 characters")
+	}
+	if strings.ContainsAny(s, "\r\n\x00") {
+		return errors.New("config: relay.instance_id must not contain newline or null characters")
 	}
 	return nil
 }

@@ -73,7 +73,7 @@ func migrationSourceMatchesConfig(cfg *config.Config, src migrationEndpoint) boo
 		strings.TrimSpace(src.DSN) == strings.TrimSpace(cfg.Database.DSN)
 }
 
-func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
+func openMigrationSource(ctx context.Context, typ, dsn, postgresInstanceID string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
 	switch typ {
 	case "sqlite":
 		if dsn == "" {
@@ -88,7 +88,7 @@ func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logge
 		if dsn == "" {
 			return nil, nil, errors.New("postgres dsn is required")
 		}
-		st, err := postgres.Open(ctx, dsn, log)
+		st, err := postgres.Open(ctx, dsn, postgresInstanceID, log)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -197,7 +197,9 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		ctx := r.Context()
 		migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
 
-		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, l)
+		instanceID := config.EffectiveRelayInstanceID(cfg)
+
+		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, instanceID, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "source", req.Source.Type, req.Source.DSN).
 				Err(err).Str("phase", "open_source").Msg("migration rejected: open source failed")
@@ -208,7 +210,7 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 
 		migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("opening migration target")
 
-		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, l)
+		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, instanceID, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "target", req.Target.Type, req.Target.DSN).
 				Err(err).Str("phase", "open_target").Msg("migration rejected: open target failed")

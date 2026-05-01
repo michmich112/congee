@@ -31,7 +31,7 @@ func TestPostgresCRUD(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-crud")
-	st, err := Open(ctx, dsn, zerolog.Nop())
+	st, err := Open(ctx, dsn, "test-crud", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestPostgresManyTagsJSONBRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-tag-jsonb")
-	st, err := Open(ctx, dsn, zerolog.Nop())
+	st, err := Open(ctx, dsn, "test-tag-jsonb", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestPostgresSearchWithKindFilter(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-search")
-	st, err := Open(ctx, dsn, zerolog.Nop())
+	st, err := Open(ctx, dsn, "test-search", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,14 +165,14 @@ func TestPostgresNotifierForeignOrigin(t *testing.T) {
 	dsn := testPostgresDSN(t)
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-a")
-	sa, err := Open(ctx, dsn, zerolog.Nop())
+	sa, err := Open(ctx, dsn, "relay-a", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sa.Close()
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-b")
-	sb, err := Open(ctx, dsn, zerolog.Nop())
+	sb, err := Open(ctx, dsn, "relay-b", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-audit-page")
-	st, err := Open(ctx, dsn, zerolog.Nop())
+	st, err := Open(ctx, dsn, "test-audit-page", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

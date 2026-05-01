@@ -34,5 +34,5 @@ COPY --from=go-build /src/web/admin/build /web/admin/build
 COPY --from=go-build /out/congee /usr/local/bin/congee
 ENV CONGEE_DATA_DIR=/data
 EXPOSE 3334 3335
-VOLUME ["/config", "/data"]
+VOLUME ["/data"]
 ENTRYPOINT ["congee"]

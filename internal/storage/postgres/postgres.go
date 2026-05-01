@@ -29,12 +29,17 @@ type Store struct {
 var _ storage.Store = (*Store)(nil)
 
 // Open connects with Bun + pgdriver, runs migrations, and starts the event notifier listener.
+// instanceID is sent as NOTIFY payload origin so this process ignores its own writes.
 // log is used for optional debug traces (use zerolog.Nop() when silent).
-func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
+func Open(ctx context.Context, dsn string, instanceID string, log zerolog.Logger) (*Store, error) {
 	log = log.With().Str("engine", "postgres").Logger()
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
 		return nil, errors.New("postgres: empty dsn")
+	}
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return nil, errors.New("postgres: relay instance id is required")
 	}
 
 	log.Debug().Msg("open: creating driver connector")
@@ -59,7 +64,7 @@ func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 	log.Debug().Msg("open: schema migrations done")
 
 	log.Debug().Msg("open: starting listen/notify notifier")
-	n, err := NewNotifier(db, dsn, localInstanceID())
+	n, err := NewNotifier(db, dsn, instanceID)
 	if err != nil {
 		_ = db.Close()
 		log.Warn().Err(err).Msg("open: notifier startup failed")

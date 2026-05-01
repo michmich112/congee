@@ -16,7 +16,10 @@ Congee can use **SQLite** (default) or **PostgreSQL** for persistence. Set this 
 
 When using PostgreSQL, each relay process sends `NOTIFY new_event` with payload `{"id":"<hex>","origin":"<instance_id>"}` after a successful `SaveEvent`. Other instances `LISTEN` on the same channel, ignore their own `origin`, load the event by id, and broadcast it to active REQ subscriptions.
 
-Set a stable **`CONGEE_INSTANCE_ID`** per process so local writes are not double-delivered to subscribers. If unset, Congee uses `hostname` + a random UUID (unique per boot, not ideal for long-lived clustered identity).
+Give each relay process a **stable** origin id so local writes are not double-delivered to subscribers:
+
+- Prefer **`relay.instance_id`** in the JSON config (auto-generated and persisted on first start when `CONGEE_INSTANCE_ID` is unset). You can change it from the admin UI (**Config → Relay**) when the environment variable is not set; a restart is required for the running PostgreSQL listener to pick up a new id.
+- Optionally set **`CONGEE_INSTANCE_ID`** in the environment to force the id for that process; it overrides the config value at runtime and cannot be changed from the UI.
 
 ## Admin migration API
 
