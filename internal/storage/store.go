@@ -40,12 +40,16 @@ type Store interface {
 	QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error)
 	DeleteEvent(ctx context.Context, id string) error
 	CountEvents(ctx context.Context, filters []nostr.Filter) (int, error)
+	// HasEventID reports whether an event with the given id is already stored.
+	HasEventID(ctx context.Context, id string) (bool, error)
 	// SearchEvents runs a NIP-50 full-text query against stored event content, intersected
 	// with structural constraints from constraints (ids, authors, kinds, time range, tags).
 	// The Search field on constraints is ignored.
 	SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error)
 
 	SaveAuditEntry(ctx context.Context, e AuditEntry) error
+	// HasAuditDuplicate reports whether an audit row identical to e already exists.
+	HasAuditDuplicate(ctx context.Context, e AuditEntry) (bool, error)
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, error)
 	// CountAuditLog returns the number of rows matching the same filters as QueryAuditLog
 	// (since, until, action, pubkey, kinds). Limit and Offset are ignored.

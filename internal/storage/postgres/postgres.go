@@ -337,6 +337,12 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 	return len(byID), nil
 }
 
+// HasEventID implements storage.Store.
+func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Where("id = ?", id).Limit(1).Count(ctx)
+	return n > 0, err
+}
+
 // SearchEvents uses tsvector + GIN (NIP-50), ordered by ts_rank_cd descending.
 func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
 	q := strings.TrimSpace(searchQuery)
@@ -460,6 +466,31 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 	}
 	_, err := s.db.NewInsert().Model(&row).Exec(ctx)
 	return err
+}
+
+// HasAuditDuplicate implements storage.Store.
+func (s *Store) HasAuditDuplicate(ctx context.Context, e storage.AuditEntry) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("created_at = ? AND action = ? AND detail = ? AND pubkey = ?",
+			e.CreatedAt, e.Action, e.Detail, e.Pubkey).
+		Limit(1).
+		Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	evID := storage.ExtractAuditDetailEventID(e.Detail)
+	if evID == "" {
+		return false, nil
+	}
+	pat := "%event_id=" + evID + "%"
+	n2, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("pubkey = ? AND LOWER(detail) LIKE ?", e.Pubkey, pat).
+		Limit(1).
+		Count(ctx)
+	return n2 > 0, err
 }
 
 func applyPostgresAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.SelectQuery {
