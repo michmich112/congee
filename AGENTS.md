@@ -19,6 +19,10 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `internal/config/` — JSON config load/validate, atomic writes, changelog.
 - `web/admin/` — SvelteKit admin UI (Tailwind, shadcn-svelte).
 
+### PostgreSQL: `event_tags.full_json` (JSONB)
+
+Bun’s JSONB appender calls `json.Marshal` on the Go field. Use **`json.RawMessage`** (or raw `[]byte` with the correct appender) for `full_json`—not **`string` holding JSON text with `bun:",type:jsonb"`**—or the column stores a JSON **string** wrapping the array and `QueryEvents` / admin event loads can fail. Legacy rows are decoded via `storage.DecodeTagFullJSON`. Regression coverage: `TestPostgresManyTagsJSONBRoundTrip` in `internal/storage/postgres/postgres_test.go` (runs when `TEST_POSTGRES_DSN` is set).
+
 See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detail.
 
 ## Languages and tooling
