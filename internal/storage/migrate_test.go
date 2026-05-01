@@ -53,8 +53,12 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := storage.Migrate(ctx, src, dst, nil, nil); err != nil {
+	sum, err := storage.Migrate(ctx, src, dst, nil, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if sum.EventsInserted != 1 || sum.EventsSkipped != 0 || sum.ChangelogCopied != 1 {
+		t.Fatalf("summary: %+v", sum)
 	}
 
 	out, err := dst.QueryEvents(ctx, []nostr.Filter{{IDs: []string{ev.ID}}})
@@ -113,8 +117,12 @@ func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := storage.Migrate(ctx, src, dst, nil, nil); err != nil {
+	sum, err := storage.Migrate(ctx, src, dst, nil, nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if sum.EventsInserted != 0 || sum.EventsSkipped != 1 || sum.AuditInserted != 0 || sum.AuditSkipped != 1 {
+		t.Fatalf("summary: %+v", sum)
 	}
 
 	out, err := dst.QueryEvents(ctx, []nostr.Filter{{IDs: []string{ev.ID}}})
