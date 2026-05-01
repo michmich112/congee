@@ -27,7 +27,7 @@ import (
 //   - action= exact filter
 //   - pubkey= exact filter
 //   - since= and until= unix bounds on created_at (inclusive)
-//   - combined filters narrow the result set consistently
+//   - combined filters narrow the result set consistently (including multi-kind OR + since/until)
 //   - X-Admin-Token accepted
 
 const integrationAuditPassword = "integration-audit-pass"
@@ -312,6 +312,23 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 		}
 		if body.Entries[0].CreatedAt != 2005 {
 			t.Fatalf("want row i=5 created_at 2005, got %d", body.Entries[0].CreatedAt)
+		}
+	})
+
+	t.Run("combined_multi_kind_since_until", func(t *testing.T) {
+		// Rows i=2..6 (created_at 2002..2006). kind=1 at i=3,6; kind=3 at i=2,5 => OR gives i=2,3,5,6 (four rows).
+		body, code := do("kind=1&kind=3&since=2002&until=2006&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 4 || len(body.Entries) != 4 {
+			t.Fatalf("multi-kind + time: want 4 rows, got total=%d len=%d", body.Total, len(body.Entries))
+		}
+		want := map[int64]struct{}{2002: {}, 2003: {}, 2005: {}, 2006: {}}
+		for _, e := range body.Entries {
+			if _, ok := want[e.CreatedAt]; !ok {
+				t.Fatalf("unexpected created_at %d", e.CreatedAt)
+			}
 		}
 	})
 }
