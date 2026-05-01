@@ -33,6 +33,7 @@
 		| {
 				ok: true;
 				summary: MigrationSummary;
+				make_target_primary: boolean;
 				config_updated: boolean;
 				restart_required: boolean;
 				restarting: boolean;
@@ -42,8 +43,11 @@
 		  }
 		| { ok: false; message: string };
 
+	type MigrateMode = 'data_only' | 'data_and_primary';
+
 	let source = $state<Endpoint>({ type: 'sqlite', dsn: './congee.db' });
 	let target = $state<Endpoint>({ type: 'postgres', dsn: '' });
+	let migrateMode = $state<MigrateMode>('data_only');
 	let busy = $state(false);
 	let progressPct = $state(0);
 	let progressMsg = $state('');
@@ -88,7 +92,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					source: { type: source.type, dsn: source.dsn.trim() },
-					target: { type: target.type, dsn: target.dsn.trim() }
+					target: { type: target.type, dsn: target.dsn.trim() },
+					make_target_primary: migrateMode === 'data_and_primary'
 				})
 			});
 			if (res.status === 409) {
@@ -130,6 +135,7 @@
 						try {
 							const j = JSON.parse(e.data) as {
 								summary?: MigrationSummary;
+								make_target_primary?: boolean;
 								config_updated?: boolean;
 								restart_required?: boolean;
 								restarting?: boolean;
@@ -141,6 +147,7 @@
 								outcome = {
 									ok: true,
 									summary: j.summary,
+									make_target_primary: j.make_target_primary === true,
 									config_updated: j.config_updated === true,
 									restart_required: j.restart_required === true,
 									restarting: j.restarting === true,
@@ -176,16 +183,20 @@
 		<h2 class="text-lg font-semibold">Database migration</h2>
 		<p class="mt-1 text-sm text-muted-foreground">
 			Copy events, tags, audit log, and config changelog between SQLite files and PostgreSQL. Target must be
-			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem). After
-			a successful copy, the relay config file is updated to use the target database; restart the process to run
-			on the new store.
+			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem).
+			<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span> in the menu
+			only when you want the JSON config switched to the target and a restart scheduled; otherwise keep
+			<span class="font-medium text-foreground">Start migration</span> (data copy only).
 		</p>
 	</div>
 
 	<Card.Root>
 		<Card.Header>
 			<Card.Title>Endpoints</Card.Title>
-			<Card.Description>JSON body mirrors <code class="text-xs">POST /api/migration/start</code>.</Card.Description>
+			<Card.Description>
+				JSON mirrors <code class="text-xs">POST /api/migration/start</code>; set
+				<code class="text-xs">make_target_primary</code> to update config after copy.
+			</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-6">
 			<div class="grid gap-6 sm:grid-cols-2">
@@ -285,18 +296,36 @@
 								</Alert.Description>
 							</Alert.Root>
 						{/if}
-					{:else if outcome.config_error}
+					{:else if outcome.make_target_primary && outcome.config_error}
 						<Alert.Root variant="destructive">
 							<Alert.Title>Config file not updated</Alert.Title>
 							<Alert.Description>{outcome.config_error}</Alert.Description>
 						</Alert.Root>
+					{:else if !outcome.make_target_primary}
+						<p class="text-sm text-muted-foreground">
+							Relay configuration was left unchanged (data copy only). To point Congee at this target,
+							run again with <span class="font-medium text-foreground">Start migration &amp; make target
+								primary DB</span> or edit <code class="text-xs">database</code> in the config file.
+						</p>
 					{/if}
 				</div>
 			{/if}
 
-			<Button type="button" disabled={busy} onclick={() => void startMigration()}>
-				{busy ? 'Running…' : 'Start migration'}
-			</Button>
+			<div class="flex flex-wrap items-center gap-2">
+				<Button type="button" disabled={busy} onclick={() => void startMigration()}>
+					{busy ? 'Running…' : 'Start migration'}
+				</Button>
+				<select
+					id="migrate-mode"
+					class="border-input bg-background h-9 min-w-[min(100%,18rem)] flex-1 rounded-md border px-3 text-sm sm:max-w-md sm:flex-none"
+					bind:value={migrateMode}
+					disabled={busy}
+					aria-label="Migration mode"
+				>
+					<option value="data_only">Start migration</option>
+					<option value="data_and_primary">Start migration &amp; make target primary DB</option>
+				</select>
+			</div>
 		</Card.Content>
 	</Card.Root>
 </div>

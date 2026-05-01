@@ -30,8 +30,9 @@ type migrationEndpoint struct {
 }
 
 type migrationStartRequest struct {
-	Source migrationEndpoint `json:"source"`
-	Target migrationEndpoint `json:"target"`
+	Source            migrationEndpoint `json:"source"`
+	Target            migrationEndpoint `json:"target"`
+	MakeTargetPrimary bool              `json:"make_target_primary"`
 }
 
 // migrationLogConn adds non-secret fields so operators can correlate failures with DSN shape.
@@ -222,19 +223,27 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		}
 		l.Debug().Msg("migration finished ok")
 
-		restartNeeded, cfgErr := applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, dst, req.Target, relayID)
-		if cfgErr != nil {
-			l.Warn().Err(cfgErr).Msg("migration copy ok but config update failed")
-		} else if restartNeeded && scheduleRestart != nil {
-			go scheduleRestartSoon(scheduleRestart)
+		var restartNeeded bool
+		var cfgErr error
+		if req.MakeTargetPrimary {
+			l.Debug().Msg("make_target_primary: updating config file to target database")
+			restartNeeded, cfgErr = applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, dst, req.Target, relayID)
+			if cfgErr != nil {
+				l.Warn().Err(cfgErr).Msg("migration copy ok but config update failed")
+			} else if restartNeeded && scheduleRestart != nil {
+				go scheduleRestartSoon(scheduleRestart)
+			}
+		} else {
+			l.Debug().Msg("make_target_primary false: skipping config file update")
 		}
 
 		done := map[string]any{
 			"status":               "ok",
 			"summary":              sum,
-			"config_updated":       cfgErr == nil,
-			"restart_required":     restartNeeded && cfgErr == nil,
-			"restarting":           restartNeeded && cfgErr == nil && scheduleRestart != nil,
+			"make_target_primary":  req.MakeTargetPrimary,
+			"config_updated":       req.MakeTargetPrimary && cfgErr == nil,
+			"restart_required":     req.MakeTargetPrimary && restartNeeded && cfgErr == nil,
+			"restarting":           req.MakeTargetPrimary && restartNeeded && cfgErr == nil && scheduleRestart != nil,
 			"target_type":          strings.TrimSpace(strings.ToLower(req.Target.Type)),
 			"target_dsn_nonsecret": migrationTargetDSNForUI(req.Target.Type, req.Target.DSN),
 		}
