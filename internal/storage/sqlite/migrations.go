@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 )
 
 const schemaVersion = 2
 
-func runMigrations(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var version int
 	row := db.QueryRowContext(ctx, "PRAGMA user_version")
 	if err := row.Scan(&version); err != nil {
@@ -27,7 +27,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 
 	if version == 0 {
 		log.Debug().Msg("schema: user_version 0; applying fresh schema")
-		if err := migrateFresh(ctx, db); err != nil {
+		if err := migrateFresh(ctx, db, log); err != nil {
 			return err
 		}
 		log.Debug().Msg("schema: fresh schema applied")
@@ -35,7 +35,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	}
 	if version == 1 {
 		log.Debug().Msg("schema: migrating v1 to v2")
-		if err := migrateV1ToV2(ctx, db); err != nil {
+		if err := migrateV1ToV2(ctx, db, log); err != nil {
 			return err
 		}
 		log.Debug().Msg("schema: v1 to v2 complete")
@@ -44,8 +44,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	return fmt.Errorf("sqlite: unsupported schema version %d", version)
 }
 
-func migrateFresh(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL PRIMARY KEY,
@@ -92,7 +91,7 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 		}
 	}
 	log.Debug().Msg("schema: creating fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db); err != nil {
+	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
 		return err
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema: set user_version")
@@ -102,10 +101,9 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 	return nil
 }
 
-func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	log.Debug().Msg("schema v1->v2: fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db); err != nil {
+	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
 		return err
 	}
 	log.Debug().Msg("schema v1->v2: backfill event_fts")
@@ -119,8 +117,7 @@ func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
 	return nil
 }
 
-func createFTS5AndTriggers(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func createFTS5AndTriggers(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	fts := []string{
 		`CREATE VIRTUAL TABLE IF NOT EXISTS event_fts USING fts5(
 			event_id UNINDEXED,

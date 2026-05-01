@@ -28,16 +28,10 @@ type Store struct {
 
 var _ storage.Store = (*Store)(nil)
 
-func openLog(ctx context.Context) zerolog.Logger {
-	if l, ok := storage.OpenLogger(ctx); ok {
-		return l.With().Str("engine", "postgres").Logger()
-	}
-	return zerolog.Nop()
-}
-
 // Open connects with Bun + pgdriver, runs migrations, and starts the event notifier listener.
-func Open(ctx context.Context, dsn string) (*Store, error) {
-	log := openLog(ctx)
+// log is used for optional debug traces (use zerolog.Nop() when silent).
+func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
+	log = log.With().Str("engine", "postgres").Logger()
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
 		return nil, errors.New("postgres: empty dsn")
@@ -57,7 +51,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 
 	db := bun.NewDB(sqldb, pgdialect.New())
 	log.Debug().Msg("open: running schema migrations")
-	if err := runMigrations(ctx, db); err != nil {
+	if err := runMigrations(ctx, db, log); err != nil {
 		_ = db.Close()
 		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err

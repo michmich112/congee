@@ -10,6 +10,7 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 )
 
 func testPostgresDSN(t *testing.T) string {
@@ -29,7 +30,7 @@ func TestPostgresCRUD(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-crud")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestPostgresSearchWithKindFilter(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-search")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +119,14 @@ func TestPostgresNotifierForeignOrigin(t *testing.T) {
 	dsn := testPostgresDSN(t)
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-a")
-	sa, err := Open(ctx, dsn)
+	sa, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sa.Close()
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-b")
-	sb, err := Open(ctx, dsn)
+	sb, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +162,7 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-audit-page")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

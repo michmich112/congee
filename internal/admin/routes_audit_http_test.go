@@ -12,6 +12,7 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 // Scenarios covered by TestHandleAudit_HTTP and helpers:
@@ -107,7 +108,7 @@ func TestHandleAudit_HTTP(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit_http.db")
-	st, err := sqlite.Open(ctx, path, nil)
+	st, err := sqlite.Open(ctx, path, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

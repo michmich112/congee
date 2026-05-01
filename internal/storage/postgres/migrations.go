@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 )
 
 const schemaVersion = 2
 
-func runMigrations(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var evExists bool
 	q := `SELECT EXISTS (
 		SELECT 1 FROM information_schema.tables
@@ -22,7 +22,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	log.Debug().Bool("events_table_exists", evExists).Msg("schema: checked events table")
 	if !evExists {
 		log.Debug().Msg("schema: no events table; applying fresh schema")
-		if err := migrateFresh(ctx, db); err != nil {
+		if err := migrateFresh(ctx, db, log); err != nil {
 			return err
 		}
 		log.Debug().Msg("schema: fresh schema applied")
@@ -44,7 +44,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	}
 	if version == 1 {
 		log.Debug().Msg("schema: migrating v1 to v2")
-		if err := migrateV1ToV2(ctx, db); err != nil {
+		if err := migrateV1ToV2(ctx, db, log); err != nil {
 			return err
 		}
 		log.Debug().Msg("schema: v1 to v2 complete")
@@ -53,8 +53,7 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	return fmt.Errorf("postgres: unsupported schema version %d", version)
 }
 
-func migrateFresh(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE congee_schema_version (
 			id SMALLINT PRIMARY KEY CHECK (id = 1),
@@ -118,8 +117,7 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 	return nil
 }
 
-func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
-	log := openLog(ctx)
+func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`ALTER TABLE events ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED`,
 		`CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector)`,

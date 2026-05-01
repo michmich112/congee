@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/rs/zerolog"
 )
 
 func TestNIP29StoreQueries(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := Open(ctx, filepath.Join(dir, "nip29.db"), nil)
+	st, err := Open(ctx, filepath.Join(dir, "nip29.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

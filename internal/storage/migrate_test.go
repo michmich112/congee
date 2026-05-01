@@ -9,6 +9,7 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 func TestMigrateSQLiteToSQLite(t *testing.T) {
@@ -17,7 +18,7 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 	srcPath := filepath.Join(dir, "a.db")
 	dstPath := filepath.Join(dir, "b.db")
 
-	src, err := sqlite.Open(ctx, srcPath, nil)
+	src, err := sqlite.Open(ctx, srcPath, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -26,7 +27,7 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 	}
 	defer src.Close()
 
-	dst, err := sqlite.Open(ctx, dstPath, nil)
+	dst, err := sqlite.Open(ctx, dstPath, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,13 +9,14 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 )
 
 func TestSQLiteCRUD(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "t.db")
-	st, err := Open(ctx, path, nil)
+	st, err := Open(ctx, path, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -71,7 +72,7 @@ func TestSQLiteReplaceableKind0(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "r.db")
-	st, err := Open(ctx, path, nil)
+	st, err := Open(ctx, path, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -121,7 +122,7 @@ func TestSQLiteReplaceableKind0(t *testing.T) {
 func TestSQLiteSearchKindsAndQuotedContent(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := Open(ctx, filepath.Join(dir, "search.db"), nil)
+	st, err := Open(ctx, filepath.Join(dir, "search.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -164,7 +165,7 @@ func TestSQLiteAddressable(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.db")
-	st, err := Open(ctx, path, nil)
+	st, err := Open(ctx, path, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -219,7 +220,7 @@ func TestSQLiteAddressable(t *testing.T) {
 func TestSQLiteAuditAndChangelog(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := Open(ctx, filepath.Join(dir, "audit.db"), nil)
+	st, err := Open(ctx, filepath.Join(dir, "audit.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -254,7 +255,7 @@ func TestSQLiteAuditAndChangelog(t *testing.T) {
 func TestSQLiteListDistinctAuditKinds(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := Open(ctx, filepath.Join(dir, "audit_kinds.db"), nil)
+	st, err := Open(ctx, filepath.Join(dir, "audit_kinds.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

@@ -47,13 +47,13 @@ func migrationLogConn(ev *zerolog.Event, role string, typ, dsn string) *zerolog.
 	return ev
 }
 
-func openMigrationSource(ctx context.Context, typ, dsn string) (storage.MigrationSource, func(), error) {
+func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
 	switch typ {
 	case "sqlite":
 		if dsn == "" {
 			return nil, nil, errors.New("sqlite dsn is required")
 		}
-		st, err := sqlite.Open(ctx, dsn, nil)
+		st, err := sqlite.Open(ctx, dsn, nil, log)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -62,7 +62,7 @@ func openMigrationSource(ctx context.Context, typ, dsn string) (storage.Migratio
 		if dsn == "" {
 			return nil, nil, errors.New("postgres dsn is required")
 		}
-		st, err := postgres.Open(ctx, dsn)
+		st, err := postgres.Open(ctx, dsn, log)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -103,10 +103,10 @@ func handleMigrationStart(log zerolog.Logger) http.HandlerFunc {
 		}
 
 		l := log.With().Str("handler", "migration_start").Logger()
-		ctx := storage.WithOpenLogger(r.Context(), l)
+		ctx := r.Context()
 		migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
 
-		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN)
+		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "source", req.Source.Type, req.Source.DSN).
 				Err(err).Str("phase", "open_source").Msg("migration rejected: open source failed")
@@ -117,7 +117,7 @@ func handleMigrationStart(log zerolog.Logger) http.HandlerFunc {
 
 		migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("opening migration target")
 
-		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN)
+		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "target", req.Target.Type, req.Target.DSN).
 				Err(err).Str("phase", "open_target").Msg("migration rejected: open target failed")

@@ -43,16 +43,10 @@ type Store struct {
 
 var _ storage.Store = (*Store)(nil)
 
-func openLog(ctx context.Context) zerolog.Logger {
-	if l, ok := storage.OpenLogger(ctx); ok {
-		return l.With().Str("engine", "sqlite").Logger()
-	}
-	return zerolog.Nop()
-}
-
 // Open opens a SQLite database (WAL, Bun + sqliteshim), runs migrations, and starts the writer loop.
-func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Store, error) {
-	log := openLog(ctx)
+// log is used for optional debug traces (use zerolog.Nop() when silent).
+func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log zerolog.Logger) (*Store, error) {
+	log = log.With().Str("engine", "sqlite").Logger()
 	if !sqliteshim.HasDriver() {
 		return nil, errors.New("sqlite: sqliteshim driver not available for this build target")
 	}
@@ -96,7 +90,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 
 	db := bun.NewDB(sqldb, sqlitedialect.New())
 	log.Debug().Msg("open: running schema migrations")
-	if err := runMigrations(ctx, db); err != nil {
+	if err := runMigrations(ctx, db, log); err != nil {
 		_ = db.Close()
 		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err

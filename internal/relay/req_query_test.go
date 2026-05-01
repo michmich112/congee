@@ -8,12 +8,13 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 func TestQueryInitialREQEvents_SearchORWithKinds(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q.db"), nil)
+	st, err := sqlite.Open(ctx, filepath.Join(dir, "q.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -53,7 +54,7 @@ func TestQueryInitialREQEvents_SearchORWithKinds(t *testing.T) {
 func TestQueryInitialREQEvents_SearchDisabledSkipsSearchBranch(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q2.db"), nil)
+	st, err := sqlite.Open(ctx, filepath.Join(dir, "q2.db"), nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

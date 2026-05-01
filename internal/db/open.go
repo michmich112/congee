@@ -8,6 +8,7 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/postgres"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 // Handle is a configured Store with optional cross-instance notifier and shutdown.
@@ -26,10 +27,11 @@ func (h *Handle) Close() error {
 }
 
 // Open opens the database from JSON config (SQLite or PostgreSQL).
-func Open(ctx context.Context, sec config.DatabaseSection) (*Handle, error) {
+// log is passed to the store implementation for optional connector debug (use zerolog.Nop() when silent).
+func Open(ctx context.Context, sec config.DatabaseSection, log zerolog.Logger) (*Handle, error) {
 	switch sec.Type {
 	case "", "sqlite":
-		st, err := sqlite.Open(ctx, sec.DSN, nil)
+		st, err := sqlite.Open(ctx, sec.DSN, nil, log)
 		if err != nil {
 			return nil, err
 		}
@@ -39,7 +41,7 @@ func Open(ctx context.Context, sec config.DatabaseSection) (*Handle, error) {
 			closeFn:       st.Close,
 		}, nil
 	case "postgres":
-		st, err := postgres.Open(ctx, sec.DSN)
+		st, err := postgres.Open(ctx, sec.DSN, log)
 		if err != nil {
 			return nil, err
 		}
