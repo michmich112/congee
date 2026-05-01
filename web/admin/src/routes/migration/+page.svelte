@@ -1,5 +1,5 @@
 <script lang="ts">
-	import MoreHorizontal from '@lucide/svelte/icons/more-horizontal';
+	import Plus from '@lucide/svelte/icons/plus';
 	import { adminFetch } from '$lib/admin-api';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
@@ -191,7 +191,7 @@
 		<p class="mt-1 text-sm text-muted-foreground">
 			Copy events, tags, audit log, and config changelog between SQLite files and PostgreSQL. Target must be
 			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem).
-			Use the <span class="font-medium text-foreground">more options</span> menu (⋯) for
+			Use the <span class="font-medium text-foreground">+</span> button for
 			<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span> when you want
 			the JSON config switched to the target and a restart scheduled; the main button copies data only.
 		</p>
@@ -202,7 +202,7 @@
 			<Card.Title>Endpoints</Card.Title>
 			<Card.Description>
 				JSON mirrors <code class="text-xs">POST /api/migration/start</code> with optional
-				<code class="text-xs">make_target_primary</code>. The main button copies only; use ⋯ for config + restart.
+				<code class="text-xs">make_target_primary</code>. The main button copies only; use + for config + restart.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-6">
@@ -312,7 +312,7 @@
 						<p class="text-sm text-muted-foreground">
 							Relay configuration was left unchanged (data copy only). To point Congee at this target, use
 							<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span>
-							from the more options menu (⋯) or edit <code class="text-xs">database</code> in the config file.
+							from the <span class="font-medium text-foreground">+</span> menu or edit <code class="text-xs">database</code> in the config file.
 						</p>
 					{/if}
 				</div>
@@ -330,13 +330,13 @@
 				<DropdownMenu>
 					<DropdownMenuTrigger
 						class={cn(
-							buttonVariants({ variant: 'outline', size: 'icon-sm' }),
+							buttonVariants({ variant: 'outline', size: 'icon' }),
 							'disabled:pointer-events-none disabled:opacity-50'
 						)}
 						disabled={busy}
-						aria-label="More migration options"
+						aria-label="Make target primary database (opens menu)"
 					>
-						<MoreHorizontal class="size-4 opacity-70" />
+						<Plus class="size-4 opacity-90" />
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end" class="min-w-56">
 						<DropdownMenuGroup>
