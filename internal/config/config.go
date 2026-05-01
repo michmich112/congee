@@ -25,6 +25,7 @@ func DefaultConfig() *Config {
 		Database: DatabaseSection{Type: "sqlite", DSN: "./congee.db"},
 		Logging:  LoggingSection{Level: "info", Format: "json"},
 		Audit:    AuditSection{RetentionDays: 30},
+		Metrics:  MetricsSection{RelayBucketRetentionDays: 30},
 		RateLimits: RateLimitsSection{
 			EventsPerMinutePerConnection: 120,
 			BytesPerSecondPerConnection:  1048576,
@@ -129,6 +130,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Audit.RetentionDays <= 0 {
 		return errors.New("config: audit.retention_days must be > 0")
+	}
+	if c.Metrics.RelayBucketRetentionDays <= 0 {
+		c.Metrics.RelayBucketRetentionDays = 30
+	}
+	if c.Metrics.RelayBucketRetentionDays > 3650 {
+		return errors.New("config: metrics.relay_bucket_retention_days must be <= 3650")
 	}
 	if c.RateLimits.EventsPerMinutePerConnection <= 0 {
 		return errors.New("config: rate_limits.events_per_minute_per_connection must be > 0")

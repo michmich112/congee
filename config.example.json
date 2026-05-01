@@ -16,6 +16,9 @@
   "audit": {
     "retention_days": 30
   },
+  "metrics": {
+    "relay_bucket_retention_days": 30
+  },
   "rate_limits": {
     "events_per_minute_per_connection": 120,
     "bytes_per_second_per_connection": 1048576,
