@@ -86,6 +86,26 @@ func TestValidateRelayInstanceIDTooLong(t *testing.T) {
 	}
 }
 
+func TestResolveRelayInstancePrefersEnv(t *testing.T) {
+	c := minimalValidConfig()
+	c.Relay.InstanceID = "from-config"
+	t.Setenv("CONGEE_INSTANCE_ID", "from-env")
+	r := ResolveRelayInstance(c)
+	if r.EffectiveID != "from-env" || !r.EnvLocked {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestResolveRelayInstanceFromConfigWhenEnvUnset(t *testing.T) {
+	t.Setenv("CONGEE_INSTANCE_ID", "")
+	c := minimalValidConfig()
+	c.Relay.InstanceID = "cfg-id"
+	r := ResolveRelayInstance(c)
+	if r.EffectiveID != "cfg-id" || r.EnvLocked {
+		t.Fatalf("got %+v", r)
+	}
+}
+
 func TestEffectiveRelayInstanceIDPrefersEnv(t *testing.T) {
 	c := minimalValidConfig()
 	c.Relay.InstanceID = "from-config"

@@ -11,7 +11,7 @@
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
 //	GET    /api/stats            — relay connection count, ports, relay_version (binary)
-//	GET    /api/relay-identity   — relay pubkey_hex, npub, runtime relay_instance_id (read-only)
+//	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
 //	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
@@ -62,14 +62,13 @@ type Server struct {
 	store   storage.Store
 	relay   *relay.Server
 	relayID *relayidentity.Identity
-	// relayRuntimeInstanceID is the LISTEN/NOTIFY origin id at process start (env or config).
-	relayRuntimeInstanceID   string
-	relayInstanceIDEnvLocked bool
-	log                      zerolog.Logger
-	password                 string
-	staticDir                string
-	devProxy                 *httputil.ReverseProxy
-	static                   http.Handler // SPA file server (production, or dev fallback when Vite is down)
+	// relayInstanceSnap is ResolveRelayInstance(cfg) at server construction (matches DB notifier until restart).
+	relayInstanceSnap config.RelayInstanceResolution
+	log               zerolog.Logger
+	password          string
+	staticDir         string
+	devProxy          *httputil.ReverseProxy
+	static            http.Handler // SPA file server (production, or dev fallback when Vite is down)
 
 	cfgMu sync.Mutex
 	http  *http.Server
@@ -79,18 +78,17 @@ type Server struct {
 // assets (e.g. web/admin/build). relaySrv may be nil (stats will show 0 connections).
 // scheduleRestart is invoked after a successful config write or NIP toggle when the
 // running process should be replaced (nil in tests or when restart is disabled).
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayRuntimeInstanceID string, relayInstanceIDEnvLocked bool) *Server {
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity) *Server {
 	s := &Server{
-		cfg:                      cfg,
-		cfgPath:                  cfgPath,
-		store:                    store,
-		relay:                    relaySrv,
-		relayID:                  relayID,
-		relayRuntimeInstanceID:   relayRuntimeInstanceID,
-		relayInstanceIDEnvLocked: relayInstanceIDEnvLocked,
-		log:                      log,
-		password:                 password,
-		staticDir:                staticDir,
+		cfg:               cfg,
+		cfgPath:           cfgPath,
+		store:             store,
+		relay:             relaySrv,
+		relayID:           relayID,
+		relayInstanceSnap: config.ResolveRelayInstance(cfg),
+		log:               log,
+		password:          password,
+		staticDir:         staticDir,
 	}
 	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
 	s.static = s.onlyGET(serveAdminStatic(s.staticDir, http.FileServer(spaFS)))
@@ -132,7 +130,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
-	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, relayRuntimeInstanceID, relayInstanceIDEnvLocked))
+	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceSnap))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))

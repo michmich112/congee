@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/relayidentity"
 )
 
-func handleRelayIdentity(id *relayidentity.Identity, relayRuntimeInstanceID string, relayInstanceIDEnvLocked bool) http.Handler {
+func handleRelayIdentity(id *relayidentity.Identity, relayInst config.RelayInstanceResolution) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -24,8 +25,8 @@ func handleRelayIdentity(id *relayidentity.Identity, relayRuntimeInstanceID stri
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"pubkey_hex":                   id.PubKeyHex(),
 			"npub":                         id.NPub(),
-			"relay_instance_id":            relayRuntimeInstanceID,
-			"relay_instance_id_env_locked": relayInstanceIDEnvLocked,
+			"relay_instance_id":            relayInst.EffectiveID,
+			"relay_instance_id_env_locked": relayInst.EnvLocked,
 		})
 	})
 }

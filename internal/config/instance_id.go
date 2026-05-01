@@ -8,20 +8,34 @@ import (
 	"github.com/google/uuid"
 )
 
-// RelayInstanceIDLockedByEnv reports whether CONGEE_INSTANCE_ID is set (non-whitespace).
-func RelayInstanceIDLockedByEnv() bool {
-	return strings.TrimSpace(os.Getenv("CONGEE_INSTANCE_ID")) != ""
+// RelayInstanceResolution is the effective PostgreSQL LISTEN/NOTIFY origin for a process,
+// derived from CONGEE_INSTANCE_ID (when set) or relay.instance_id in cfg.
+type RelayInstanceResolution struct {
+	EffectiveID string
+	EnvLocked   bool
 }
 
-// EffectiveRelayInstanceID returns the LISTEN/NOTIFY origin id: env when set, else relay.instance_id from cfg.
-func EffectiveRelayInstanceID(cfg *Config) string {
-	if cfg == nil {
-		return ""
-	}
+// ResolveRelayInstance reads the environment and cfg once and returns the LISTEN/NOTIFY origin.
+// cfg may be nil (EnvLocked and EffectiveID from env only; config-derived id is empty when unset).
+func ResolveRelayInstance(cfg *Config) RelayInstanceResolution {
 	if s := strings.TrimSpace(os.Getenv("CONGEE_INSTANCE_ID")); s != "" {
-		return s
+		return RelayInstanceResolution{EffectiveID: s, EnvLocked: true}
 	}
-	return strings.TrimSpace(cfg.Relay.InstanceID)
+	var fromCfg string
+	if cfg != nil {
+		fromCfg = strings.TrimSpace(cfg.Relay.InstanceID)
+	}
+	return RelayInstanceResolution{EffectiveID: fromCfg, EnvLocked: false}
+}
+
+// RelayInstanceIDLockedByEnv reports whether CONGEE_INSTANCE_ID is set (non-whitespace).
+func RelayInstanceIDLockedByEnv() bool {
+	return ResolveRelayInstance(nil).EnvLocked
+}
+
+// EffectiveRelayInstanceID returns ResolveRelayInstance(cfg).EffectiveID.
+func EffectiveRelayInstanceID(cfg *Config) string {
+	return ResolveRelayInstance(cfg).EffectiveID
 }
 
 // EnsureRelayInstanceIDFile assigns a random relay.instance_id and persists cfg when env is unset and the field is empty.
@@ -29,7 +43,7 @@ func EnsureRelayInstanceIDFile(cfg *Config, path string) error {
 	if cfg == nil {
 		return errors.New("config: nil")
 	}
-	if RelayInstanceIDLockedByEnv() {
+	if ResolveRelayInstance(cfg).EnvLocked {
 		return nil
 	}
 	if strings.TrimSpace(cfg.Relay.InstanceID) != "" {

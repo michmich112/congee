@@ -197,7 +197,7 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		ctx := r.Context()
 		migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
 
-		instanceID := config.EffectiveRelayInstanceID(cfg)
+		instanceID := config.ResolveRelayInstance(cfg).EffectiveID
 
 		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, instanceID, l)
 		if err != nil {
