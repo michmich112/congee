@@ -15,7 +15,11 @@ type RelayInstanceResolution struct {
 	EnvLocked   bool
 }
 
-// ResolveRelayInstance reads the environment and cfg once and returns the LISTEN/NOTIFY origin.
+// ResolveRelayInstance reads CONGEE_INSTANCE_ID and cfg and returns the LISTEN/NOTIFY origin.
+// It is not cached: each call re-reads the environment. Process startup should call it once
+// and pass RelayInstanceResolution to the database layer and admin API so the value stays
+// fixed until restart (admin config edits do not change the running notifier without restart).
+//
 // cfg may be nil (EnvLocked and EffectiveID from env only; config-derived id is empty when unset).
 func ResolveRelayInstance(cfg *Config) RelayInstanceResolution {
 	if s := strings.TrimSpace(os.Getenv("CONGEE_INSTANCE_ID")); s != "" {

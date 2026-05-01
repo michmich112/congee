@@ -62,8 +62,8 @@ type Server struct {
 	store   storage.Store
 	relay   *relay.Server
 	relayID *relayidentity.Identity
-	// relayInstanceSnap is ResolveRelayInstance(cfg) at server construction (matches DB notifier until restart).
-	relayInstanceSnap config.RelayInstanceResolution
+	// relayInstanceBoot is fixed at process start (same value used for postgres Open); not refreshed on PUT /api/config.
+	relayInstanceBoot config.RelayInstanceResolution
 	log               zerolog.Logger
 	password          string
 	staticDir         string
@@ -78,14 +78,17 @@ type Server struct {
 // assets (e.g. web/admin/build). relaySrv may be nil (stats will show 0 connections).
 // scheduleRestart is invoked after a successful config write or NIP toggle when the
 // running process should be replaced (nil in tests or when restart is disabled).
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity) *Server {
+// relayInstanceBoot must be the config.RelayInstanceResolution from the same process
+// start as db.Open (see cmd/congee); it is served by GET /relay-identity and does not
+// track in-memory config mutations until the process restarts.
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution) *Server {
 	s := &Server{
 		cfg:               cfg,
 		cfgPath:           cfgPath,
 		store:             store,
 		relay:             relaySrv,
 		relayID:           relayID,
-		relayInstanceSnap: config.ResolveRelayInstance(cfg),
+		relayInstanceBoot: relayInstanceBoot,
 		log:               log,
 		password:          password,
 		staticDir:         staticDir,
@@ -130,7 +133,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
-	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceSnap))
+	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
