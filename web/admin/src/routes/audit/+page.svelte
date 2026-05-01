@@ -31,7 +31,19 @@
 		{ value: 'event_accepted', label: 'event_accepted' }
 	] as const;
 
-	const KIND_FILTER_OPTIONS = knownKindDropdownEntries();
+	function mergeKindFilterOptions(persistedKinds: number[]): { kind: number; label: string }[] {
+		const known = knownKindDropdownEntries();
+		const out: { kind: number; label: string }[] = [...known];
+		const seen = new Set(known.map((e) => e.kind));
+		for (const k of persistedKinds) {
+			if (!seen.has(k)) {
+				seen.add(k);
+				out.push({ kind: k, label: `${k} — ${describeNostrKind(k)}` });
+			}
+		}
+		out.sort((a, b) => a.kind - b.kind);
+		return out;
+	}
 
 	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
 	/** Trailing field from NIP-01 post-hook detail (same suffix the /api/audit?kind= filter uses). */
@@ -68,7 +80,8 @@
 	let pubkey = $state('');
 	let sinceDate = $state('');
 	let untilDate = $state('');
-	let kindFilter = $state('');
+	let selectedKinds = $state<number[]>([]);
+	let kindOptions = $state<{ kind: number; label: string }[]>(knownKindDropdownEntries());
 
 	let dialogOpen = $state(false);
 	let selectedEventId = $state<string | null>(null);
@@ -97,6 +110,36 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
+	async function loadKindOptions() {
+		try {
+			const res = await adminFetch('/api/audit/kinds');
+			if (!res.ok) {
+				kindOptions = knownKindDropdownEntries();
+				return;
+			}
+			const data = (await res.json()) as { kinds?: number[] };
+			kindOptions = mergeKindFilterOptions(data.kinds ?? []);
+		} catch {
+			kindOptions = knownKindDropdownEntries();
+		}
+	}
+
+	function onKindCheckboxChange(kind: number, checked: boolean) {
+		if (checked) {
+			if (!selectedKinds.includes(kind)) {
+				selectedKinds = [...selectedKinds, kind].sort((a, b) => a - b);
+			}
+		} else {
+			selectedKinds = selectedKinds.filter((k) => k !== kind);
+		}
+		void applyFilters();
+	}
+
+	function clearKindFilters() {
+		selectedKinds = [];
+		void applyFilters();
+	}
+
 	async function load(allowClampRetry = true) {
 		loading = true;
 		err = null;
@@ -108,7 +151,9 @@
 			if (untilDate) q.set('until', String(localDayEndUnix(untilDate)));
 			if (action) q.set('action', action);
 			if (pubkey) q.set('pubkey', pubkey);
-			if (kindFilter !== '') q.set('kind', kindFilter);
+			for (const k of selectedKinds) {
+				q.append('kind', String(k));
+			}
 			const res = await adminFetch(`/api/audit?${q}`);
 			if (!res.ok) {
 				err = await res.text();
@@ -192,7 +237,10 @@
 		}
 	});
 
-	onMount(() => void load());
+	onMount(() => {
+		void loadKindOptions();
+		void load();
+	});
 </script>
 
 <div class="space-y-6">
@@ -201,8 +249,10 @@
 		<p class="text-sm text-muted-foreground">
 			Filter and paginate relay audit entries (newest first). Since/until use your local calendar day (midnight
 			through end of day in the browser timezone, sent as unix bounds). The API returns <code class="text-xs">total</code> for
-			pagination. Page size is capped at 1000 here. Optional <code class="text-xs">kind</code> matches stored audit
-			detail lines that end with <code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). Click a truncated
+			pagination. Page size is capped at 1000 here. Optional <code class="text-xs">kind</code> query params (repeat per
+			selected kind, OR semantics) match stored audit detail lines that end with
+			<code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). The kind checklist merges well-known kinds with
+			kinds seen in recent audit rows from <code class="text-xs">GET /api/audit/kinds</code>. Click a truncated
 			<code class="text-xs">event_id</code> to load stored event JSON. Hover a <code class="text-xs">kind</code> in the
 			table for a short Nostr description. Use the timestamps control above the table for column time format.
 		</p>
@@ -237,20 +287,41 @@
 				{/each}
 			</select>
 		</div>
-		<div class="space-y-2">
-			<Label for="kind-filter">Kind</Label>
-			<select
-				id="kind-filter"
-				class={selectClass}
-				bind:value={kindFilter}
-				aria-label="Event kind filter"
-				onchange={() => void applyFilters()}
+		<div class="space-y-2 sm:col-span-2 lg:col-span-3">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<Label for="kind-filter-first">Kinds</Label>
+				{#if selectedKinds.length > 0}
+					<button
+						type="button"
+						class="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+						onclick={() => clearKindFilters()}
+					>
+						Clear kinds
+					</button>
+				{/if}
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Select any combination (OR). Changing a checkbox applies immediately.
+			</p>
+			<div
+				class="border-input dark:bg-input/30 max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-transparent px-2.5 py-2 shadow-xs"
+				id="kind-filter-first"
+				role="group"
+				aria-label="Event kind filters"
 			>
-				<option value="">Any kind</option>
-				{#each KIND_FILTER_OPTIONS as k}
-					<option value={String(k.kind)} title={k.label}>{k.label}</option>
+				{#each kindOptions as opt (opt.kind)}
+					<label class="flex cursor-pointer items-start gap-2.5 text-sm leading-snug">
+						<input
+							type="checkbox"
+							class="border-input mt-0.5 size-4 shrink-0 rounded accent-primary"
+							checked={selectedKinds.includes(opt.kind)}
+							onchange={(e) =>
+								onKindCheckboxChange(opt.kind, (e.currentTarget as HTMLInputElement).checked)}
+						/>
+						<span class="min-w-0" title={describeNostrKind(opt.kind)}>{opt.label}</span>
+					</label>
 				{/each}
-			</select>
+			</div>
 		</div>
 		<div class="space-y-2">
 			<Label for="pk">Pubkey</Label>
