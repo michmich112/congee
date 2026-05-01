@@ -1,10 +1,20 @@
 <script lang="ts">
+	import MoreHorizontal from '@lucide/svelte/icons/more-horizontal';
 	import { adminFetch } from '$lib/admin-api';
 	import * as Alert from '$lib/components/ui/alert';
-	import { Button } from '$lib/components/ui/button';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
+	import { ButtonGroup } from '$lib/components/ui/button-group';
 	import * as Card from '$lib/components/ui/card';
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuGroup,
+		DropdownMenuItem,
+		DropdownMenuTrigger
+	} from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { cn } from '$lib/utils';
 
 	type Endpoint = {
 		type: 'sqlite' | 'postgres' | '';
@@ -43,11 +53,8 @@
 		  }
 		| { ok: false; message: string };
 
-	type MigrateMode = 'data_only' | 'data_and_primary';
-
 	let source = $state<Endpoint>({ type: 'sqlite', dsn: './congee.db' });
 	let target = $state<Endpoint>({ type: 'postgres', dsn: '' });
-	let migrateMode = $state<MigrateMode>('data_only');
 	let busy = $state(false);
 	let progressPct = $state(0);
 	let progressMsg = $state('');
@@ -73,7 +80,7 @@
 		outcome = { ok: false, message };
 	}
 
-	async function startMigration() {
+	async function startMigration(makeTargetPrimary: boolean) {
 		progressPct = 0;
 		progressMsg = '';
 		outcome = null;
@@ -93,7 +100,7 @@
 				body: JSON.stringify({
 					source: { type: source.type, dsn: source.dsn.trim() },
 					target: { type: target.type, dsn: target.dsn.trim() },
-					make_target_primary: migrateMode === 'data_and_primary'
+					make_target_primary: makeTargetPrimary
 				})
 			});
 			if (res.status === 409) {
@@ -184,9 +191,9 @@
 		<p class="mt-1 text-sm text-muted-foreground">
 			Copy events, tags, audit log, and config changelog between SQLite files and PostgreSQL. Target must be
 			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem).
-			<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span> in the menu
-			only when you want the JSON config switched to the target and a restart scheduled; otherwise keep
-			<span class="font-medium text-foreground">Start migration</span> (data copy only).
+			Use the <span class="font-medium text-foreground">more options</span> menu (⋯) for
+			<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span> when you want
+			the JSON config switched to the target and a restart scheduled; the main button copies data only.
 		</p>
 	</div>
 
@@ -194,8 +201,8 @@
 		<Card.Header>
 			<Card.Title>Endpoints</Card.Title>
 			<Card.Description>
-				JSON mirrors <code class="text-xs">POST /api/migration/start</code>; set
-				<code class="text-xs">make_target_primary</code> to update config after copy.
+				JSON mirrors <code class="text-xs">POST /api/migration/start</code> with optional
+				<code class="text-xs">make_target_primary</code>. The main button copies only; use ⋯ for config + restart.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-6">
@@ -303,29 +310,47 @@
 						</Alert.Root>
 					{:else if !outcome.make_target_primary}
 						<p class="text-sm text-muted-foreground">
-							Relay configuration was left unchanged (data copy only). To point Congee at this target,
-							run again with <span class="font-medium text-foreground">Start migration &amp; make target
-								primary DB</span> or edit <code class="text-xs">database</code> in the config file.
+							Relay configuration was left unchanged (data copy only). To point Congee at this target, use
+							<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span>
+							from the more options menu (⋯) or edit <code class="text-xs">database</code> in the config file.
 						</p>
 					{/if}
 				</div>
 			{/if}
 
-			<div class="flex flex-wrap items-center gap-2">
-				<Button type="button" disabled={busy} onclick={() => void startMigration()}>
+			<ButtonGroup>
+				<Button
+					type="button"
+					variant="outline"
+					disabled={busy}
+					onclick={() => void startMigration(false)}
+				>
 					{busy ? 'Running…' : 'Start migration'}
 				</Button>
-				<select
-					id="migrate-mode"
-					class="border-input bg-background h-9 min-w-[min(100%,18rem)] flex-1 rounded-md border px-3 text-sm sm:max-w-md sm:flex-none"
-					bind:value={migrateMode}
-					disabled={busy}
-					aria-label="Migration mode"
-				>
-					<option value="data_only">Start migration</option>
-					<option value="data_and_primary">Start migration &amp; make target primary DB</option>
-				</select>
-			</div>
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						class={cn(
+							buttonVariants({ variant: 'outline', size: 'icon-sm' }),
+							'disabled:pointer-events-none disabled:opacity-50'
+						)}
+						disabled={busy}
+						aria-label="More migration options"
+					>
+						<MoreHorizontal class="size-4 opacity-70" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" class="min-w-56">
+						<DropdownMenuGroup>
+							<DropdownMenuItem
+								disabled={busy}
+								onclick={() => void startMigration(true)}
+								class="whitespace-normal"
+							>
+								Start migration &amp; make target primary DB
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</ButtonGroup>
 		</Card.Content>
 	</Card.Root>
 </div>
