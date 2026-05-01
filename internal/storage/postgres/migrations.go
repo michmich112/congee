@@ -10,6 +10,7 @@ import (
 const schemaVersion = 2
 
 func runMigrations(ctx context.Context, db *bun.DB) error {
+	log := openLog(ctx)
 	var evExists bool
 	q := `SELECT EXISTS (
 		SELECT 1 FROM information_schema.tables
@@ -18,8 +19,14 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	if err := db.QueryRowContext(ctx, q).Scan(&evExists); err != nil {
 		return fmt.Errorf("postgres: check events table: %w", err)
 	}
+	log.Debug().Bool("events_table_exists", evExists).Msg("schema: checked events table")
 	if !evExists {
-		return migrateFresh(ctx, db)
+		log.Debug().Msg("schema: no events table; applying fresh schema")
+		if err := migrateFresh(ctx, db); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: fresh schema applied")
+		return nil
 	}
 
 	var version int
@@ -27,19 +34,27 @@ func runMigrations(ctx context.Context, db *bun.DB) error {
 	if err != nil {
 		return fmt.Errorf("postgres: read schema version: %w", err)
 	}
+	log.Debug().Int("schema_version", version).Msg("schema: read version row")
 	if version > schemaVersion {
 		return fmt.Errorf("postgres: unsupported schema version %d (need <= %d)", version, schemaVersion)
 	}
 	if version == schemaVersion {
+		log.Debug().Msg("schema: already at current version")
 		return nil
 	}
 	if version == 1 {
-		return migrateV1ToV2(ctx, db)
+		log.Debug().Msg("schema: migrating v1 to v2")
+		if err := migrateV1ToV2(ctx, db); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v1 to v2 complete")
+		return nil
 	}
 	return fmt.Errorf("postgres: unsupported schema version %d", version)
 }
 
 func migrateFresh(ctx context.Context, db *bun.DB) error {
+	log := openLog(ctx)
 	stmts := []string{
 		`CREATE TABLE congee_schema_version (
 			id SMALLINT PRIMARY KEY CHECK (id = 1),
@@ -89,11 +104,13 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 
 	for i, s := range stmts {
 		if i == 1 {
+			log.Debug().Int("ddl_step", i).Msg("schema: insert congee_schema_version")
 			if _, err := db.ExecContext(ctx, s, schemaVersion); err != nil {
 				return fmt.Errorf("postgres: migrate: %w", err)
 			}
 			continue
 		}
+		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
 		if _, err := db.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("postgres: migrate: %w", err)
 		}
@@ -102,17 +119,21 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 }
 
 func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
+	log := openLog(ctx)
 	stmts := []string{
 		`ALTER TABLE events ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED`,
 		`CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector)`,
 		`UPDATE congee_schema_version SET version = $1 WHERE id = 1`,
 	}
+	log.Debug().Int("step", 0).Msg("schema v1->v2: add search_vector column")
 	if _, err := db.ExecContext(ctx, stmts[0]); err != nil {
 		return fmt.Errorf("postgres: add search_vector: %w", err)
 	}
+	log.Debug().Int("step", 1).Msg("schema v1->v2: create gin index")
 	if _, err := db.ExecContext(ctx, stmts[1]); err != nil {
 		return fmt.Errorf("postgres: gin index: %w", err)
 	}
+	log.Debug().Int("step", 2).Msg("schema v1->v2: bump schema version")
 	if _, err := db.ExecContext(ctx, stmts[2], schemaVersion); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
 	}

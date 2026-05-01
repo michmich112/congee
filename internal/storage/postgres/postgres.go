@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -26,29 +28,50 @@ type Store struct {
 
 var _ storage.Store = (*Store)(nil)
 
+func openLog(ctx context.Context) zerolog.Logger {
+	if l, ok := storage.OpenLogger(ctx); ok {
+		return l.With().Str("engine", "postgres").Logger()
+	}
+	return zerolog.Nop()
+}
+
 // Open connects with Bun + pgdriver, runs migrations, and starts the event notifier listener.
 func Open(ctx context.Context, dsn string) (*Store, error) {
+	log := openLog(ctx)
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
 		return nil, errors.New("postgres: empty dsn")
 	}
 
+	log.Debug().Msg("open: creating driver connector")
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 	sqldb.SetMaxOpenConns(32)
 	sqldb.SetMaxIdleConns(8)
 
+	if err := sqldb.PingContext(ctx); err != nil {
+		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: initial ping failed")
+		return nil, fmt.Errorf("postgres: ping: %w", err)
+	}
+	log.Debug().Msg("open: ping ok")
+
 	db := bun.NewDB(sqldb, pgdialect.New())
+	log.Debug().Msg("open: running schema migrations")
 	if err := runMigrations(ctx, db); err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err
 	}
+	log.Debug().Msg("open: schema migrations done")
 
+	log.Debug().Msg("open: starting listen/notify notifier")
 	n, err := NewNotifier(db, dsn, localInstanceID())
 	if err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: notifier startup failed")
 		return nil, err
 	}
-
+	log.Debug().Msg("open: store ready")
 	return &Store{db: db, notifier: n}, nil
 }
 

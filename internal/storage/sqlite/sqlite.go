@@ -14,6 +14,7 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 
@@ -42,8 +43,16 @@ type Store struct {
 
 var _ storage.Store = (*Store)(nil)
 
+func openLog(ctx context.Context) zerolog.Logger {
+	if l, ok := storage.OpenLogger(ctx); ok {
+		return l.With().Str("engine", "sqlite").Logger()
+	}
+	return zerolog.Nop()
+}
+
 // Open opens a SQLite database (WAL, Bun + sqliteshim), runs migrations, and starts the writer loop.
 func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Store, error) {
+	log := openLog(ctx)
 	if !sqliteshim.HasDriver() {
 		return nil, errors.New("sqlite: sqliteshim driver not available for this build target")
 	}
@@ -51,6 +60,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 		notifier = storage.NoopNotifier{}
 	}
 
+	log.Debug().Int("dsn_len", len(strings.TrimSpace(dsn))).Msg("open: sql.Open")
 	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open: %w", err)
@@ -58,24 +68,40 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 	sqldb.SetMaxOpenConns(64)
 	sqldb.SetMaxIdleConns(64)
 
+	if err := sqldb.PingContext(ctx); err != nil {
+		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: initial ping failed")
+		return nil, fmt.Errorf("sqlite: ping: %w", err)
+	}
+	log.Debug().Msg("open: ping ok")
+
+	log.Debug().Msg("open: pragma foreign_keys")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA foreign_keys = ON;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: foreign_keys pragma failed")
 		return nil, fmt.Errorf("sqlite: foreign_keys: %w", err)
 	}
+	log.Debug().Msg("open: pragma journal_mode=WAL")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA journal_mode = WAL;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: journal_mode pragma failed")
 		return nil, fmt.Errorf("sqlite: journal_mode: %w", err)
 	}
+	log.Debug().Msg("open: pragma busy_timeout")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA busy_timeout = 5000;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: busy_timeout pragma failed")
 		return nil, fmt.Errorf("sqlite: busy_timeout: %w", err)
 	}
 
 	db := bun.NewDB(sqldb, sqlitedialect.New())
+	log.Debug().Msg("open: running schema migrations")
 	if err := runMigrations(ctx, db); err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err
 	}
+	log.Debug().Msg("open: schema migrations done")
 
 	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Store{
@@ -88,6 +114,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 	}
 	s.wg.Add(1)
 	go s.writerLoop(baseCtx)
+	log.Debug().Msg("open: writer loop started; store ready")
 	return s, nil
 }
 

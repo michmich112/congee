@@ -102,8 +102,8 @@ func handleMigrationStart(log zerolog.Logger) http.HandlerFunc {
 			return
 		}
 
-		ctx := r.Context()
 		l := log.With().Str("handler", "migration_start").Logger()
+		ctx := storage.WithOpenLogger(r.Context(), l)
 		migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
 
 		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN)

@@ -22,6 +22,7 @@ import (
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/version"
 	"github.com/rs/zerolog"
 )
@@ -59,6 +60,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	ctx = storage.WithOpenLogger(ctx, log)
 
 	storeDB, err := db.Open(ctx, cfg.Database)
 	if err != nil {
