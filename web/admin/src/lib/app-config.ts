@@ -92,7 +92,7 @@ export function ensureNipsDraft(cfg: AppConfig): void {
 	}
 }
 
-/** Ensures relay.instance_id exists for older config files and the Relay settings form. */
+/** Ensures relay.instance_id exists for older config files and the Storage settings form. */
 export function ensureRelayDraft(cfg: AppConfig): void {
 	cfg.relay ??= { port: 3334 };
 	cfg.relay.instance_id ??= '';

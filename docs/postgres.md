@@ -18,7 +18,7 @@ When using PostgreSQL, each relay process sends `NOTIFY new_event` with payload 
 
 Give each relay process a **stable** origin id so local writes are not double-delivered to subscribers:
 
-- Prefer **`relay.instance_id`** in the JSON config (auto-generated and persisted on first start when `CONGEE_INSTANCE_ID` is unset). You can change it from the admin UI (**Config → Relay**) when the environment variable is not set; a restart is required for the running PostgreSQL listener to pick up a new id.
+- Prefer **`relay.instance_id`** in the JSON config (auto-generated and persisted on first start when `CONGEE_INSTANCE_ID` is unset). You can change it from the admin UI (**Config → Storage**) when the environment variable is not set; a restart is required for the running PostgreSQL listener to pick up a new id.
 - Optionally set **`CONGEE_INSTANCE_ID`** in the environment to force the id for that process; it overrides the config value at runtime and cannot be changed from the UI.
 
 ## Admin migration API
