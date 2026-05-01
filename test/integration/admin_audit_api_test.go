@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,7 +22,12 @@ import (
 // Scenarios:
 //   - 401 without Authorization
 //   - limit/offset pagination across two pages with identical total
-//   - third request verifies offset math (page 2 vs page 0 differ, same total)
+//   - kind= filter (suffix " kind=<n>" as written by the relay post-hook)
+//   - action= exact filter
+//   - pubkey= exact filter
+//   - since= and until= unix bounds on created_at (inclusive)
+//   - combined filters narrow the result set consistently
+//   - X-Admin-Token accepted
 
 const integrationAuditPassword = "integration-audit-pass"
 
@@ -39,6 +45,35 @@ func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Stor
 			Action:    "event_accepted",
 			Detail:    fmt.Sprintf("event_id=%s conn_id=c stored=true kind=%d", id, i%4),
 			Pubkey:    strings.Repeat("9", 64),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// seedAuditFilterRows writes 10 rows: created_at 2000..2009, kinds (i%3)+1 in relay-shaped detail,
+// actions event_accepted for i<8 and special_only for i>=8, pubkeys alternate a.. / b..
+func seedAuditFilterRows(ctx context.Context, t *testing.T, st *sqlite.Store) {
+	t.Helper()
+	pkA := strings.Repeat("a", 64)
+	pkB := strings.Repeat("b", 64)
+	for i := 0; i < 10; i++ {
+		action := "event_accepted"
+		if i >= 8 {
+			action = "special_only"
+		}
+		pub := pkA
+		if i%2 == 1 {
+			pub = pkB
+		}
+		kind := (i % 3) + 1
+		id := fmt.Sprintf("%064x", i+1)
+		detail := fmt.Sprintf("event_id=%s conn_id=c%d stored=true kind=%d", id, i, kind)
+		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+			CreatedAt: int64(2000 + i),
+			Action:    action,
+			Detail:    detail,
+			Pubkey:    pub,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -144,4 +179,180 @@ func TestIntegrationAdminAuditAPI_Pagination(t *testing.T) {
 			t.Fatalf("status %d", resp.StatusCode)
 		}
 	})
+}
+
+func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "audit_filters.db")
+	st, err := sqlite.Open(ctx, dbPath, nil)
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	seedAuditFilterRows(ctx, t, st)
+
+	api := http.NewServeMux()
+	api.HandleFunc("GET /audit", admin.HandleAudit(st).ServeHTTP)
+	h := admin.RequireAdminAuth(integrationAuditPassword, http.StripPrefix("/api", api))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	client := &http.Client{}
+	do := func(query string) (integrationAuditResponse, int) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/audit?"+query, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+integrationAuditPassword)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body integrationAuditResponse
+		if resp.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+		}
+		return body, resp.StatusCode
+	}
+
+	pkB := strings.Repeat("b", 64)
+
+	t.Run("kind_filter", func(t *testing.T) {
+		// kind=2 at i=1,4,7 (all event_accepted)
+		body, code := do("kind=2&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 3 || len(body.Entries) != 3 {
+			t.Fatalf("kind=2: want total 3, got %d len %d", body.Total, len(body.Entries))
+		}
+		for _, e := range body.Entries {
+			if !strings.HasSuffix(e.Detail, " kind=2") {
+				t.Fatalf("expected suffix \" kind=2\": %q", e.Detail)
+			}
+		}
+	})
+
+	t.Run("action_filter", func(t *testing.T) {
+		body, code := do("action=special_only&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 2 || len(body.Entries) != 2 {
+			t.Fatalf("special_only: want 2, got %d", body.Total)
+		}
+	})
+
+	t.Run("pubkey_filter", func(t *testing.T) {
+		body, code := do("pubkey=" + pkB + "&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 5 || len(body.Entries) != 5 {
+			t.Fatalf("pubkey b: want 5, got %d", body.Total)
+		}
+	})
+
+	t.Run("since_until_filter", func(t *testing.T) {
+		// created_at 2003..2006 inclusive => 4 rows
+		body, code := do("since=2003&until=2006&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 4 || len(body.Entries) != 4 {
+			t.Fatalf("time range: want 4, got total=%d len=%d", body.Total, len(body.Entries))
+		}
+		for _, e := range body.Entries {
+			if e.CreatedAt < 2003 || e.CreatedAt > 2006 {
+				t.Fatalf("out of range: %d", e.CreatedAt)
+			}
+		}
+	})
+
+	t.Run("combined_kind_and_action", func(t *testing.T) {
+		// kind=1 at i=0,3,6; i=6 only event_accepted with kind 1 — i=0,3,6 all event_accepted => 3 rows
+		body, code := do("kind=1&action=event_accepted&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 3 || len(body.Entries) != 3 {
+			t.Fatalf("combined: want 3, got %d", body.Total)
+		}
+	})
+
+	t.Run("combined_kind_pubkey_since", func(t *testing.T) {
+		// pkB at odd i. kind=3 when (i%3)+1=3 => i=2,5,8. Odd => i=5,9. action event_accepted => i=5 only (i=9 is special_only).
+		body, code := do("kind=3&pubkey=" + pkB + "&action=event_accepted&since=2000&until=2008&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 1 || len(body.Entries) != 1 {
+			t.Fatalf("combined narrow: want 1 row (i=5), got total=%d", body.Total)
+		}
+		if body.Entries[0].CreatedAt != 2005 {
+			t.Fatalf("want row i=5 created_at 2005, got %d", body.Entries[0].CreatedAt)
+		}
+	})
+}
+
+func TestIntegrationAdminAuditAPI_KindFilterMatchesRelayDetailSuffix(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "audit_kind_suffix.db")
+	st, err := sqlite.Open(ctx, dbPath, nil)
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	id := strings.Repeat("c", 64)
+	// Exact shape from internal/relay/nip01.go post-hook (note space before kind=).
+	detail := fmt.Sprintf("event_id=%s conn_id=conn1 stored=true kind=7", id)
+	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+		CreatedAt: 1,
+		Action:    "event_accepted",
+		Detail:    detail,
+		Pubkey:    strings.Repeat("d", 64),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	api := http.NewServeMux()
+	api.HandleFunc("GET /audit", admin.HandleAudit(st).ServeHTTP)
+	h := admin.RequireAdminAuth(integrationAuditPassword, http.StripPrefix("/api", api))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/audit?kind="+strconv.Itoa(7)+"&limit=10&offset=0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+integrationAuditPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var body integrationAuditResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Total != 1 || len(body.Entries) != 1 {
+		t.Fatalf("want 1 row for relay-shaped detail, got total=%d len=%d", body.Total, len(body.Entries))
+	}
 }

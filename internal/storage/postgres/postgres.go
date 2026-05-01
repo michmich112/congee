@@ -458,7 +458,8 @@ func applyPostgresAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) 
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
 	if query.Kind != nil {
-		suffix := fmt.Sprintf("kind=%d", *query.Kind)
+		// Match relay audit detail suffix " … kind=<n>" (space before kind=).
+		suffix := fmt.Sprintf(" kind=%d", *query.Kind)
 		n := len(suffix)
 		q = q.Where("right(detail, ?) = ?", n, suffix)
 	}

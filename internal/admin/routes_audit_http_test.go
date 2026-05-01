@@ -64,7 +64,7 @@ func getAuditJSON(t *testing.T, h http.Handler, query string) (auditAPIResponse,
 // seedAuditHTTPTestData writes 32 rows: created_at 3000..2969 (newest first by id order),
 // rows i in [0,26] action event_accepted; i in [27,31] action onlyme (5 rows).
 // Rows i in [0,2] use pubkey pkRare; others use pkCommon.
-// Detail matches NIP-01 audit post-hook shape and ends with kind=(i mod 5).
+// Detail matches NIP-01 audit post-hook shape and ends with " kind=(i mod 5)".
 func seedAuditHTTPTestData(ctx context.Context, t *testing.T, st *sqlite.Store) {
 	t.Helper()
 	pkCommon := strings.Repeat("a", 64)
@@ -300,8 +300,8 @@ func TestHandleAudit_HTTP(t *testing.T) {
 			t.Fatalf("kind=0: want total 7 len 7, got %d %d", body.Total, len(body.Entries))
 		}
 		for _, e := range body.Entries {
-			if !strings.HasSuffix(e.Detail, "kind=0") {
-				t.Fatalf("detail should end with kind=0: %q", e.Detail)
+			if !strings.HasSuffix(e.Detail, " kind=0") {
+				t.Fatalf("detail should end with \" kind=0\": %q", e.Detail)
 			}
 		}
 	})

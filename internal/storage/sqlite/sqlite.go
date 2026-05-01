@@ -627,7 +627,8 @@ func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *b
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
 	if query.Kind != nil {
-		suffix := fmt.Sprintf("kind=%d", *query.Kind)
+		// NIP-01 post-hook detail ends with " … stored=<bool> kind=<n>" (space before kind=).
+		suffix := fmt.Sprintf(" kind=%d", *query.Kind)
 		n := len(suffix)
 		q = q.Where("substr(detail, -?) = ?", n, suffix)
 	}
