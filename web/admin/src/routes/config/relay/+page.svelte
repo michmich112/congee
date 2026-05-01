@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Radio from '@lucide/svelte/icons/radio';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -14,7 +16,11 @@
 </script>
 
 <section class="space-y-4">
-	<h3 class="text-sm font-medium text-muted-foreground">NIP-11 relay information</h3>
+	<AdminPageHeading
+		title="Relay"
+		subtitle="NIP-11 relay information document."
+		Icon={Radio}
+	/>
 	<Card.Root>
 		<Card.Content class="grid gap-4 pt-6 md:grid-cols-2">
 			<div class="space-y-2 md:col-span-2">

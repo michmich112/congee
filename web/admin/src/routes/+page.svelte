@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import { adminFetch } from '$lib/admin-api';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 
@@ -48,10 +50,11 @@
 </script>
 
 <div class="space-y-6">
-	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Dashboard</h2>
-		<p class="text-sm text-muted-foreground">Relay and admin listener status.</p>
-	</div>
+	<AdminPageHeading
+		title="Dashboard"
+		subtitle="Relay and admin listener status."
+		Icon={LayoutDashboard}
+	/>
 
 	{#if loading}
 		<p class="text-sm text-muted-foreground">Loading stats…</p>

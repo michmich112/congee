@@ -1,5 +1,7 @@
 <script lang="ts">
+	import Shield from '@lucide/svelte/icons/shield';
 	import { parseIntSafe } from '$lib/app-config';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -16,6 +18,11 @@
 </script>
 
 <div class="space-y-8">
+	<AdminPageHeading
+		title="Security"
+		subtitle="Rate limits and NIP-42 client authentication."
+		Icon={Shield}
+	/>
 	<section class="space-y-4">
 		<h3 class="text-sm font-medium text-muted-foreground">Rate limits</h3>
 		<Card.Root>

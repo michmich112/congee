@@ -260,7 +260,7 @@
 <div class="space-y-6">
 	<div class="space-y-2">
 		<div class="flex flex-row flex-wrap items-center gap-x-4 gap-y-2">
-			<h2 class="min-w-0 flex-1 text-xl font-semibold tracking-tight">Configuration</h2>
+			<p class="min-w-0 flex-1 text-xl font-semibold tracking-tight">Configuration</p>
 			<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
 				<Button
 					type="button"

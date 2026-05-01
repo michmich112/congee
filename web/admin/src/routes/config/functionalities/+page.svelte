@@ -1,6 +1,8 @@
 <script lang="ts">
+	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { parseIntSafe } from '$lib/app-config';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
@@ -21,8 +23,13 @@
 	const nip29Enabled = $derived(draft().nips.enabled.includes(29));
 </script>
 
-<section id="section-nips" class="space-y-4 scroll-mt-8">
-	<h3 class="text-sm font-medium text-muted-foreground">NIPs</h3>
+<div class="space-y-6">
+	<AdminPageHeading
+		title="Functionalities"
+		subtitle="Optional NIPs and per-NIP options such as NIP-29 relay groups."
+		Icon={Puzzle}
+	/>
+	<section id="section-nips" class="space-y-4 scroll-mt-8">
 	<Card.Root>
 		<Card.Header>
 			<Card.Title class="text-base">Enabled NIPs</Card.Title>
@@ -234,4 +241,5 @@
 			</ul>
 		</Card.Content>
 	</Card.Root>
-</section>
+	</section>
+</div>

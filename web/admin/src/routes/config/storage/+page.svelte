@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Database from '@lucide/svelte/icons/database';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import MigrationTool from '$lib/components/MigrationTool.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
@@ -14,8 +16,12 @@
 </script>
 
 <div class="space-y-8">
+	<AdminPageHeading
+		title="Storage"
+		subtitle="Database connection and migration to another backend."
+		Icon={Database}
+	/>
 	<section class="space-y-4">
-		<h3 class="text-sm font-medium text-muted-foreground">Storage</h3>
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="text-base">Database</Card.Title>

@@ -1,5 +1,7 @@
 <script lang="ts">
+	import FileText from '@lucide/svelte/icons/file-text';
 	import { parseIntSafe } from '$lib/app-config';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -14,8 +16,12 @@
 </script>
 
 <div class="space-y-8">
+	<AdminPageHeading
+		title="Logging"
+		subtitle="Process logging and persisted audit retention."
+		Icon={FileText}
+	/>
 	<section class="space-y-4">
-		<h3 class="text-sm font-medium text-muted-foreground">Logging</h3>
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="text-base">Log output</Card.Title>

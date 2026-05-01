@@ -1,5 +1,7 @@
 <script lang="ts">
+	import Network from '@lucide/svelte/icons/network';
 	import { parseIntSafe } from '$lib/app-config';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -15,8 +17,12 @@
 </script>
 
 <div class="space-y-8">
+	<AdminPageHeading
+		title="Network"
+		subtitle="Relay and admin ports, connection limits, and WebSocket behavior."
+		Icon={Network}
+	/>
 	<section class="space-y-4">
-		<h3 class="text-sm font-medium text-muted-foreground">Network</h3>
 		<div class="grid gap-6 md:grid-cols-2">
 			<Card.Root>
 				<Card.Header>

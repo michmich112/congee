@@ -3,6 +3,16 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import Menu from '@lucide/svelte/icons/menu';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
+	import Settings from '@lucide/svelte/icons/settings';
+	import Network from '@lucide/svelte/icons/network';
+	import Database from '@lucide/svelte/icons/database';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import Radio from '@lucide/svelte/icons/radio';
+	import Shield from '@lucide/svelte/icons/shield';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import type { Component } from 'svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import {
@@ -32,28 +42,33 @@
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
 
-	const mainNav: { href: string; label: string }[] = [
-		{ href: '/', label: 'Dashboard' },
-		{ href: '/audit', label: 'Audit' }
+	type IconComponent = Component<{ class?: string }>;
+
+	const mainNav: { href: string; label: string; Icon: IconComponent }[] = [
+		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard },
+		{ href: '/audit', label: 'Audit', Icon: ClipboardList }
 	];
 
-	const configNav: { href: string; label: string }[] = [
-		{ href: '/config/network', label: 'Network' },
-		{ href: '/config/storage', label: 'Storage' },
-		{ href: '/config/logging', label: 'Logging' },
-		{ href: '/config/relay', label: 'Relay' },
-		{ href: '/config/security', label: 'Security' },
-		{ href: '/config/functionalities', label: 'Functionalities' }
+	const configNav: { href: string; label: string; Icon: IconComponent }[] = [
+		{ href: '/config/network', label: 'Network', Icon: Network },
+		{ href: '/config/storage', label: 'Storage', Icon: Database },
+		{ href: '/config/logging', label: 'Logging', Icon: FileText },
+		{ href: '/config/relay', label: 'Relay', Icon: Radio },
+		{ href: '/config/security', label: 'Security', Icon: Shield },
+		{ href: '/config/functionalities', label: 'Functionalities', Icon: Puzzle }
 	];
+
+	function navLinkActive(href: string) {
+		const path = page.url.pathname;
+		return href === '/'
+			? path === '/'
+			: path === href || path.startsWith(href + '/');
+	}
 
 	function navLinkClass(href: string) {
-		const path = page.url.pathname;
-		const active =
-			href === '/'
-				? path === '/'
-				: path === href || path.startsWith(href + '/');
+		const active = navLinkActive(href);
 		return cn(
-			'rounded-md px-2 py-1.5 text-sm transition-colors',
+			'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 			active
 				? 'bg-muted font-medium text-foreground'
 				: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -64,11 +79,16 @@
 		const path = page.url.pathname;
 		const active = path === href || path.startsWith(href + '/');
 		return cn(
-			'rounded-md py-1.5 pl-3 pr-2 text-sm transition-colors',
+			'flex items-center gap-2 rounded-md py-1.5 pl-3 pr-2 text-sm transition-colors',
 			active
 				? 'bg-muted font-medium text-foreground'
 				: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
 		);
+	}
+
+	function configChildActive(href: string) {
+		const path = page.url.pathname;
+		return path === href || path.startsWith(href + '/');
 	}
 
 	$effect(() => {
@@ -186,13 +206,21 @@
 					</div>
 					<nav class="flex flex-col gap-1">
 						{#each mainNav as item}
-							<a href={item.href} class={navLinkClass(item.href)}>{item.label}</a>
+							<a
+								href={item.href}
+								class={navLinkClass(item.href)}
+								aria-current={navLinkActive(item.href) ? 'page' : undefined}
+							>
+								<item.Icon class="size-4 shrink-0 opacity-80" />
+								{item.label}
+							</a>
 						{/each}
 						<Collapsible.Root bind:open={configNavOpen} class="space-y-1">
 							<Collapsible.Trigger
-								class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+								class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
 							>
-								<span class="font-medium">Config</span>
+								<Settings class="size-4 shrink-0 opacity-80" />
+								<span class="flex-1 font-medium">Config</span>
 								<ChevronDown
 									class={cn(
 										'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
@@ -202,7 +230,14 @@
 							</Collapsible.Trigger>
 							<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
 								{#each configNav as item}
-									<a href={item.href} class={configChildClass(item.href)}>{item.label}</a>
+									<a
+										href={item.href}
+										class={configChildClass(item.href)}
+										aria-current={configChildActive(item.href) ? 'page' : undefined}
+									>
+										<item.Icon class="size-3.5 shrink-0 opacity-75" />
+										{item.label}
+									</a>
 								{/each}
 							</Collapsible.Content>
 						</Collapsible.Root>
@@ -241,18 +276,29 @@
 										<a
 											href={item.href}
 											class={navLinkClass(item.href)}
-											onclick={() => (mobileNavOpen = false)}>{item.label}</a
+											aria-current={navLinkActive(item.href) ? 'page' : undefined}
+											onclick={() => (mobileNavOpen = false)}
 										>
+											<item.Icon class="size-4 shrink-0 opacity-80" />
+											{item.label}
+										</a>
 									{/each}
-									<p class="text-muted-foreground px-2 pt-3 pb-1 text-xs font-medium tracking-wide uppercase">
+									<p
+										class="text-muted-foreground flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-medium tracking-wide uppercase"
+									>
+										<Settings class="size-3.5 shrink-0 opacity-70" />
 										Config
 									</p>
 									{#each configNav as item}
 										<a
 											href={item.href}
 											class={configChildClass(item.href)}
-											onclick={() => (mobileNavOpen = false)}>{item.label}</a
+											aria-current={configChildActive(item.href) ? 'page' : undefined}
+											onclick={() => (mobileNavOpen = false)}
 										>
+											<item.Icon class="size-3.5 shrink-0 opacity-75" />
+											{item.label}
+										</a>
 									{/each}
 								</nav>
 								<div class="mt-auto flex flex-col gap-3 border-border border-t pt-4">
