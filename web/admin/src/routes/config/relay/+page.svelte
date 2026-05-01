@@ -51,9 +51,7 @@
 				<div>
 					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>
 					<p class="text-muted-foreground mt-1 text-xs">
-						Same <span class="font-mono">npub</span> and hex pubkey as the Dashboard; from
-						<span class="font-mono">GET /api/relay-identity</span> (relay signing keys). Shown for NIP-11; not
-						editable here. Saving keeps <span class="font-mono">nip11.pubkey</span> in sync with this identity.
+						Your public key is generated from your private key and can be configured through the <code class="rounded bg-muted px-1">RELAY_SECRETS_PATH</code> environment variable.
 					</p>
 				</div>
 				{#if ctx.relayIdentity}
