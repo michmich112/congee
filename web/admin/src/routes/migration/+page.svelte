@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Plus from '@lucide/svelte/icons/plus';
 	import { adminFetch } from '$lib/admin-api';
+	import { parseConfigJson } from '$lib/app-config';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { ButtonGroup } from '$lib/components/ui/button-group';
@@ -53,12 +55,41 @@
 		  }
 		| { ok: false; message: string };
 
-	let source = $state<Endpoint>({ type: 'sqlite', dsn: './congee.db' });
+	let source = $state<Endpoint>({ type: '', dsn: '' });
 	let target = $state<Endpoint>({ type: 'postgres', dsn: '' });
+	let sourceHydrated = $state(false);
+	let configLoadError = $state<string | null>(null);
 	let busy = $state(false);
 	let progressPct = $state(0);
 	let progressMsg = $state('');
 	let outcome = $state<MigrationOutcome | null>(null);
+
+	function canonicalDbType(t: string): 'sqlite' | 'postgres' {
+		const x = (t || '').trim().toLowerCase();
+		return x === 'postgres' ? 'postgres' : 'sqlite';
+	}
+
+	onMount(() => {
+		void (async () => {
+			try {
+				const res = await adminFetch('/api/config');
+				if (!res.ok) {
+					configLoadError = `Could not load config (HTTP ${res.status}).`;
+					return;
+				}
+				const cfg = parseConfigJson(await res.text());
+				const dsn = (cfg.database?.dsn ?? '').trim();
+				if (!dsn) {
+					configLoadError = 'Config has an empty database.dsn.';
+					return;
+				}
+				source = { type: canonicalDbType(cfg.database?.type ?? ''), dsn };
+				sourceHydrated = true;
+			} catch (e) {
+				configLoadError = e instanceof Error ? e.message : 'Failed to load config.';
+			}
+		})();
+	});
 
 	function parseSSEChunk(buffer: string): { events: { event: string; data: string }[]; rest: string } {
 		const events: { event: string; data: string }[] = [];
@@ -84,12 +115,16 @@
 		progressPct = 0;
 		progressMsg = '';
 		outcome = null;
-		if (!source.type || !target.type) {
-			setFailed('Pick source and target types.');
+		if (configLoadError || !sourceHydrated) {
+			setFailed(configLoadError ?? 'Current database is still loading.');
 			return;
 		}
-		if (!source.dsn.trim() || !target.dsn.trim()) {
-			setFailed('Source and target DSN/path are required.');
+		if (!target.type) {
+			setFailed('Pick a target type.');
+			return;
+		}
+		if (!target.dsn.trim()) {
+			setFailed('Target DSN or path is required.');
 			return;
 		}
 		busy = true;
@@ -189,16 +224,22 @@
 	<div>
 		<h2 class="text-lg font-semibold">Database migration</h2>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Copy events, tags, audit log, and config changelog between SQLite files and PostgreSQL. Target must be
-			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem).
-			Use the <span class="font-medium text-foreground">+</span> button for
-			<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span> when you want
-			the JSON config switched to the target and a restart scheduled; the main button copies data only.
+			Copy events, tags, audit log, and config changelog to a different Database. <br />
+			Duplicate events will be skipped. The source is always the database from the relay JSON config.
 		</p>
 	</div>
 
 	<Card.Root>
 		<Card.Content class="space-y-6">
+			{#if configLoadError}
+				<Alert.Root variant="destructive">
+					<Alert.Title>Could not load current database</Alert.Title>
+					<Alert.Description>{configLoadError}</Alert.Description>
+				</Alert.Root>
+			{:else if !sourceHydrated}
+				<p class="text-sm text-muted-foreground">Loading current database from config…</p>
+			{/if}
+
 			<div class="grid gap-8 sm:grid-cols-2 sm:gap-10">
 				<div class="space-y-4">
 					<h3 class="text-sm font-semibold tracking-tight">Source</h3>
@@ -206,14 +247,21 @@
 						<Label for="src-type" class="shrink-0">Type</Label>
 						<select
 							id="src-type"
-							class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
+							class="border-input bg-muted/40 h-9 w-full min-w-0 cursor-not-allowed rounded-md border px-3 text-sm disabled:opacity-90"
 							bind:value={source.type}
+							disabled
 						>
 							<option value="sqlite">sqlite</option>
 							<option value="postgres">postgres</option>
 						</select>
 						<Label for="src-dsn" class="shrink-0">DSN or path</Label>
-						<Input id="src-dsn" bind:value={source.dsn} placeholder="./congee.db or postgres://..." />
+						<Input
+							id="src-dsn"
+							bind:value={source.dsn}
+							placeholder={sourceHydrated ? '' : 'Loading…'}
+							readonly
+							class="cursor-default bg-muted/40"
+						/>
 					</div>
 				</div>
 				<div class="space-y-4">
@@ -311,7 +359,7 @@
 				<Button
 					type="button"
 					variant="outline"
-					disabled={busy}
+					disabled={busy || !!configLoadError || !sourceHydrated}
 					onclick={() => void startMigration(false)}
 				>
 					{busy ? 'Running…' : 'Start migration'}
@@ -322,7 +370,7 @@
 							buttonVariants({ variant: 'outline', size: 'icon' }),
 							'disabled:pointer-events-none disabled:opacity-50'
 						)}
-						disabled={busy}
+						disabled={busy || !!configLoadError || !sourceHydrated}
 						aria-label="Make target primary database (opens menu)"
 					>
 						<Plus class="size-4 opacity-90" />
@@ -330,7 +378,7 @@
 					<DropdownMenuContent align="end" class="min-w-56">
 						<DropdownMenuGroup>
 							<DropdownMenuItem
-								disabled={busy}
+								disabled={busy || !!configLoadError || !sourceHydrated}
 								onclick={() => void startMigration(true)}
 								class="whitespace-normal"
 							>

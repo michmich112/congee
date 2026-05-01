@@ -54,6 +54,25 @@ func migrationLogConn(ev *zerolog.Event, role string, typ, dsn string) *zerolog.
 	return ev
 }
 
+// migrationCanonicalDBType maps config database.type (including empty) to sqlite or postgres.
+func migrationCanonicalDBType(typ string) string {
+	switch strings.TrimSpace(strings.ToLower(typ)) {
+	case "postgres":
+		return "postgres"
+	default:
+		return "sqlite"
+	}
+}
+
+// migrationSourceMatchesConfig reports whether the client source matches the relay JSON config database.
+func migrationSourceMatchesConfig(cfg *config.Config, src migrationEndpoint) bool {
+	if cfg == nil {
+		return false
+	}
+	return migrationCanonicalDBType(src.Type) == migrationCanonicalDBType(cfg.Database.Type) &&
+		strings.TrimSpace(src.DSN) == strings.TrimSpace(cfg.Database.DSN)
+}
+
 func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
 	switch typ {
 	case "sqlite":
@@ -148,13 +167,29 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		if req.Source.Type == "" || req.Target.Type == "" {
+		if req.Target.Type == "" {
+			log.Warn().
+				Str("handler", "migration_start").
+				Str("target_type", req.Target.Type).
+				Msg("migration rejected: target.type missing")
+			http.Error(w, "target.type is required", http.StatusBadRequest)
+			return
+		}
+
+		cfg, err := config.LoadJSON(cfgPath)
+		if err != nil {
+			log.Warn().Err(err).Str("handler", "migration_start").Msg("migration rejected: load config failed")
+			http.Error(w, "load config: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !migrationSourceMatchesConfig(cfg, req.Source) {
 			log.Warn().
 				Str("handler", "migration_start").
 				Str("source_type", req.Source.Type).
-				Str("target_type", req.Target.Type).
-				Msg("migration rejected: source.type and/or target.type missing")
-			http.Error(w, "source.type and target.type are required", http.StatusBadRequest)
+				Str("config_type", cfg.Database.Type).
+				Bool("source_dsn_match", strings.TrimSpace(req.Source.DSN) == strings.TrimSpace(cfg.Database.DSN)).
+				Msg("migration rejected: source does not match configured database")
+			http.Error(w, "source must match the relay database in config", http.StatusBadRequest)
 			return
 		}
 
