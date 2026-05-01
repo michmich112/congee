@@ -238,6 +238,16 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 		}
 	})
 
+	t.Run("kind_comma_in_one_param", func(t *testing.T) {
+		body, code := do("kind=1,2&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 7 || len(body.Entries) != 7 {
+			t.Fatalf("kind=1,2: want 7, got total=%d len=%d", body.Total, len(body.Entries))
+		}
+	})
+
 	t.Run("kind_filter", func(t *testing.T) {
 		// kind=2 at i=1,4,7 (all event_accepted)
 		body, code := do("kind=2&limit=50&offset=0")
