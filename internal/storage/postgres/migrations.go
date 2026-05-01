@@ -59,7 +59,7 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			id SMALLINT PRIMARY KEY CHECK (id = 1),
 			version INT NOT NULL
 		)`,
-		`INSERT INTO congee_schema_version (id, version) VALUES (1, $1)`,
+		`INSERT INTO congee_schema_version (id, version) VALUES (1, ?)`,
 		`CREATE TABLE events (
 			id VARCHAR(128) NOT NULL PRIMARY KEY,
 			pubkey VARCHAR(128) NOT NULL,
@@ -121,7 +121,7 @@ func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`ALTER TABLE events ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED`,
 		`CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector)`,
-		`UPDATE congee_schema_version SET version = $1 WHERE id = 1`,
+		`UPDATE congee_schema_version SET version = ? WHERE id = 1`,
 	}
 	log.Debug().Int("step", 0).Msg("schema v1->v2: add search_vector column")
 	if _, err := db.ExecContext(ctx, stmts[0]); err != nil {
