@@ -10,9 +10,13 @@ import (
 // Migrate copies events (with tags), audit_log, and config_changelog from src to dst.
 // dst must be empty or compatible (duplicate event ids will fail on SaveEvent).
 // progress is optional; it may be called from the caller's goroutine frequently during the run.
-func Migrate(ctx context.Context, src, dst MigrationSource, progress func(MigrationProgress)) error {
+// debug is optional; when non-nil it receives short milestone strings (not per-row).
+func Migrate(ctx context.Context, src, dst MigrationSource, progress func(MigrationProgress), debug func(string)) error {
 	if progress == nil {
 		progress = func(MigrationProgress) {}
+	}
+	if debug == nil {
+		debug = func(string) {}
 	}
 
 	progress(MigrationProgress{Percent: 0, Message: "counting source rows"})
@@ -20,6 +24,8 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	if err != nil {
 		return fmt.Errorf("migration: source counts: %w", err)
 	}
+	debug(fmt.Sprintf("source_row_counts events=%d tags=%d audit=%d changelog=%d",
+		srcCounts.Events, srcCounts.Tags, srcCounts.Audit, srcCounts.Changelog))
 
 	totalSteps := srcCounts.Events + srcCounts.Audit + srcCounts.Changelog
 	if totalSteps == 0 {
@@ -54,6 +60,7 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	if err != nil {
 		return err
 	}
+	debug(fmt.Sprintf("events_copy_done copied=%d", evCopied))
 
 	progress(MigrationProgress{Percent: 40, Message: fmt.Sprintf("copying audit_log (0 / %d)", srcCounts.Audit)})
 	var auditCopied int64
@@ -74,6 +81,7 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	if err != nil {
 		return err
 	}
+	debug(fmt.Sprintf("audit_copy_done copied=%d", auditCopied))
 
 	progress(MigrationProgress{Percent: 70, Message: fmt.Sprintf("copying config_changelog (0 / %d)", srcCounts.Changelog)})
 	var chCopied int64
@@ -94,6 +102,7 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	if err != nil {
 		return err
 	}
+	debug(fmt.Sprintf("changelog_copy_done copied=%d", chCopied))
 
 	progress(MigrationProgress{Percent: 92, Message: "verifying row counts"})
 	dstCounts, err := dst.MigrationRowCounts(ctx)
@@ -104,6 +113,8 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 		dstCounts.Audit != srcCounts.Audit || dstCounts.Changelog != srcCounts.Changelog {
 		return fmt.Errorf("migration: count mismatch src=%+v dst=%+v", srcCounts, dstCounts)
 	}
+	debug(fmt.Sprintf("verify_ok dst events=%d tags=%d audit=%d changelog=%d",
+		dstCounts.Events, dstCounts.Tags, dstCounts.Audit, dstCounts.Changelog))
 
 	progress(MigrationProgress{Percent: 100, Message: "done"})
 	return nil

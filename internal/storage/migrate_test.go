@@ -52,7 +52,7 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := storage.Migrate(ctx, src, dst, nil); err != nil {
+	if err := storage.Migrate(ctx, src, dst, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
