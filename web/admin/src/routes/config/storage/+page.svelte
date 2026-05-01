@@ -61,55 +61,63 @@
 						}}
 					/>
 				</div>
-				<div class="space-y-3 md:col-span-2 rounded-lg border border-border bg-muted/20 px-4 py-4">
-					<div class="flex flex-wrap items-center gap-2">
-						<Label for="relay-instance-id" class="text-sm font-medium">Relay instance ID</Label>
-						{#if ctx.relayInstanceRuntime?.env_locked}
-							<span
-								class="inline-flex text-muted-foreground"
-								role="img"
-								aria-label={envLockedTooltip}
-								title={envLockedTooltip}
-							>
-								<CircleHelp class="size-4" />
-							</span>
-						{/if}
-					</div>
-					<p class="text-muted-foreground text-xs">
-						Used as the <code class="rounded bg-muted px-1">origin</code> in PostgreSQL
-						<code class="rounded bg-muted px-1">LISTEN</code>/<code class="rounded bg-muted px-1">NOTIFY</code> so
-						multi-instance relays do not echo their own writes. Changing this requires a relay restart to apply to
-						the database listener. Stored in config as <code class="rounded bg-muted px-1">relay.instance_id</code>.
-					</p>
-					<div class="flex gap-2">
-						<Input
-							id="relay-instance-id"
-							class="min-w-0 flex-1 font-mono text-sm"
-							readonly={ctx.relayInstanceRuntime?.env_locked === true}
-							tabindex={ctx.relayInstanceRuntime?.env_locked === true ? -1 : undefined}
-							value={ctx.relayInstanceRuntime?.env_locked === true
-								? (ctx.relayInstanceRuntime?.instance_id ?? '')
-								: (draft().relay.instance_id ?? '')}
-							oninput={(e) => {
-								if (ctx.relayInstanceRuntime?.env_locked === true) return;
-								draft().relay.instance_id = e.currentTarget.value;
-								ctx.markDirty();
-							}}
-						/>
-						<ClipCopy
-							value={ctx.relayInstanceRuntime?.env_locked === true
-								? (ctx.relayInstanceRuntime?.instance_id ?? '')
-								: (draft().relay.instance_id ?? '')}
-							ariaLabel="Copy relay instance ID"
-							title="Copy relay instance ID"
-						/>
-					</div>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="text-base">Relay instance ID</Card.Title>
+				<Card.Description>
+					Origin id for PostgreSQL LISTEN/NOTIFY when multiple relay instances share one database. Persisted as
+					relay.instance_id in the JSON config.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="space-y-3">
+				<div class="flex flex-wrap items-center gap-2">
+					<Label for="relay-instance-id" class="text-sm font-medium">Instance ID</Label>
 					{#if ctx.relayInstanceRuntime?.env_locked}
-						<p class="text-muted-foreground text-xs">
-							Set via <code class="rounded bg-muted px-1">CONGEE_INSTANCE_ID</code>.
-						</p>
+						<span
+							class="inline-flex text-muted-foreground"
+							role="img"
+							aria-label={envLockedTooltip}
+							title={envLockedTooltip}
+						>
+							<CircleHelp class="size-4" />
+						</span>
 					{/if}
 				</div>
+				<p class="text-muted-foreground text-xs">
+					Multi-instance relays use this value so each process does not re-broadcast its own writes. Restart the relay
+					after changing it so the database listener picks up the new id.
+				</p>
+				<div class="flex gap-2">
+					<Input
+						id="relay-instance-id"
+						class="min-w-0 flex-1 font-mono text-sm"
+						readonly={ctx.relayInstanceRuntime?.env_locked === true}
+						tabindex={ctx.relayInstanceRuntime?.env_locked === true ? -1 : undefined}
+						value={ctx.relayInstanceRuntime?.env_locked === true
+							? (ctx.relayInstanceRuntime?.instance_id ?? '')
+							: (draft().relay.instance_id ?? '')}
+						oninput={(e) => {
+							if (ctx.relayInstanceRuntime?.env_locked === true) return;
+							draft().relay.instance_id = e.currentTarget.value;
+							ctx.markDirty();
+						}}
+					/>
+					<ClipCopy
+						value={ctx.relayInstanceRuntime?.env_locked === true
+							? (ctx.relayInstanceRuntime?.instance_id ?? '')
+							: (draft().relay.instance_id ?? '')}
+						ariaLabel="Copy relay instance ID"
+						title="Copy relay instance ID"
+					/>
+				</div>
+				{#if ctx.relayInstanceRuntime?.env_locked}
+					<p class="text-muted-foreground text-xs">
+						Set via <code class="rounded bg-muted px-1">CONGEE_INSTANCE_ID</code>.
+					</p>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	</section>
