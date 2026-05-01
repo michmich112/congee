@@ -1,7 +1,9 @@
 <script lang="ts">
+	import Copy from '@lucide/svelte/icons/copy';
 	import Radio from '@lucide/svelte/icons/radio';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
+	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -12,6 +14,14 @@
 
 	function draft() {
 		return ctx.draft!;
+	}
+
+	async function copyToClipboard(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			/* clipboard unavailable */
+		}
 	}
 </script>
 
@@ -59,24 +69,50 @@
 					<div class="grid gap-4 sm:grid-cols-1">
 						<div class="space-y-2">
 							<Label for="n11-npub">npub</Label>
-							<Input
-								id="n11-npub"
-								class="bg-muted/50 font-mono text-sm"
-								readonly
-								tabindex={-1}
-								value={ctx.relayIdentity.npub}
-							/>
+							<div class="flex gap-2">
+								<Input
+									id="n11-npub"
+									class="min-w-0 flex-1 bg-muted/50 font-mono text-sm"
+									readonly
+									tabindex={-1}
+									value={ctx.relayIdentity.npub}
+								/>
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									class="shrink-0"
+									onclick={() => void copyToClipboard(ctx.relayIdentity!.npub)}
+									aria-label="Copy npub"
+									title="Copy npub"
+								>
+									<Copy class="size-4" />
+								</Button>
+							</div>
 						</div>
 						<div class="space-y-2">
 							<Label for="n11-pk">Public key (hex)</Label>
-							<Input
-								id="n11-pk"
-								class="bg-muted/50 font-mono text-xs"
-								readonly
-								tabindex={-1}
-								spellcheck={false}
-								value={ctx.relayIdentity.pubkey_hex}
-							/>
+							<div class="flex gap-2">
+								<Input
+									id="n11-pk"
+									class="min-w-0 flex-1 bg-muted/50 font-mono text-xs"
+									readonly
+									tabindex={-1}
+									spellcheck={false}
+									value={ctx.relayIdentity.pubkey_hex}
+								/>
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									class="shrink-0"
+									onclick={() => void copyToClipboard(ctx.relayIdentity!.pubkey_hex)}
+									aria-label="Copy public key hex"
+									title="Copy public key hex"
+								>
+									<Copy class="size-4" />
+								</Button>
+							</div>
 						</div>
 					</div>
 				{:else}
