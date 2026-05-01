@@ -54,13 +54,15 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 }
 
 func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	// IF NOT EXISTS / upsert: targets may be half-applied after a failed migrate (e.g. only
+	// congee_schema_version exists while events is still missing).
 	stmts := []string{
-		`CREATE TABLE congee_schema_version (
+		`CREATE TABLE IF NOT EXISTS congee_schema_version (
 			id SMALLINT PRIMARY KEY CHECK (id = 1),
 			version INT NOT NULL
 		)`,
-		`INSERT INTO congee_schema_version (id, version) VALUES (1, ?)`,
-		`CREATE TABLE events (
+		`INSERT INTO congee_schema_version (id, version) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version`,
+		`CREATE TABLE IF NOT EXISTS events (
 			id VARCHAR(128) NOT NULL PRIMARY KEY,
 			pubkey VARCHAR(128) NOT NULL,
 			created_at BIGINT NOT NULL,
@@ -70,11 +72,11 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			d_tag TEXT NOT NULL DEFAULT '',
 			search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED
 		)`,
-		`CREATE INDEX idx_events_pubkey_kind ON events (pubkey, kind)`,
-		`CREATE INDEX idx_events_pubkey_kind_dtag ON events (pubkey, kind, d_tag)`,
-		`CREATE INDEX idx_events_created_at ON events (created_at DESC)`,
-		`CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector)`,
-		`CREATE TABLE event_tags (
+		`CREATE INDEX IF NOT EXISTS idx_events_pubkey_kind ON events (pubkey, kind)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_pubkey_kind_dtag ON events (pubkey, kind, d_tag)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector)`,
+		`CREATE TABLE IF NOT EXISTS event_tags (
 			id BIGSERIAL PRIMARY KEY,
 			event_id VARCHAR(128) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
 			pos INT NOT NULL,
@@ -82,28 +84,28 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			value TEXT NOT NULL DEFAULT '',
 			full_json JSONB NOT NULL
 		)`,
-		`CREATE INDEX idx_event_tags_event_id ON event_tags (event_id)`,
-		`CREATE INDEX idx_event_tags_name_value ON event_tags (name, value)`,
-		`CREATE TABLE audit_log (
+		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id ON event_tags (event_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value ON event_tags (name, value)`,
+		`CREATE TABLE IF NOT EXISTS audit_log (
 			id BIGSERIAL PRIMARY KEY,
 			created_at BIGINT NOT NULL,
 			action TEXT NOT NULL,
 			detail TEXT,
 			pubkey TEXT NOT NULL DEFAULT ''
 		)`,
-		`CREATE INDEX idx_audit_created_at ON audit_log (created_at DESC)`,
-		`CREATE TABLE config_changelog (
+		`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS config_changelog (
 			id BIGSERIAL PRIMARY KEY,
 			created_at BIGINT NOT NULL,
 			summary TEXT NOT NULL,
 			json_diff TEXT NOT NULL
 		)`,
-		`CREATE INDEX idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
 	}
 
 	for i, s := range stmts {
 		if i == 1 {
-			log.Debug().Int("ddl_step", i).Msg("schema: insert congee_schema_version")
+			log.Debug().Int("ddl_step", i).Msg("schema: upsert congee_schema_version")
 			if _, err := db.ExecContext(ctx, s, schemaVersion); err != nil {
 				return fmt.Errorf("postgres: migrate: %w", err)
 			}
@@ -120,7 +122,7 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`ALTER TABLE events ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED`,
-		`CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector)`,
 		`UPDATE congee_schema_version SET version = ? WHERE id = 1`,
 	}
 	log.Debug().Int("step", 0).Msg("schema v1->v2: add search_vector column")
