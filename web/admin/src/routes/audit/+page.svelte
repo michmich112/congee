@@ -10,10 +10,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
 	import Check from '@lucide/svelte/icons/check';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import { cn } from '$lib/utils';
 	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
+	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 
 	type Entry = {
@@ -123,6 +125,16 @@
 		return `${selectedKinds.length} kinds selected`;
 	});
 
+	const hasNonDefaultFilters = $derived.by(() => {
+		return (
+			sinceDate !== '' ||
+			untilDate !== '' ||
+			selectedKinds.length > 0 ||
+			action !== '' ||
+			pubkey.trim() !== ''
+		);
+	});
+
 	async function loadKindOptions() {
 		try {
 			const res = await adminFetch('/api/audit/kinds');
@@ -146,9 +158,14 @@
 		void applyFilters();
 	}
 
-	function clearKindFilters() {
+	async function clearAllFilters() {
+		sinceDate = '';
+		untilDate = '';
 		selectedKinds = [];
-		void applyFilters();
+		action = '';
+		pubkey = '';
+		page = 1;
+		await load();
 	}
 
 	async function load(allowClampRetry = true) {
@@ -255,124 +272,105 @@
 </script>
 
 <div class="space-y-6">
-	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
-		<p class="text-sm text-muted-foreground">
-			Filter and paginate relay audit entries (newest first). Since/until use your local calendar day (midnight
-			through end of day in the browser timezone, sent as unix bounds). The API returns <code class="text-xs">total</code> for
-			pagination. Page size is capped at 1000 here. Optional <code class="text-xs">kind</code> query params (repeat per
-			selected kind, OR semantics) match stored audit detail lines that end with
-			<code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). The combobox merges well-known kinds with
-			kinds seen in recent audit rows from <code class="text-xs">GET /api/audit/kinds</code>. Open it to search and
-			combine kinds. Click a truncated
-			<code class="text-xs">event_id</code> to load stored event JSON. Hover a <code class="text-xs">kind</code> in the
-			table for a short Nostr description. Use the timestamps control above the table for column time format.
-		</p>
-	</div>
+	<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
 
-	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		<div class="space-y-2">
-			<Label for="page-size">Events per page</Label>
-			<select
-				id="page-size"
-				class={selectClassNarrow}
-				value={String(pageSize)}
-				onchange={onPageSizeChange}
-				aria-label="Events per page"
-			>
-				{#each PAGE_SIZES as sz}
-					<option value={String(sz)}>{sz}</option>
-				{/each}
-			</select>
-		</div>
-		<div class="space-y-2">
-			<Label for="act">Action</Label>
-			<select
-				id="act"
-				class={selectClass}
-				bind:value={action}
-				aria-label="Audit action filter"
-				onchange={() => void applyFilters()}
-			>
-				{#each AUDIT_ACTION_OPTIONS as opt}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
-		</div>
-		<div class="space-y-2 sm:col-span-2 lg:col-span-3">
-			<div class="flex flex-wrap items-center justify-between gap-2">
-				<Label for="kind-combobox-anchor">Kinds</Label>
-				{#if selectedKinds.length > 0}
-					<button
-						type="button"
-						class="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
-						onclick={() => clearKindFilters()}
-					>
-						Clear kinds
-					</button>
-				{/if}
+	<Card.Root>
+		<Card.Content class="pt-6">
+			<div class="grid gap-4 md:grid-cols-3">
+				<div class="space-y-2">
+					<Label for="since-date">Since (date)</Label>
+					<Input id="since-date" type="date" bind:value={sinceDate} class="block w-full min-w-0" />
+				</div>
+				<div class="space-y-2">
+					<Label for="until-date">Until (date)</Label>
+					<Input id="until-date" type="date" bind:value={untilDate} class="block w-full min-w-0" />
+				</div>
+				<div class="space-y-2">
+					<Label for="kind-combobox-anchor">Kinds</Label>
+					<Popover.Root bind:open={kindComboboxOpen}>
+						<Popover.Trigger
+							id="kind-combobox-anchor"
+							class={cn(
+								buttonVariants({ variant: 'outline', size: 'default' }),
+								'h-9 w-full min-w-0 justify-between font-normal'
+							)}
+							role="combobox"
+							aria-expanded={kindComboboxOpen}
+						>
+							<span class="truncate text-left">{kindComboboxTriggerLabel}</span>
+							<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
+						</Popover.Trigger>
+						<Popover.Content class="p-0 sm:w-[min(100vw-2rem,22rem)]" align="start">
+							<Command.Root>
+								<Command.Input placeholder="Search kinds…" />
+								<Command.List>
+									<Command.Empty>No kinds match.</Command.Empty>
+									<Command.Group>
+										{#each kindOptions as opt (opt.kind)}
+											<Command.Item
+												value={String(opt.kind)}
+												keywords={[String(opt.kind), opt.label]}
+												onSelect={() => {
+													toggleKindFromCombobox(opt.kind);
+												}}
+											>
+												<Check
+													class={cn(
+														'mr-2 size-4 shrink-0',
+														selectedKinds.includes(opt.kind) ? 'opacity-100' : 'opacity-0'
+													)}
+												/>
+												<span class="truncate" title={describeNostrKind(opt.kind)}>{opt.label}</span>
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.List>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+				</div>
 			</div>
-			<p class="text-xs text-muted-foreground">
-				Combobox: search, then click items to toggle (OR). Changes apply immediately.
-			</p>
-			<Popover.Root bind:open={kindComboboxOpen}>
-				<Popover.Trigger
-					id="kind-combobox-anchor"
-					class={cn(
-						buttonVariants({ variant: 'outline', size: 'default' }),
-						'h-9 w-full justify-between font-normal sm:max-w-md'
-					)}
-					role="combobox"
-					aria-expanded={kindComboboxOpen}
+
+			<details class="group mt-5 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2">
+				<summary
+					class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground outline-none marker:content-none [&::-webkit-details-marker]:hidden"
 				>
-					<span class="truncate text-left">{kindComboboxTriggerLabel}</span>
-					<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
-				</Popover.Trigger>
-				<Popover.Content class="p-0 sm:w-[min(100vw-2rem,22rem)]" align="start">
-					<Command.Root>
-						<Command.Input placeholder="Search kinds…" />
-						<Command.List>
-							<Command.Empty>No kinds match.</Command.Empty>
-							<Command.Group>
-								{#each kindOptions as opt (opt.kind)}
-									<Command.Item
-										value={String(opt.kind)}
-										keywords={[String(opt.kind), opt.label]}
-										onSelect={() => {
-											toggleKindFromCombobox(opt.kind);
-										}}
-									>
-										<Check
-											class={cn(
-												'mr-2 size-4 shrink-0',
-												selectedKinds.includes(opt.kind) ? 'opacity-100' : 'opacity-0'
-											)}
-										/>
-										<span class="truncate" title={describeNostrKind(opt.kind)}>{opt.label}</span>
-									</Command.Item>
-								{/each}
-							</Command.Group>
-						</Command.List>
-					</Command.Root>
-				</Popover.Content>
-			</Popover.Root>
-		</div>
-		<div class="space-y-2">
-			<Label for="pk">Pubkey</Label>
-			<Input id="pk" bind:value={pubkey} placeholder="exact hex" />
-		</div>
-		<div class="space-y-2">
-			<Label for="since-date">Since (date)</Label>
-			<Input id="since-date" type="date" bind:value={sinceDate} class="block" />
-		</div>
-		<div class="space-y-2">
-			<Label for="until-date">Until (date)</Label>
-			<Input id="until-date" type="date" bind:value={untilDate} class="block" />
-		</div>
-		<div class="flex items-end">
+					<ChevronDown
+						class="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-180"
+						aria-hidden="true"
+					/>
+					More filters
+				</summary>
+				<div class="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+					<div class="space-y-2">
+						<Label for="pk">Pubkey</Label>
+						<Input id="pk" bind:value={pubkey} placeholder="exact hex" class="w-full" />
+					</div>
+					<div class="space-y-2">
+						<Label for="act">Action</Label>
+						<select
+							id="act"
+							class={selectClass}
+							bind:value={action}
+							aria-label="Audit action filter"
+						>
+							{#each AUDIT_ACTION_OPTIONS as opt}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+			</details>
+		</Card.Content>
+		<Card.Footer class="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/30 p-4">
+			{#if hasNonDefaultFilters}
+				<Button type="button" variant="ghost" size="sm" onclick={() => void clearAllFilters()}>
+					Clear all
+				</Button>
+			{/if}
 			<Button type="button" onclick={() => void applyFilters()}>Apply filters</Button>
-		</div>
-	</div>
+		</Card.Footer>
+	</Card.Root>
 
 	{#if err}
 		<p class="text-sm text-destructive">{err}</p>
@@ -471,17 +469,33 @@
 				</Table.Root>
 			</div>
 			<div
-				class="flex flex-col gap-3 border-t border-border bg-muted/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+				class="flex flex-col gap-3 border-t border-border bg-muted/20 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
 			>
 				<p class="text-sm text-muted-foreground">{rangeLabel}</p>
-				<div class="flex flex-wrap items-center gap-2">
-					<Button type="button" variant="outline" size="sm" disabled={page <= 1} onclick={goPrev}>
-						Previous
-					</Button>
-					<span class="text-sm tabular-nums text-muted-foreground">Page {page} / {totalPages}</span>
-					<Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onclick={goNext}>
-						Next
-					</Button>
+				<div class="flex flex-wrap items-center gap-4">
+					<div class="flex items-center gap-2">
+						<Label for="page-size" class="text-muted-foreground shrink-0 text-sm font-normal">Per page</Label>
+						<select
+							id="page-size"
+							class={selectClassNarrow}
+							value={String(pageSize)}
+							onchange={onPageSizeChange}
+							aria-label="Results per page"
+						>
+							{#each PAGE_SIZES as sz}
+								<option value={String(sz)}>{sz}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button type="button" variant="outline" size="sm" disabled={page <= 1} onclick={goPrev}>
+							Previous
+						</Button>
+						<span class="text-sm tabular-nums text-muted-foreground">Page {page} / {totalPages}</span>
+						<Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onclick={goNext}>
+							Next
+						</Button>
+					</div>
 				</div>
 			</div>
 		</div>
