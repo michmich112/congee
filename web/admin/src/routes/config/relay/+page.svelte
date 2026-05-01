@@ -46,22 +46,45 @@
 					}}
 				/>
 			</div>
-			<div class="space-y-2">
-				<Label for="n11-pk">Public key (hex)</Label>
-				<Input
-					id="n11-pk"
-					class="font-mono text-xs"
-					spellcheck={false}
-					value={draft().nip11.pubkey}
-					oninput={(e) => {
-						draft().nip11.pubkey = e.currentTarget.value;
-						ctx.markDirty();
-					}}
-				/>
-				<p class="text-xs text-muted-foreground">
-					Must match <span class="font-mono">GET /api/relay-identity</span> or stay empty (same rule as saving
-					this form).
-				</p>
+			<div class="md:col-span-2 space-y-4 rounded-lg border border-border bg-muted/20 px-4 py-4">
+				<div>
+					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>
+					<p class="text-muted-foreground mt-1 text-xs">
+						Same <span class="font-mono">npub</span> and hex pubkey as the Dashboard; from
+						<span class="font-mono">GET /api/relay-identity</span> (relay signing keys). Shown for NIP-11; not
+						editable here. Saving keeps <span class="font-mono">nip11.pubkey</span> in sync with this identity.
+					</p>
+				</div>
+				{#if ctx.relayIdentity}
+					<div class="grid gap-4 sm:grid-cols-1">
+						<div class="space-y-2">
+							<Label for="n11-npub">npub</Label>
+							<Input
+								id="n11-npub"
+								class="bg-muted/50 font-mono text-sm"
+								readonly
+								tabindex={-1}
+								value={ctx.relayIdentity.npub}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="n11-pk">Public key (hex)</Label>
+							<Input
+								id="n11-pk"
+								class="bg-muted/50 font-mono text-xs"
+								readonly
+								tabindex={-1}
+								spellcheck={false}
+								value={ctx.relayIdentity.pubkey_hex}
+							/>
+						</div>
+					</div>
+				{:else}
+					<p class="text-destructive text-sm">
+						Relay identity is not available (same as Dashboard). NIP-11 pubkey cannot be shown; fix relay
+						identity or retry after reload.
+					</p>
+				{/if}
 			</div>
 			<div class="space-y-2">
 				<Label for="n11-contact">Contact</Label>

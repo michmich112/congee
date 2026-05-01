@@ -46,6 +46,12 @@
 		saveMessage = null;
 	}
 
+	/** Keep NIP-11 pubkey aligned with GET /api/relay-identity (same source as the Dashboard). */
+	function syncNip11PubkeyFromIdentity() {
+		if (!draft || !relayIdentity) return;
+		draft.nip11.pubkey = relayIdentity.pubkey_hex;
+	}
+
 	function setNipEnabled(list: number[], nip: number, on: boolean, row: NipRow): number[] {
 		if (row.mandatory) return list;
 		if (!row.implemented && on) {
@@ -101,6 +107,7 @@
 			}
 			const text = await cfgRes.text();
 			draft = parseConfigJson(text);
+			syncNip11PubkeyFromIdentity();
 			dirty = false;
 			await loadNipCatalog();
 		} catch (e) {
@@ -144,6 +151,7 @@
 		try {
 			const next = parseConfigJson(rawText);
 			draft = next;
+			syncNip11PubkeyFromIdentity();
 			markDirty();
 			rawOpen = false;
 		} catch (e) {
