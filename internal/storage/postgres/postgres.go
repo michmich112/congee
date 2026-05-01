@@ -97,14 +97,16 @@ func extractDTag(tags [][]string) string {
 }
 
 // eventTagInsert maps full_json to JSONB for PostgreSQL.
+// FullJSON uses json.RawMessage so bun inserts a JSON array value, not a JSON string
+// containing the array (which happens if full_json is typed as string + jsonb).
 type eventTagInsert struct {
 	bun.BaseModel `bun:"table:event_tags,alias:et"`
 
-	EventID  string `bun:"event_id,notnull"`
-	Pos      int    `bun:"pos,notnull"`
-	Name     string `bun:"name,notnull"`
-	Value    string `bun:"value,notnull"`
-	FullJSON string `bun:"full_json,notnull,type:jsonb"`
+	EventID  string          `bun:"event_id,notnull"`
+	Pos      int             `bun:"pos,notnull"`
+	Name     string          `bun:"name,notnull"`
+	Value    string          `bun:"value,notnull"`
+	FullJSON json.RawMessage `bun:"full_json,notnull,type:jsonb"`
 }
 
 // SaveEvent persists an event, replacing prior replaceable/addressable rows per NIP-01.
@@ -159,7 +161,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 				Pos:      i,
 				Name:     name,
 				Value:    val,
-				FullJSON: string(full),
+				FullJSON: full,
 			}
 			if _, err := tx.NewInsert().Model(&tag).Exec(ctx); err != nil {
 				return err
@@ -187,8 +189,8 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 	}
 	tags := make([][]string, 0, len(tagRows))
 	for _, tr := range tagRows {
-		var parts []string
-		if err := json.Unmarshal([]byte(tr.FullJSON), &parts); err != nil {
+		parts, err := storage.DecodeTagFullJSON(tr.FullJSON)
+		if err != nil {
 			return nil, err
 		}
 		tags = append(tags, parts)

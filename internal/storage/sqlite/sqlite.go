@@ -268,8 +268,8 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 	}
 	tags := make([][]string, 0, len(tagRows))
 	for _, tr := range tagRows {
-		var parts []string
-		if err := json.Unmarshal([]byte(tr.FullJSON), &parts); err != nil {
+		parts, err := storage.DecodeTagFullJSON(tr.FullJSON)
+		if err != nil {
 			return nil, err
 		}
 		tags = append(tags, parts)
