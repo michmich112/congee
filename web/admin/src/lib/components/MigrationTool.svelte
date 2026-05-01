@@ -220,174 +220,171 @@
 	}
 </script>
 
-<div class="space-y-8">
-	<div>
-		<h2 class="text-lg font-semibold">Database migration</h2>
-		<p class="mt-1 text-sm text-muted-foreground">
-			Copy events, tags, audit log, and config changelog to a different Database. <br />
-			Duplicate events will be skipped. The source is always the database from the relay JSON config.
-		</p>
-	</div>
+<Card.Root>
+	<Card.Header>
+		<Card.Title class="text-base">Database migration</Card.Title>
+		<Card.Description>
+			Copy events, tags, audit log, and config changelog to a different database. Duplicate events will be skipped.
+			The source is always the database from the relay JSON config.
+		</Card.Description>
+	</Card.Header>
+	<Card.Content class="space-y-6">
+		{#if configLoadError}
+			<Alert.Root variant="destructive">
+				<Alert.Title>Could not load current database</Alert.Title>
+				<Alert.Description>{configLoadError}</Alert.Description>
+			</Alert.Root>
+		{:else if !sourceHydrated}
+			<p class="text-sm text-muted-foreground">Loading current database from config…</p>
+		{/if}
 
-	<Card.Root>
-		<Card.Content class="space-y-6">
-			{#if configLoadError}
-				<Alert.Root variant="destructive">
-					<Alert.Title>Could not load current database</Alert.Title>
-					<Alert.Description>{configLoadError}</Alert.Description>
-				</Alert.Root>
-			{:else if !sourceHydrated}
-				<p class="text-sm text-muted-foreground">Loading current database from config…</p>
-			{/if}
-
-			<div class="grid gap-8 sm:grid-cols-2 sm:gap-10">
-				<div class="space-y-4">
-					<h3 class="text-sm font-semibold tracking-tight">Source</h3>
-					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
-						<Label for="src-type" class="shrink-0">Type</Label>
-						<select
-							id="src-type"
-							class="border-input bg-muted/40 h-9 w-full min-w-0 cursor-not-allowed rounded-md border px-3 text-sm disabled:opacity-90"
-							bind:value={source.type}
-							disabled
-						>
-							<option value="sqlite">sqlite</option>
-							<option value="postgres">postgres</option>
-						</select>
-						<Label for="src-dsn" class="shrink-0">DSN or path</Label>
-						<Input
-							id="src-dsn"
-							bind:value={source.dsn}
-							placeholder={sourceHydrated ? '' : 'Loading…'}
-							readonly
-							class="cursor-default bg-muted/40"
-						/>
-					</div>
-				</div>
-				<div class="space-y-4">
-					<h3 class="text-sm font-semibold tracking-tight">Target</h3>
-					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
-						<Label for="dst-type" class="shrink-0">Type</Label>
-						<select
-							id="dst-type"
-							class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
-							bind:value={target.type}
-						>
-							<option value="sqlite">sqlite</option>
-							<option value="postgres">postgres</option>
-						</select>
-						<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
-						<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
-					</div>
-				</div>
-			</div>
-
-			<div class="space-y-2">
-				<div class="flex justify-between text-xs text-muted-foreground">
-					<span>{progressMsg || (busy ? 'Starting…' : 'Idle')}</span>
-					<span>{Math.round(progressPct)}%</span>
-				</div>
-				<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-					<div
-						class="h-full bg-primary transition-[width] duration-300 ease-out"
-						style={`width: ${progressPct}%`}
-					></div>
-				</div>
-			</div>
-
-			{#if outcome && !outcome.ok}
-				<Alert.Root variant="destructive">
-					<Alert.Title>Migration did not complete</Alert.Title>
-					<Alert.Description>{outcome.message}</Alert.Description>
-				</Alert.Root>
-			{/if}
-
-			{#if outcome?.ok}
-				<div class="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
-					<p class="text-sm font-medium">Migration summary</p>
-					<dl class="grid gap-2 text-sm sm:grid-cols-2">
-						<dt class="text-muted-foreground">Source (before)</dt>
-						<dd class="font-mono text-xs">{fmtCounts(outcome.summary.source)}</dd>
-						<dt class="text-muted-foreground">Destination (after)</dt>
-						<dd class="font-mono text-xs">{fmtCounts(outcome.summary.destination_final)}</dd>
-					</dl>
-					<ul class="list-inside list-disc text-sm text-muted-foreground">
-						<li>
-							Events: {outcome.summary.events_inserted} inserted, {outcome.summary.events_skipped} skipped
-							({outcome.summary.tags_added} tag rows on inserted events)
-						</li>
-						<li>
-							Audit: {outcome.summary.audit_inserted} inserted, {outcome.summary.audit_skipped} skipped
-						</li>
-						<li>Config changelog rows copied: {outcome.summary.changelog_copied}</li>
-					</ul>
-					{#if outcome.config_updated}
-						<p class="text-sm">
-							Configuration updated to
-							<span class="font-medium">{outcome.target_type}</span>
-							{#if outcome.target_hint}
-								<span class="text-muted-foreground"> ({outcome.target_hint})</span>
-							{/if}.
-						</p>
-						{#if outcome.restart_required}
-							<Alert.Root>
-								<Alert.Title>Restart required</Alert.Title>
-								<Alert.Description>
-									Restart the Congee process to connect to the new database.
-									{#if outcome.restarting}
-										A restart was scheduled.
-									{/if}
-								</Alert.Description>
-							</Alert.Root>
-						{/if}
-					{:else if outcome.make_target_primary && outcome.config_error}
-						<Alert.Root variant="destructive">
-							<Alert.Title>Config file not updated</Alert.Title>
-							<Alert.Description>{outcome.config_error}</Alert.Description>
-						</Alert.Root>
-					{:else if !outcome.make_target_primary}
-						<p class="text-sm text-muted-foreground">
-							Relay configuration was left unchanged (data copy only). To point Congee at this target, use
-							<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span>
-							from the <span class="font-medium text-foreground">+</span> menu or edit <code class="text-xs">database</code> in the config file.
-						</p>
-					{/if}
-				</div>
-			{/if}
-
-			<ButtonGroup>
-				<Button
-					type="button"
-					variant="outline"
-					disabled={busy || !!configLoadError || !sourceHydrated}
-					onclick={() => void startMigration(false)}
-				>
-					{busy ? 'Running…' : 'Start migration'}
-				</Button>
-				<DropdownMenu>
-					<DropdownMenuTrigger
-						class={cn(
-							buttonVariants({ variant: 'outline', size: 'icon' }),
-							'disabled:pointer-events-none disabled:opacity-50'
-						)}
-						disabled={busy || !!configLoadError || !sourceHydrated}
-						aria-label="Make target primary database (opens menu)"
+		<div class="grid gap-8 sm:grid-cols-2 sm:gap-10">
+			<div class="space-y-4">
+				<h3 class="text-sm font-semibold tracking-tight">Source</h3>
+				<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+					<Label for="src-type" class="shrink-0">Type</Label>
+					<select
+						id="src-type"
+						class="border-input bg-muted/40 h-9 w-full min-w-0 cursor-not-allowed rounded-md border px-3 text-sm disabled:opacity-90"
+						bind:value={source.type}
+						disabled
 					>
-						<Plus class="size-4 opacity-90" />
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" class="min-w-56">
-						<DropdownMenuGroup>
-							<DropdownMenuItem
-								disabled={busy || !!configLoadError || !sourceHydrated}
-								onclick={() => void startMigration(true)}
-								class="whitespace-normal"
-							>
-								Start migration &amp; make target primary DB
-							</DropdownMenuItem>
-						</DropdownMenuGroup>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</ButtonGroup>
-		</Card.Content>
-	</Card.Root>
-</div>
+						<option value="sqlite">sqlite</option>
+						<option value="postgres">postgres</option>
+					</select>
+					<Label for="src-dsn" class="shrink-0">DSN or path</Label>
+					<Input
+						id="src-dsn"
+						bind:value={source.dsn}
+						placeholder={sourceHydrated ? '' : 'Loading…'}
+						readonly
+						class="cursor-default bg-muted/40"
+					/>
+				</div>
+			</div>
+			<div class="space-y-4">
+				<h3 class="text-sm font-semibold tracking-tight">Target</h3>
+				<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+					<Label for="dst-type" class="shrink-0">Type</Label>
+					<select
+						id="dst-type"
+						class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
+						bind:value={target.type}
+					>
+						<option value="sqlite">sqlite</option>
+						<option value="postgres">postgres</option>
+					</select>
+					<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
+					<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
+				</div>
+			</div>
+		</div>
+
+		<div class="space-y-2">
+			<div class="flex justify-between text-xs text-muted-foreground">
+				<span>{progressMsg || (busy ? 'Starting…' : 'Idle')}</span>
+				<span>{Math.round(progressPct)}%</span>
+			</div>
+			<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
+				<div
+					class="h-full bg-primary transition-[width] duration-300 ease-out"
+					style={`width: ${progressPct}%`}
+				></div>
+			</div>
+		</div>
+
+		{#if outcome && !outcome.ok}
+			<Alert.Root variant="destructive">
+				<Alert.Title>Migration did not complete</Alert.Title>
+				<Alert.Description>{outcome.message}</Alert.Description>
+			</Alert.Root>
+		{/if}
+
+		{#if outcome?.ok}
+			<div class="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+				<p class="text-sm font-medium">Migration summary</p>
+				<dl class="grid gap-2 text-sm sm:grid-cols-2">
+					<dt class="text-muted-foreground">Source (before)</dt>
+					<dd class="font-mono text-xs">{fmtCounts(outcome.summary.source)}</dd>
+					<dt class="text-muted-foreground">Destination (after)</dt>
+					<dd class="font-mono text-xs">{fmtCounts(outcome.summary.destination_final)}</dd>
+				</dl>
+				<ul class="list-inside list-disc text-sm text-muted-foreground">
+					<li>
+						Events: {outcome.summary.events_inserted} inserted, {outcome.summary.events_skipped} skipped
+						({outcome.summary.tags_added} tag rows on inserted events)
+					</li>
+					<li>
+						Audit: {outcome.summary.audit_inserted} inserted, {outcome.summary.audit_skipped} skipped
+					</li>
+					<li>Config changelog rows copied: {outcome.summary.changelog_copied}</li>
+				</ul>
+				{#if outcome.config_updated}
+					<p class="text-sm">
+						Configuration updated to
+						<span class="font-medium">{outcome.target_type}</span>
+						{#if outcome.target_hint}
+							<span class="text-muted-foreground"> ({outcome.target_hint})</span>
+						{/if}.
+					</p>
+					{#if outcome.restart_required}
+						<Alert.Root>
+							<Alert.Title>Restart required</Alert.Title>
+							<Alert.Description>
+								Restart the Congee process to connect to the new database.
+								{#if outcome.restarting}
+									A restart was scheduled.
+								{/if}
+							</Alert.Description>
+						</Alert.Root>
+					{/if}
+				{:else if outcome.make_target_primary && outcome.config_error}
+					<Alert.Root variant="destructive">
+						<Alert.Title>Config file not updated</Alert.Title>
+						<Alert.Description>{outcome.config_error}</Alert.Description>
+					</Alert.Root>
+				{:else if !outcome.make_target_primary}
+					<p class="text-sm text-muted-foreground">
+						Relay configuration was left unchanged (data copy only). To point Congee at this target, use
+						<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span>
+						from the <span class="font-medium text-foreground">+</span> menu or edit <code class="text-xs">database</code> in the config file.
+					</p>
+				{/if}
+			</div>
+		{/if}
+
+		<ButtonGroup>
+			<Button
+				type="button"
+				variant="outline"
+				disabled={busy || !!configLoadError || !sourceHydrated}
+				onclick={() => void startMigration(false)}
+			>
+				{busy ? 'Running…' : 'Start migration'}
+			</Button>
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					class={cn(
+						buttonVariants({ variant: 'outline', size: 'icon' }),
+						'disabled:pointer-events-none disabled:opacity-50'
+					)}
+					disabled={busy || !!configLoadError || !sourceHydrated}
+					aria-label="Make target primary database (opens menu)"
+				>
+					<Plus class="size-4 opacity-90" />
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" class="min-w-56">
+					<DropdownMenuGroup>
+						<DropdownMenuItem
+							disabled={busy || !!configLoadError || !sourceHydrated}
+							onclick={() => void startMigration(true)}
+							class="whitespace-normal"
+						>
+							Start migration &amp; make target primary DB
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</ButtonGroup>
+	</Card.Content>
+</Card.Root>

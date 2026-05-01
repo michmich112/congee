@@ -10,11 +10,13 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
 	import Check from '@lucide/svelte/icons/check';
+	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import { cn } from '$lib/utils';
 	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
+	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 
@@ -272,7 +274,11 @@
 </script>
 
 <div class="space-y-6">
-	<h2 class="text-xl font-semibold tracking-tight">Audit log</h2>
+	<AdminPageHeading
+		title="Audit"
+		subtitle="Search and inspect persisted relay audit entries."
+		Icon={ClipboardList}
+	/>
 
 	<Card.Root>
 		<Card.Content class="pt-6">
