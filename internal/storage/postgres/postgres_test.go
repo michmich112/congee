@@ -205,8 +205,7 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 	if err != nil || total2 != 15 {
 		t.Fatalf("CountAuditLog ignores limit/offset: want 15, got %d %v", total2, err)
 	}
-	k0 := 0
-	nKind0, err := st.CountAuditLog(ctx, storage.AuditQuery{Action: action, Kind: &k0})
+	nKind0, err := st.CountAuditLog(ctx, storage.AuditQuery{Action: action, Kinds: []int{0}})
 	if err != nil || nKind0 != 5 {
 		t.Fatalf("CountAuditLog kind=0: want 5, got %d %v", nKind0, err)
 	}

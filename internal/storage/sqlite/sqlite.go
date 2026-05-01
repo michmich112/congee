@@ -626,11 +626,8 @@ func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *b
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
-	if query.Kind != nil {
-		// NIP-01 post-hook detail ends with " … stored=<bool> kind=<n>" (space before kind=).
-		suffix := fmt.Sprintf(" kind=%d", *query.Kind)
-		n := len(suffix)
-		q = q.Where("substr(detail, -?) = ?", n, suffix)
+	if sql, args := storage.AuditDetailKindSuffixMatchOr(true, query.Kinds); sql != "" {
+		q = q.Where(sql, args...)
 	}
 	return q
 }
@@ -663,6 +660,39 @@ func (s *Store) CountAuditLog(ctx context.Context, query storage.AuditQuery) (in
 	q := applySQLiteAuditLogFilters(s.db.NewSelect().Model((*storage.AuditLogRow)(nil)), query)
 	n, err := q.Count(ctx)
 	return int64(n), err
+}
+
+func (s *Store) ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]int, error) {
+	if scanLimit <= 0 {
+		scanLimit = storage.DefaultAuditKindsScanLimit
+	}
+	if scanLimit > storage.MaxAuditKindsScanLimit {
+		scanLimit = storage.MaxAuditKindsScanLimit
+	}
+	var rows []struct {
+		Detail string `bun:"detail"`
+	}
+	err := s.db.NewSelect().
+		Model((*storage.AuditLogRow)(nil)).
+		Column("detail").
+		Order("created_at DESC").
+		Limit(scanLimit).
+		Scan(ctx, &rows)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[int]struct{})
+	for _, r := range rows {
+		if k, ok := storage.ParseAuditDetailTrailingKind(r.Detail); ok {
+			seen[k] = struct{}{}
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Ints(out)
+	return out, nil
 }
 
 func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error) {

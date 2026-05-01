@@ -25,7 +25,8 @@ import (
 //   - action= exact filter on total and entries
 //   - since / until unix filters on total and entries
 //   - pubkey= exact filter
-//   - kind= matches rows whose detail ends with NIP-01-style "... kind=<n>"
+//   - kind= matches rows whose detail ends with NIP-01-style "... kind=<n>" (repeat kind= for OR)
+//   - GET /audit/kinds returns distinct kinds from recent audit rows
 //   - POST returns 405; missing auth returns 401
 //   - JSON body includes entries and total
 
@@ -38,6 +39,7 @@ type auditAPIResponse struct {
 
 func auditHTTPHandler(st storage.Store) http.Handler {
 	api := http.NewServeMux()
+	api.HandleFunc("GET /audit/kinds", HandleAuditKinds(st).ServeHTTP)
 	api.HandleFunc("GET /audit", HandleAudit(st).ServeHTTP)
 	return RequireAdminAuth(auditHTTPTestPassword, http.StripPrefix("/api", api))
 }
@@ -302,6 +304,51 @@ func TestHandleAudit_HTTP(t *testing.T) {
 		for _, e := range body.Entries {
 			if !strings.HasSuffix(e.Detail, " kind=0") {
 				t.Fatalf("detail should end with \" kind=0\": %q", e.Detail)
+			}
+		}
+	})
+
+	t.Run("kind_multi_or", func(t *testing.T) {
+		// kind 0: i=0,5,10,15,20,25,30 (7); kind 1: i=1,6,11,16,21,26,31 (7) => 14 disjoint
+		body, code := getAuditJSON(t, h, "kind=0&kind=1&limit=200&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 14 || len(body.Entries) != 14 {
+			t.Fatalf("kind=0&kind=1: want 14, got total=%d len=%d", body.Total, len(body.Entries))
+		}
+	})
+
+	t.Run("kind_comma_separated", func(t *testing.T) {
+		body, code := getAuditJSON(t, h, "kind=2,3&limit=200&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 12 || len(body.Entries) != 12 {
+			t.Fatalf("kind=2,3: want 12 (6+6), got total=%d len=%d", body.Total, len(body.Entries))
+		}
+	})
+
+	t.Run("audit_kinds_endpoint", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/audit/kinds", nil)
+		req.Header.Set("Authorization", "Bearer "+auditHTTPTestPassword)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+		}
+		var body struct {
+			Kinds []int `json:"kinds"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Kinds) != 5 {
+			t.Fatalf("want 5 distinct kinds 0..4, got %v", body.Kinds)
+		}
+		for i, k := range body.Kinds {
+			if k != i {
+				t.Fatalf("want sorted [0,1,2,3,4], got %v", body.Kinds)
 			}
 		}
 	})

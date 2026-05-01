@@ -22,7 +22,8 @@ import (
 // Scenarios:
 //   - 401 without Authorization
 //   - limit/offset pagination across two pages with identical total
-//   - kind= filter (suffix " kind=<n>" as written by the relay post-hook)
+//   - kind= filter (repeat for OR; suffix " kind=<n>" as written by the relay post-hook)
+//   - GET /api/audit/kinds returns distinct kinds from recent rows
 //   - action= exact filter
 //   - pubkey= exact filter
 //   - since= and until= unix bounds on created_at (inclusive)
@@ -226,6 +227,17 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 
 	pkB := strings.Repeat("b", 64)
 
+	t.Run("kind_multi_or", func(t *testing.T) {
+		// kind 1: i=0,3,6,9; kind 2: i=1,4,7 => 7 rows (disjoint)
+		body, code := do("kind=1&kind=2&limit=50&offset=0")
+		if code != http.StatusOK {
+			t.Fatalf("status %d", code)
+		}
+		if body.Total != 7 || len(body.Entries) != 7 {
+			t.Fatalf("kind=1&kind=2: want 7, got total=%d len=%d", body.Total, len(body.Entries))
+		}
+	})
+
 	t.Run("kind_filter", func(t *testing.T) {
 		// kind=2 at i=1,4,7 (all event_accepted)
 		body, code := do("kind=2&limit=50&offset=0")
@@ -354,5 +366,50 @@ func TestIntegrationAdminAuditAPI_KindFilterMatchesRelayDetailSuffix(t *testing.
 	}
 	if body.Total != 1 || len(body.Entries) != 1 {
 		t.Fatalf("want 1 row for relay-shaped detail, got total=%d len=%d", body.Total, len(body.Entries))
+	}
+}
+
+func TestIntegrationAdminAuditAPI_AuditKindsEndpoint(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "audit_kinds_list.db")
+	st, err := sqlite.Open(ctx, dbPath, nil)
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	seedAuditFilterRows(ctx, t, st)
+
+	api := http.NewServeMux()
+	api.HandleFunc("GET /audit/kinds", admin.HandleAuditKinds(st).ServeHTTP)
+	h := admin.RequireAdminAuth(integrationAuditPassword, http.StripPrefix("/api", api))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/audit/kinds", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+integrationAuditPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var body struct {
+		Kinds []int `json:"kinds"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Kinds) != 3 || body.Kinds[0] != 1 || body.Kinds[1] != 2 || body.Kinds[2] != 3 {
+		t.Fatalf("want kinds [1,2,3] from seedAuditFilterRows, got %v", body.Kinds)
 	}
 }

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,6 +248,33 @@ func TestSQLiteAuditAndChangelog(t *testing.T) {
 	ch, err := st.QueryConfigChangelog(ctx, 5)
 	if err != nil || len(ch) != 1 {
 		t.Fatalf("changelog: %+v %v", ch, err)
+	}
+}
+
+func TestSQLiteListDistinctAuditKinds(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(ctx, filepath.Join(dir, "audit_kinds.db"), nil)
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	id := nostrRepeat("e", 64)
+	for _, k := range []int{9, 42, 42, 9} {
+		detail := fmt.Sprintf("event_id=%s conn_id=ab12cd34 stored=true kind=%d", id, k)
+		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 1, Action: "event_accepted", Detail: detail, Pubkey: nostrRepeat("p", 64)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kinds, err := st.ListDistinctAuditKinds(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kinds) != 2 || kinds[0] != 9 || kinds[1] != 42 {
+		t.Fatalf("want [9 42], got %v", kinds)
 	}
 }
 

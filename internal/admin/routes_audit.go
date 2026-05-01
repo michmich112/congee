@@ -47,11 +47,7 @@ func HandleAudit(st storage.Store) http.HandlerFunc {
 		}
 		q.Action = r.URL.Query().Get("action")
 		q.Pubkey = r.URL.Query().Get("pubkey")
-		if v := r.URL.Query().Get("kind"); v != "" {
-			if k, err := strconv.Atoi(v); err == nil && k >= 0 {
-				q.Kind = &k
-			}
-		}
+		q.Kinds = parseAuditKindsQuery(r)
 
 		ctx := r.Context()
 		total, err := st.CountAuditLog(ctx, q)
