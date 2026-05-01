@@ -52,3 +52,16 @@ type ConfigChangelogRow struct {
 	Summary   string `bun:"summary,notnull"`
 	JSONDiff  string `bun:"json_diff,notnull"`
 }
+
+// RelayMetricBucketRow is one persisted UTC-minute relay telemetry bucket.
+type RelayMetricBucketRow struct {
+	bun.BaseModel `bun:"table:relay_metric_buckets"`
+
+	BucketStartUnix int64 `bun:"bucket_start_unix,pk"`
+	EventsStored    int64 `bun:"events_stored,notnull"`
+	EventsRejected  int64 `bun:"events_rejected,notnull"`
+	ReqCount        int64 `bun:"req_count,notnull"`
+	CloseCount      int64 `bun:"close_count,notnull"`
+	QueryMsSum      int64 `bun:"query_ms_sum,notnull"`
+	QueryMsCount    int64 `bun:"query_ms_count,notnull"`
+}
