@@ -198,48 +198,37 @@
 	</div>
 
 	<Card.Root>
-		<Card.Header>
-			<Card.Title>Endpoints</Card.Title>
-			<Card.Description>
-				JSON mirrors <code class="text-xs">POST /api/migration/start</code> with optional
-				<code class="text-xs">make_target_primary</code>. The main button copies only; use + for config + restart.
-			</Card.Description>
-		</Card.Header>
 		<Card.Content class="space-y-6">
-			<div class="grid gap-6 sm:grid-cols-2">
-				<div class="space-y-3">
-					<p class="text-sm font-medium">Source</p>
-					<div class="space-y-2">
-						<Label for="src-type">Type</Label>
+			<div class="grid gap-8 sm:grid-cols-2 sm:gap-10">
+				<div class="space-y-4">
+					<h3 class="text-sm font-semibold tracking-tight">Source</h3>
+					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+						<Label for="src-type" class="shrink-0">Type</Label>
 						<select
 							id="src-type"
-							class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+							class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
 							bind:value={source.type}
 						>
 							<option value="sqlite">sqlite</option>
 							<option value="postgres">postgres</option>
 						</select>
-					</div>
-					<div class="space-y-2">
-						<Label for="src-dsn">DSN or path</Label>
+						<Label for="src-dsn" class="shrink-0">DSN or path</Label>
 						<Input id="src-dsn" bind:value={source.dsn} placeholder="./congee.db or postgres://..." />
 					</div>
 				</div>
-				<div class="space-y-3">
-					<p class="text-sm font-medium">Target</p>
-					<div class="space-y-2">
-						<Label for="dst-type">Type</Label>
+				<div class="space-y-4">
+					<h3 class="text-sm font-semibold tracking-tight">Target</h3>
+					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+						<Label for="dst-type" class="shrink-0">Type</Label>
 						<select
 							id="dst-type"
-							class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+							class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
 							bind:value={target.type}
 						>
 							<option value="sqlite">sqlite</option>
 							<option value="postgres">postgres</option>
 						</select>
-					</div>
-					<div class="space-y-2">
-						<Label for="dst-dsn">DSN or path</Label>
+						<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
 						<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
 					</div>
 				</div>
