@@ -4,37 +4,47 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 )
 
 const schemaVersion = 2
 
-func runMigrations(ctx context.Context, db *bun.DB) error {
+func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var version int
 	row := db.QueryRowContext(ctx, "PRAGMA user_version")
 	if err := row.Scan(&version); err != nil {
 		return fmt.Errorf("sqlite: read user_version: %w", err)
 	}
+	log.Debug().Int("user_version", version).Msg("schema: read user_version")
 	if version > schemaVersion {
 		return fmt.Errorf("sqlite: unsupported schema version %d (need <= %d)", version, schemaVersion)
 	}
 	if version == schemaVersion {
+		log.Debug().Msg("schema: already at current version")
 		return nil
 	}
 
 	if version == 0 {
-		if err := migrateFresh(ctx, db); err != nil {
+		log.Debug().Msg("schema: user_version 0; applying fresh schema")
+		if err := migrateFresh(ctx, db, log); err != nil {
 			return err
 		}
+		log.Debug().Msg("schema: fresh schema applied")
 		return nil
 	}
 	if version == 1 {
-		return migrateV1ToV2(ctx, db)
+		log.Debug().Msg("schema: migrating v1 to v2")
+		if err := migrateV1ToV2(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v1 to v2 complete")
+		return nil
 	}
 	return fmt.Errorf("sqlite: unsupported schema version %d", version)
 }
 
-func migrateFresh(ctx context.Context, db *bun.DB) error {
+func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL PRIMARY KEY,
@@ -74,34 +84,40 @@ func migrateFresh(ctx context.Context, db *bun.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
 	}
-	for _, s := range stmts {
-		if _, err := db.ExecContext(ctx, s); err != nil {
+	for i := range stmts {
+		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
 			return fmt.Errorf("sqlite: migrate: %w", err)
 		}
 	}
-	if err := createFTS5AndTriggers(ctx, db); err != nil {
+	log.Debug().Msg("schema: creating fts5 and triggers")
+	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
 		return err
 	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return fmt.Errorf("sqlite: set user_version: %w", err)
 	}
 	return nil
 }
 
-func migrateV1ToV2(ctx context.Context, db *bun.DB) error {
-	if err := createFTS5AndTriggers(ctx, db); err != nil {
+func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	log.Debug().Msg("schema v1->v2: fts5 and triggers")
+	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
 		return err
 	}
+	log.Debug().Msg("schema v1->v2: backfill event_fts")
 	if _, err := db.ExecContext(ctx, `INSERT INTO event_fts(event_id, content) SELECT id, content FROM events`); err != nil {
 		return fmt.Errorf("sqlite: backfill event_fts: %w", err)
 	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema v1->v2: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return fmt.Errorf("sqlite: set user_version: %w", err)
 	}
 	return nil
 }
 
-func createFTS5AndTriggers(ctx context.Context, db *bun.DB) error {
+func createFTS5AndTriggers(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	fts := []string{
 		`CREATE VIRTUAL TABLE IF NOT EXISTS event_fts USING fts5(
 			event_id UNINDEXED,
@@ -122,8 +138,9 @@ func createFTS5AndTriggers(ctx context.Context, db *bun.DB) error {
 			DELETE FROM event_fts WHERE event_id = old.id;
 		END`,
 	}
-	for _, s := range fts {
-		if _, err := db.ExecContext(ctx, s); err != nil {
+	for i := range fts {
+		log.Debug().Int("fts_step", i).Msg("schema: fts5/trigger ddl")
+		if _, err := db.ExecContext(ctx, fts[i]); err != nil {
 			return fmt.Errorf("sqlite: fts5: %w", err)
 		}
 	}

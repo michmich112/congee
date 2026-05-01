@@ -10,13 +10,14 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 func TestHandleGetEvent(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "e.db")
-	st, err := sqlite.Open(ctx, path, nil)
+	st, err := sqlite.Open(ctx, path, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

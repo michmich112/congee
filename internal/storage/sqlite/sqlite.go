@@ -14,6 +14,7 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 
@@ -43,7 +44,9 @@ type Store struct {
 var _ storage.Store = (*Store)(nil)
 
 // Open opens a SQLite database (WAL, Bun + sqliteshim), runs migrations, and starts the writer loop.
-func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Store, error) {
+// log is used for optional debug traces (use zerolog.Nop() when silent).
+func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log zerolog.Logger) (*Store, error) {
+	log = log.With().Str("engine", "sqlite").Logger()
 	if !sqliteshim.HasDriver() {
 		return nil, errors.New("sqlite: sqliteshim driver not available for this build target")
 	}
@@ -51,6 +54,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 		notifier = storage.NoopNotifier{}
 	}
 
+	log.Debug().Int("dsn_len", len(strings.TrimSpace(dsn))).Msg("open: sql.Open")
 	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open: %w", err)
@@ -58,24 +62,40 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 	sqldb.SetMaxOpenConns(64)
 	sqldb.SetMaxIdleConns(64)
 
+	if err := sqldb.PingContext(ctx); err != nil {
+		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: initial ping failed")
+		return nil, fmt.Errorf("sqlite: ping: %w", err)
+	}
+	log.Debug().Msg("open: ping ok")
+
+	log.Debug().Msg("open: pragma foreign_keys")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA foreign_keys = ON;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: foreign_keys pragma failed")
 		return nil, fmt.Errorf("sqlite: foreign_keys: %w", err)
 	}
+	log.Debug().Msg("open: pragma journal_mode=WAL")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA journal_mode = WAL;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: journal_mode pragma failed")
 		return nil, fmt.Errorf("sqlite: journal_mode: %w", err)
 	}
+	log.Debug().Msg("open: pragma busy_timeout")
 	if _, err := sqldb.ExecContext(ctx, `PRAGMA busy_timeout = 5000;`); err != nil {
 		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: busy_timeout pragma failed")
 		return nil, fmt.Errorf("sqlite: busy_timeout: %w", err)
 	}
 
 	db := bun.NewDB(sqldb, sqlitedialect.New())
-	if err := runMigrations(ctx, db); err != nil {
+	log.Debug().Msg("open: running schema migrations")
+	if err := runMigrations(ctx, db, log); err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err
 	}
+	log.Debug().Msg("open: schema migrations done")
 
 	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Store{
@@ -88,6 +108,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier) (*Sto
 	}
 	s.wg.Add(1)
 	go s.writerLoop(baseCtx)
+	log.Debug().Msg("open: writer loop started; store ready")
 	return s, nil
 }
 
@@ -247,8 +268,8 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 	}
 	tags := make([][]string, 0, len(tagRows))
 	for _, tr := range tagRows {
-		var parts []string
-		if err := json.Unmarshal([]byte(tr.FullJSON), &parts); err != nil {
+		parts, err := storage.DecodeTagFullJSON(tr.FullJSON)
+		if err != nil {
 			return nil, err
 		}
 		tags = append(tags, parts)
@@ -399,6 +420,12 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 		}
 	}
 	return len(byID), nil
+}
+
+// HasEventID implements storage.Store.
+func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Where("id = ?", id).Limit(1).Count(ctx)
+	return n > 0, err
 }
 
 // SearchEvents runs FTS5 on mirrored content (NIP-50), ordered by bm25 rank (lower is better).
@@ -611,6 +638,31 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 		_, err := db.NewInsert().Model(&row).Exec(ctx)
 		return err
 	})
+}
+
+// HasAuditDuplicate implements storage.Store.
+func (s *Store) HasAuditDuplicate(ctx context.Context, e storage.AuditEntry) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("created_at = ? AND action = ? AND detail = ? AND pubkey = ?",
+			e.CreatedAt, e.Action, e.Detail, e.Pubkey).
+		Limit(1).
+		Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	evID := storage.ExtractAuditDetailEventID(e.Detail)
+	if evID == "" {
+		return false, nil
+	}
+	pat := "%event_id=" + evID + "%"
+	n2, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("pubkey = ? AND LOWER(detail) LIKE ?", e.Pubkey, pat).
+		Limit(1).
+		Count(ctx)
+	return n2 > 0, err
 }
 
 func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.SelectQuery {

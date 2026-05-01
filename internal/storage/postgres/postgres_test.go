@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 )
 
 func testPostgresDSN(t *testing.T) string {
@@ -29,7 +31,7 @@ func TestPostgresCRUD(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-crud")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +80,56 @@ func TestPostgresCRUD(t *testing.T) {
 	}
 }
 
+// TestPostgresManyTagsJSONBRoundTrip guards against Bun double-encoding full_json when a
+// Go string is combined with type:jsonb (JSON array must round-trip for kind-5-style tags).
+func TestPostgresManyTagsJSONBRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	dsn := testPostgresDSN(t)
+	t.Setenv("CONGEE_INSTANCE_ID", "test-tag-jsonb")
+	st, err := Open(ctx, dsn, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	const nTags = 48
+	tags := make([][]string, 0, nTags)
+	for i := range nTags {
+		tags = append(tags, []string{"e", fmt.Sprintf("%064x", i+1)})
+	}
+	ev := &nostr.Event{
+		ID:        nostrRepeat('3', 64),
+		PubKey:    nostrRepeat('4', 64),
+		CreatedAt: 100,
+		Kind:      5,
+		Tags:      tags,
+		Content:   "delete",
+		Sig:       nostrRepeat('5', 128),
+	}
+	if err := st.SaveEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	out, err := st.QueryEvents(ctx, []nostr.Filter{{IDs: []string{ev.ID}}})
+	if err != nil {
+		t.Fatalf("QueryEvents: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("want 1 event, got %d", len(out))
+	}
+	if !reflect.DeepEqual(out[0].Tags, tags) {
+		t.Fatalf("tags round-trip: want %d tags first=%#v; got %d tags first=%#v",
+			len(tags), tags[0], len(out[0].Tags), out[0].Tags[0])
+	}
+	if err := st.DeleteEvent(ctx, ev.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPostgresSearchWithKindFilter(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-search")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +165,14 @@ func TestPostgresNotifierForeignOrigin(t *testing.T) {
 	dsn := testPostgresDSN(t)
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-a")
-	sa, err := Open(ctx, dsn)
+	sa, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sa.Close()
 
 	t.Setenv("CONGEE_INSTANCE_ID", "relay-b")
-	sb, err := Open(ctx, dsn)
+	sb, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +208,7 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 	ctx := context.Background()
 	dsn := testPostgresDSN(t)
 	t.Setenv("CONGEE_INSTANCE_ID", "test-audit-page")
-	st, err := Open(ctx, dsn)
+	st, err := Open(ctx, dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

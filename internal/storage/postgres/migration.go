@@ -15,7 +15,9 @@ func (s *Store) MigrationRowCounts(ctx context.Context) (storage.MigrationCounts
 	if err != nil {
 		return storage.MigrationCounts{}, err
 	}
-	tags, err := s.db.NewSelect().Model((*storage.EventTagRow)(nil)).Count(ctx)
+	tags, err := s.db.NewSelect().Model((*storage.EventTagRow)(nil)).
+		Where("event_id IN (SELECT id FROM events)").
+		Count(ctx)
 	if err != nil {
 		return storage.MigrationCounts{}, err
 	}

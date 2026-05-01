@@ -14,6 +14,7 @@ import (
 	"github.com/michmich112/congee/internal/admin"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/rs/zerolog"
 )
 
 // Integration-style black-box tests for GET /api/audit (same routing as production:
@@ -85,7 +86,7 @@ func TestIntegrationAdminAuditAPI_Pagination(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "integration_audit.db")
-	st, err := sqlite.Open(ctx, dbPath, nil)
+	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -186,7 +187,7 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_filters.db")
-	st, err := sqlite.Open(ctx, dbPath, nil)
+	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -347,7 +348,7 @@ func TestIntegrationAdminAuditAPI_KindFilterMatchesRelayDetailSuffix(t *testing.
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_kind_suffix.db")
-	st, err := sqlite.Open(ctx, dbPath, nil)
+	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
@@ -400,7 +401,7 @@ func TestIntegrationAdminAuditAPI_AuditKindsEndpoint(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_kinds_list.db")
-	st, err := sqlite.Open(ctx, dbPath, nil)
+	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}

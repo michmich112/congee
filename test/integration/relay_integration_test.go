@@ -201,14 +201,14 @@ func nip42AuthEvent(priv *btcec.PrivateKey, relayURL, challenge string, createdA
 
 var _ = Describe("Relay WebSocket and HTTP", func() {
 	var (
-		tmpDir  string
-		cfg     *config.Config
-		st      *sqlite.Store
-		srv     *relay.Server
-		ln      net.Listener
-		baseWS  string
+		tmpDir   string
+		cfg      *config.Config
+		st       *sqlite.Store
+		srv      *relay.Server
+		ln       net.Listener
+		baseWS   string
 		baseHTTP string
-		log     zerolog.Logger
+		log      zerolog.Logger
 	)
 
 	BeforeEach(func() {
@@ -223,7 +223,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err = sqlite.Open(context.Background(), dbPath, nil)
+		st, err = sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 
 		log = zerolog.Nop()
@@ -444,7 +444,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsRid, err := relayidentity.Load(corsSec)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
-		corsSt, err := sqlite.Open(context.Background(), dbPath, nil)
+		corsSt, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer corsSt.Close()
 		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop(), corsRid)
@@ -532,7 +532,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer st.Close()
 
@@ -628,7 +628,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer st.Close()
 
@@ -710,7 +710,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer st.Close()
 
@@ -790,7 +790,7 @@ var _ = Describe("NIP-29 relay groups", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil)
+		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer st.Close()
 

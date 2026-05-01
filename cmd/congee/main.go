@@ -60,7 +60,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	storeDB, err := db.Open(ctx, cfg.Database)
+	storeDB, err := db.Open(ctx, cfg.Database, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("database open failed")
 	}

@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -27,28 +29,43 @@ type Store struct {
 var _ storage.Store = (*Store)(nil)
 
 // Open connects with Bun + pgdriver, runs migrations, and starts the event notifier listener.
-func Open(ctx context.Context, dsn string) (*Store, error) {
+// log is used for optional debug traces (use zerolog.Nop() when silent).
+func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
+	log = log.With().Str("engine", "postgres").Logger()
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
 		return nil, errors.New("postgres: empty dsn")
 	}
 
+	log.Debug().Msg("open: creating driver connector")
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 	sqldb.SetMaxOpenConns(32)
 	sqldb.SetMaxIdleConns(8)
 
+	if err := sqldb.PingContext(ctx); err != nil {
+		_ = sqldb.Close()
+		log.Warn().Err(err).Msg("open: initial ping failed")
+		return nil, fmt.Errorf("postgres: ping: %w", err)
+	}
+	log.Debug().Msg("open: ping ok")
+
 	db := bun.NewDB(sqldb, pgdialect.New())
-	if err := runMigrations(ctx, db); err != nil {
+	log.Debug().Msg("open: running schema migrations")
+	if err := runMigrations(ctx, db, log); err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: schema migrations failed")
 		return nil, err
 	}
+	log.Debug().Msg("open: schema migrations done")
 
+	log.Debug().Msg("open: starting listen/notify notifier")
 	n, err := NewNotifier(db, dsn, localInstanceID())
 	if err != nil {
 		_ = db.Close()
+		log.Warn().Err(err).Msg("open: notifier startup failed")
 		return nil, err
 	}
-
+	log.Debug().Msg("open: store ready")
 	return &Store{db: db, notifier: n}, nil
 }
 
@@ -80,14 +97,16 @@ func extractDTag(tags [][]string) string {
 }
 
 // eventTagInsert maps full_json to JSONB for PostgreSQL.
+// FullJSON uses json.RawMessage so bun inserts a JSON array value, not a JSON string
+// containing the array (which happens if full_json is typed as string + jsonb).
 type eventTagInsert struct {
 	bun.BaseModel `bun:"table:event_tags,alias:et"`
 
-	EventID  string `bun:"event_id,notnull"`
-	Pos      int    `bun:"pos,notnull"`
-	Name     string `bun:"name,notnull"`
-	Value    string `bun:"value,notnull"`
-	FullJSON string `bun:"full_json,notnull,type:jsonb"`
+	EventID  string          `bun:"event_id,notnull"`
+	Pos      int             `bun:"pos,notnull"`
+	Name     string          `bun:"name,notnull"`
+	Value    string          `bun:"value,notnull"`
+	FullJSON json.RawMessage `bun:"full_json,notnull,type:jsonb"`
 }
 
 // SaveEvent persists an event, replacing prior replaceable/addressable rows per NIP-01.
@@ -142,7 +161,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 				Pos:      i,
 				Name:     name,
 				Value:    val,
-				FullJSON: string(full),
+				FullJSON: full,
 			}
 			if _, err := tx.NewInsert().Model(&tag).Exec(ctx); err != nil {
 				return err
@@ -153,7 +172,9 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if err != nil {
 		return err
 	}
-	s.notifier.Notify(ev.ID)
+	if !storage.IsBulkMigration(ctx) {
+		s.notifier.Notify(ev.ID)
+	}
 	return nil
 }
 
@@ -168,8 +189,8 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 	}
 	tags := make([][]string, 0, len(tagRows))
 	for _, tr := range tagRows {
-		var parts []string
-		if err := json.Unmarshal([]byte(tr.FullJSON), &parts); err != nil {
+		parts, err := storage.DecodeTagFullJSON(tr.FullJSON)
+		if err != nil {
 			return nil, err
 		}
 		tags = append(tags, parts)
@@ -318,6 +339,12 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 	return len(byID), nil
 }
 
+// HasEventID implements storage.Store.
+func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Where("id = ?", id).Limit(1).Count(ctx)
+	return n > 0, err
+}
+
 // SearchEvents uses tsvector + GIN (NIP-50), ordered by ts_rank_cd descending.
 func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
 	q := strings.TrimSpace(searchQuery)
@@ -441,6 +468,31 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 	}
 	_, err := s.db.NewInsert().Model(&row).Exec(ctx)
 	return err
+}
+
+// HasAuditDuplicate implements storage.Store.
+func (s *Store) HasAuditDuplicate(ctx context.Context, e storage.AuditEntry) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("created_at = ? AND action = ? AND detail = ? AND pubkey = ?",
+			e.CreatedAt, e.Action, e.Detail, e.Pubkey).
+		Limit(1).
+		Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	evID := storage.ExtractAuditDetailEventID(e.Detail)
+	if evID == "" {
+		return false, nil
+	}
+	pat := "%event_id=" + evID + "%"
+	n2, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+		Where("pubkey = ? AND LOWER(detail) LIKE ?", e.Pubkey, pat).
+		Limit(1).
+		Count(ctx)
+	return n2 > 0, err
 }
 
 func applyPostgresAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.SelectQuery {

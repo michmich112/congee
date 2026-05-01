@@ -12,7 +12,7 @@
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
 //	GET    /api/stats            — relay connection count, ports, relay_version (binary)
 //	GET    /api/relay-identity   — relay pubkey_hex and npub (read-only)
-//	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress (JSON body source/target)
+//	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
 // if Vite is unreachable, falls back to web/admin/build when index.html exists (e.g. after make ui-build).
@@ -52,7 +52,7 @@ import (
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
 //	GET      /stats            — relay connection count, ports, relay_version
 //	GET      /relay-identity   — relay pubkey_hex and npub (read-only)
-//	POST     /migration/start  — data migration (SSE)
+//	POST     /migration/start  — data migration (SSE); body may set make_target_primary to update config
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
 // otherwise static files from web/admin/build with SPA fallback to index.html.
@@ -128,7 +128,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID))
-	api.HandleFunc("POST /migration/start", handleMigrationStart())
+	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
 

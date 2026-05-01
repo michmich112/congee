@@ -1,22 +1,95 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import Plus from '@lucide/svelte/icons/plus';
 	import { adminFetch } from '$lib/admin-api';
-	import { Button } from '$lib/components/ui/button';
+	import { parseConfigJson } from '$lib/app-config';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
+	import { ButtonGroup } from '$lib/components/ui/button-group';
 	import * as Card from '$lib/components/ui/card';
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuGroup,
+		DropdownMenuItem,
+		DropdownMenuTrigger
+	} from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { cn } from '$lib/utils';
 
 	type Endpoint = {
 		type: 'sqlite' | 'postgres' | '';
 		dsn: string;
 	};
 
-	let source = $state<Endpoint>({ type: 'sqlite', dsn: './congee.db' });
+	type MigrationCounts = {
+		events: number;
+		tags: number;
+		audit: number;
+		changelog: number;
+	};
+
+	type MigrationSummary = {
+		source: MigrationCounts;
+		destination_final: MigrationCounts;
+		events_inserted: number;
+		events_skipped: number;
+		tags_added: number;
+		audit_inserted: number;
+		audit_skipped: number;
+		changelog_copied: number;
+	};
+
+	type MigrationOutcome =
+		| {
+				ok: true;
+				summary: MigrationSummary;
+				make_target_primary: boolean;
+				config_updated: boolean;
+				restart_required: boolean;
+				restarting: boolean;
+				config_error?: string;
+				target_type: string;
+				target_hint: string;
+		  }
+		| { ok: false; message: string };
+
+	let source = $state<Endpoint>({ type: '', dsn: '' });
 	let target = $state<Endpoint>({ type: 'postgres', dsn: '' });
+	let sourceHydrated = $state(false);
+	let configLoadError = $state<string | null>(null);
 	let busy = $state(false);
-	let err = $state<string | null>(null);
-	let done = $state(false);
 	let progressPct = $state(0);
 	let progressMsg = $state('');
+	let outcome = $state<MigrationOutcome | null>(null);
+
+	function canonicalDbType(t: string): 'sqlite' | 'postgres' {
+		const x = (t || '').trim().toLowerCase();
+		return x === 'postgres' ? 'postgres' : 'sqlite';
+	}
+
+	onMount(() => {
+		void (async () => {
+			try {
+				const res = await adminFetch('/api/config');
+				if (!res.ok) {
+					configLoadError = `Could not load config (HTTP ${res.status}).`;
+					return;
+				}
+				const cfg = parseConfigJson(await res.text());
+				const dsn = (cfg.database?.dsn ?? '').trim();
+				if (!dsn) {
+					configLoadError = 'Config has an empty database.dsn.';
+					return;
+				}
+				source = { type: canonicalDbType(cfg.database?.type ?? ''), dsn };
+				sourceHydrated = true;
+			} catch (e) {
+				configLoadError = e instanceof Error ? e.message : 'Failed to load config.';
+			}
+		})();
+	});
 
 	function parseSSEChunk(buffer: string): { events: { event: string; data: string }[]; rest: string } {
 		const events: { event: string; data: string }[] = [];
@@ -34,17 +107,24 @@
 		return { events, rest };
 	}
 
-	async function startMigration() {
-		err = null;
-		done = false;
+	function setFailed(message: string) {
+		outcome = { ok: false, message };
+	}
+
+	async function startMigration(makeTargetPrimary: boolean) {
 		progressPct = 0;
 		progressMsg = '';
-		if (!source.type || !target.type) {
-			err = 'Pick source and target types.';
+		outcome = null;
+		if (configLoadError || !sourceHydrated) {
+			setFailed(configLoadError ?? 'Current database is still loading.');
 			return;
 		}
-		if (!source.dsn.trim() || !target.dsn.trim()) {
-			err = 'Source and target DSN/path are required.';
+		if (!target.type) {
+			setFailed('Pick a target type.');
+			return;
+		}
+		if (!target.dsn.trim()) {
+			setFailed('Target DSN or path is required.');
 			return;
 		}
 		busy = true;
@@ -54,15 +134,16 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					source: { type: source.type, dsn: source.dsn.trim() },
-					target: { type: target.type, dsn: target.dsn.trim() }
+					target: { type: target.type, dsn: target.dsn.trim() },
+					make_target_primary: makeTargetPrimary
 				})
 			});
 			if (res.status === 409) {
-				err = 'Another migration is already running.';
+				setFailed('Another migration is already running.');
 				return;
 			}
 			if (!res.ok || !res.body) {
-				err = `HTTP ${res.status}`;
+				setFailed(`HTTP ${res.status}`);
 				return;
 			}
 			const reader = res.body.getReader();
@@ -86,23 +167,56 @@
 					if (e.event === 'error') {
 						try {
 							const j = JSON.parse(e.data) as { message?: string };
-							err = j.message ?? e.data;
+							setFailed(j.message ?? e.data);
 						} catch {
-							err = e.data;
+							setFailed(e.data);
 						}
 					}
 					if (e.event === 'done') {
-						done = true;
 						progressPct = 100;
+						try {
+							const j = JSON.parse(e.data) as {
+								summary?: MigrationSummary;
+								make_target_primary?: boolean;
+								config_updated?: boolean;
+								restart_required?: boolean;
+								restarting?: boolean;
+								config_error?: string;
+								target_type?: string;
+								target_dsn_nonsecret?: string;
+							};
+							if (j.summary) {
+								outcome = {
+									ok: true,
+									summary: j.summary,
+									make_target_primary: j.make_target_primary === true,
+									config_updated: j.config_updated === true,
+									restart_required: j.restart_required === true,
+									restarting: j.restarting === true,
+									config_error: typeof j.config_error === 'string' ? j.config_error : undefined,
+									target_type: typeof j.target_type === 'string' ? j.target_type : target.type,
+									target_hint:
+										typeof j.target_dsn_nonsecret === 'string' ? j.target_dsn_nonsecret : ''
+								};
+							} else {
+								setFailed('Migration finished but response had no summary.');
+							}
+						} catch {
+							setFailed('Could not parse migration result.');
+						}
 					}
 				}
 				if (ended) break;
 			}
 		} catch (e) {
-			err = e instanceof Error ? e.message : 'request failed';
+			setFailed(e instanceof Error ? e.message : 'request failed');
 		} finally {
 			busy = false;
 		}
+	}
+
+	function fmtCounts(c: MigrationCounts): string {
+		return `${c.events} events · ${c.tags} tags · ${c.audit} audit · ${c.changelog} changelog`;
 	}
 </script>
 
@@ -110,51 +224,59 @@
 	<div>
 		<h2 class="text-lg font-semibold">Database migration</h2>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Copy events, tags, audit log, and config changelog between SQLite files and PostgreSQL. Target must be
-			empty or you will see primary-key errors. Uses server-side paths/DSNs (not your browser filesystem).
+			Copy events, tags, audit log, and config changelog to a different Database. <br />
+			Duplicate events will be skipped. The source is always the database from the relay JSON config.
 		</p>
 	</div>
 
 	<Card.Root>
-		<Card.Header>
-			<Card.Title>Endpoints</Card.Title>
-			<Card.Description>JSON body mirrors <code class="text-xs">POST /api/migration/start</code>.</Card.Description>
-		</Card.Header>
 		<Card.Content class="space-y-6">
-			<div class="grid gap-6 sm:grid-cols-2">
-				<div class="space-y-3">
-					<p class="text-sm font-medium">Source</p>
-					<div class="space-y-2">
-						<Label for="src-type">Type</Label>
+			{#if configLoadError}
+				<Alert.Root variant="destructive">
+					<Alert.Title>Could not load current database</Alert.Title>
+					<Alert.Description>{configLoadError}</Alert.Description>
+				</Alert.Root>
+			{:else if !sourceHydrated}
+				<p class="text-sm text-muted-foreground">Loading current database from config…</p>
+			{/if}
+
+			<div class="grid gap-8 sm:grid-cols-2 sm:gap-10">
+				<div class="space-y-4">
+					<h3 class="text-sm font-semibold tracking-tight">Source</h3>
+					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+						<Label for="src-type" class="shrink-0">Type</Label>
 						<select
 							id="src-type"
-							class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+							class="border-input bg-muted/40 h-9 w-full min-w-0 cursor-not-allowed rounded-md border px-3 text-sm disabled:opacity-90"
 							bind:value={source.type}
+							disabled
 						>
 							<option value="sqlite">sqlite</option>
 							<option value="postgres">postgres</option>
 						</select>
-					</div>
-					<div class="space-y-2">
-						<Label for="src-dsn">DSN or path</Label>
-						<Input id="src-dsn" bind:value={source.dsn} placeholder="./congee.db or postgres://..." />
+						<Label for="src-dsn" class="shrink-0">DSN or path</Label>
+						<Input
+							id="src-dsn"
+							bind:value={source.dsn}
+							placeholder={sourceHydrated ? '' : 'Loading…'}
+							readonly
+							class="cursor-default bg-muted/40"
+						/>
 					</div>
 				</div>
-				<div class="space-y-3">
-					<p class="text-sm font-medium">Target</p>
-					<div class="space-y-2">
-						<Label for="dst-type">Type</Label>
+				<div class="space-y-4">
+					<h3 class="text-sm font-semibold tracking-tight">Target</h3>
+					<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3">
+						<Label for="dst-type" class="shrink-0">Type</Label>
 						<select
 							id="dst-type"
-							class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+							class="border-input bg-background h-9 w-full min-w-0 rounded-md border px-3 text-sm"
 							bind:value={target.type}
 						>
 							<option value="sqlite">sqlite</option>
 							<option value="postgres">postgres</option>
 						</select>
-					</div>
-					<div class="space-y-2">
-						<Label for="dst-dsn">DSN or path</Label>
+						<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
 						<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
 					</div>
 				</div>
@@ -173,16 +295,99 @@
 				</div>
 			</div>
 
-			{#if err}
-				<p class="text-sm text-destructive">{err}</p>
-			{/if}
-			{#if done && !err}
-				<p class="text-sm text-muted-foreground">Migration finished.</p>
+			{#if outcome && !outcome.ok}
+				<Alert.Root variant="destructive">
+					<Alert.Title>Migration did not complete</Alert.Title>
+					<Alert.Description>{outcome.message}</Alert.Description>
+				</Alert.Root>
 			{/if}
 
-			<Button type="button" disabled={busy} onclick={() => void startMigration()}>
-				{busy ? 'Running…' : 'Start migration'}
-			</Button>
+			{#if outcome?.ok}
+				<div class="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+					<p class="text-sm font-medium">Migration summary</p>
+					<dl class="grid gap-2 text-sm sm:grid-cols-2">
+						<dt class="text-muted-foreground">Source (before)</dt>
+						<dd class="font-mono text-xs">{fmtCounts(outcome.summary.source)}</dd>
+						<dt class="text-muted-foreground">Destination (after)</dt>
+						<dd class="font-mono text-xs">{fmtCounts(outcome.summary.destination_final)}</dd>
+					</dl>
+					<ul class="list-inside list-disc text-sm text-muted-foreground">
+						<li>
+							Events: {outcome.summary.events_inserted} inserted, {outcome.summary.events_skipped} skipped
+							({outcome.summary.tags_added} tag rows on inserted events)
+						</li>
+						<li>
+							Audit: {outcome.summary.audit_inserted} inserted, {outcome.summary.audit_skipped} skipped
+						</li>
+						<li>Config changelog rows copied: {outcome.summary.changelog_copied}</li>
+					</ul>
+					{#if outcome.config_updated}
+						<p class="text-sm">
+							Configuration updated to
+							<span class="font-medium">{outcome.target_type}</span>
+							{#if outcome.target_hint}
+								<span class="text-muted-foreground"> ({outcome.target_hint})</span>
+							{/if}.
+						</p>
+						{#if outcome.restart_required}
+							<Alert.Root>
+								<Alert.Title>Restart required</Alert.Title>
+								<Alert.Description>
+									Restart the Congee process to connect to the new database.
+									{#if outcome.restarting}
+										A restart was scheduled.
+									{/if}
+								</Alert.Description>
+							</Alert.Root>
+						{/if}
+					{:else if outcome.make_target_primary && outcome.config_error}
+						<Alert.Root variant="destructive">
+							<Alert.Title>Config file not updated</Alert.Title>
+							<Alert.Description>{outcome.config_error}</Alert.Description>
+						</Alert.Root>
+					{:else if !outcome.make_target_primary}
+						<p class="text-sm text-muted-foreground">
+							Relay configuration was left unchanged (data copy only). To point Congee at this target, use
+							<span class="font-medium text-foreground">Start migration &amp; make target primary DB</span>
+							from the <span class="font-medium text-foreground">+</span> menu or edit <code class="text-xs">database</code> in the config file.
+						</p>
+					{/if}
+				</div>
+			{/if}
+
+			<ButtonGroup>
+				<Button
+					type="button"
+					variant="outline"
+					disabled={busy || !!configLoadError || !sourceHydrated}
+					onclick={() => void startMigration(false)}
+				>
+					{busy ? 'Running…' : 'Start migration'}
+				</Button>
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						class={cn(
+							buttonVariants({ variant: 'outline', size: 'icon' }),
+							'disabled:pointer-events-none disabled:opacity-50'
+						)}
+						disabled={busy || !!configLoadError || !sourceHydrated}
+						aria-label="Make target primary database (opens menu)"
+					>
+						<Plus class="size-4 opacity-90" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" class="min-w-56">
+						<DropdownMenuGroup>
+							<DropdownMenuItem
+								disabled={busy || !!configLoadError || !sourceHydrated}
+								onclick={() => void startMigration(true)}
+								class="whitespace-normal"
+							>
+								Start migration &amp; make target primary DB
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</ButtonGroup>
 		</Card.Content>
 	</Card.Root>
 </div>
