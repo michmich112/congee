@@ -19,6 +19,8 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 		debug = func(string) {}
 	}
 
+	ctx = WithBulkMigration(ctx)
+
 	progress(MigrationProgress{Percent: 0, Message: "counting source rows"})
 	srcCounts, err := src.MigrationRowCounts(ctx)
 	if err != nil {

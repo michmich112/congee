@@ -170,7 +170,9 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if err != nil {
 		return err
 	}
-	s.notifier.Notify(ev.ID)
+	if !storage.IsBulkMigration(ctx) {
+		s.notifier.Notify(ev.ID)
+	}
 	return nil
 }
 
