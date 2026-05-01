@@ -23,6 +23,7 @@
 		verifyAdminToken
 	} from '$lib/admin-api';
 	import { initTimestampDisplayFromStorage } from '$lib/admin-timestamp-preference.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import { Input } from '$lib/components/ui/input';
@@ -30,6 +31,7 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { buttonVariants } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
+	import { ModeWatcher } from 'mode-watcher';
 
 	let { children } = $props();
 
@@ -326,4 +328,6 @@
 			</div>
 		</div>
 	{/if}
+	<ModeWatcher />
+	<Toaster richColors closeButton position="top-center" />
 </div>
