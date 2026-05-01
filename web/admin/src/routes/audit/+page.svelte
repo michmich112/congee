@@ -2,10 +2,16 @@
 	import { onMount } from 'svelte';
 	import { adminFetch } from '$lib/admin-api';
 	import { describeNostrKind, knownKindDropdownEntries } from '$lib/nostr-kind-descriptions';
+	import { buttonVariants } from '$lib/components/ui/button/button.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Command from '$lib/components/ui/command';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Popover from '$lib/components/ui/popover';
+	import Check from '@lucide/svelte/icons/check';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import { cn } from '$lib/utils';
 	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
 	import * as Table from '$lib/components/ui/table';
@@ -82,6 +88,7 @@
 	let untilDate = $state('');
 	let selectedKinds = $state<number[]>([]);
 	let kindOptions = $state<{ kind: number; label: string }[]>(knownKindDropdownEntries());
+	let kindComboboxOpen = $state(false);
 
 	let dialogOpen = $state(false);
 	let selectedEventId = $state<string | null>(null);
@@ -110,6 +117,12 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
+	const kindComboboxTriggerLabel = $derived.by(() => {
+		if (selectedKinds.length === 0) return 'Any kinds';
+		if (selectedKinds.length <= 4) return selectedKinds.join(', ');
+		return `${selectedKinds.length} kinds selected`;
+	});
+
 	async function loadKindOptions() {
 		try {
 			const res = await adminFetch('/api/audit/kinds');
@@ -124,13 +137,11 @@
 		}
 	}
 
-	function onKindCheckboxChange(kind: number, checked: boolean) {
-		if (checked) {
-			if (!selectedKinds.includes(kind)) {
-				selectedKinds = [...selectedKinds, kind].sort((a, b) => a - b);
-			}
-		} else {
+	function toggleKindFromCombobox(kind: number) {
+		if (selectedKinds.includes(kind)) {
 			selectedKinds = selectedKinds.filter((k) => k !== kind);
+		} else {
+			selectedKinds = [...selectedKinds, kind].sort((a, b) => a - b);
 		}
 		void applyFilters();
 	}
@@ -251,8 +262,9 @@
 			through end of day in the browser timezone, sent as unix bounds). The API returns <code class="text-xs">total</code> for
 			pagination. Page size is capped at 1000 here. Optional <code class="text-xs">kind</code> query params (repeat per
 			selected kind, OR semantics) match stored audit detail lines that end with
-			<code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). The kind checklist merges well-known kinds with
-			kinds seen in recent audit rows from <code class="text-xs">GET /api/audit/kinds</code>. Click a truncated
+			<code class="text-xs">kind=&lt;n&gt;</code> (relay post-hook format). The combobox merges well-known kinds with
+			kinds seen in recent audit rows from <code class="text-xs">GET /api/audit/kinds</code>. Open it to search and
+			combine kinds. Click a truncated
 			<code class="text-xs">event_id</code> to load stored event JSON. Hover a <code class="text-xs">kind</code> in the
 			table for a short Nostr description. Use the timestamps control above the table for column time format.
 		</p>
@@ -289,7 +301,7 @@
 		</div>
 		<div class="space-y-2 sm:col-span-2 lg:col-span-3">
 			<div class="flex flex-wrap items-center justify-between gap-2">
-				<Label for="kind-filter-first">Kinds</Label>
+				<Label for="kind-combobox-anchor">Kinds</Label>
 				{#if selectedKinds.length > 0}
 					<button
 						type="button"
@@ -301,27 +313,49 @@
 				{/if}
 			</div>
 			<p class="text-xs text-muted-foreground">
-				Select any combination (OR). Changing a checkbox applies immediately.
+				Combobox: search, then click items to toggle (OR). Changes apply immediately.
 			</p>
-			<div
-				class="border-input dark:bg-input/30 max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-transparent px-2.5 py-2 shadow-xs"
-				id="kind-filter-first"
-				role="group"
-				aria-label="Event kind filters"
-			>
-				{#each kindOptions as opt (opt.kind)}
-					<label class="flex cursor-pointer items-start gap-2.5 text-sm leading-snug">
-						<input
-							type="checkbox"
-							class="border-input mt-0.5 size-4 shrink-0 rounded accent-primary"
-							checked={selectedKinds.includes(opt.kind)}
-							onchange={(e) =>
-								onKindCheckboxChange(opt.kind, (e.currentTarget as HTMLInputElement).checked)}
-						/>
-						<span class="min-w-0" title={describeNostrKind(opt.kind)}>{opt.label}</span>
-					</label>
-				{/each}
-			</div>
+			<Popover.Root bind:open={kindComboboxOpen}>
+				<Popover.Trigger
+					id="kind-combobox-anchor"
+					class={cn(
+						buttonVariants({ variant: 'outline', size: 'default' }),
+						'h-9 w-full justify-between font-normal sm:max-w-md'
+					)}
+					role="combobox"
+					aria-expanded={kindComboboxOpen}
+				>
+					<span class="truncate text-left">{kindComboboxTriggerLabel}</span>
+					<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
+				</Popover.Trigger>
+				<Popover.Content class="p-0 sm:w-[min(100vw-2rem,22rem)]" align="start">
+					<Command.Root>
+						<Command.Input placeholder="Search kinds…" />
+						<Command.List>
+							<Command.Empty>No kinds match.</Command.Empty>
+							<Command.Group>
+								{#each kindOptions as opt (opt.kind)}
+									<Command.Item
+										value={String(opt.kind)}
+										keywords={[String(opt.kind), opt.label]}
+										onSelect={() => {
+											toggleKindFromCombobox(opt.kind);
+										}}
+									>
+										<Check
+											class={cn(
+												'mr-2 size-4 shrink-0',
+												selectedKinds.includes(opt.kind) ? 'opacity-100' : 'opacity-0'
+											)}
+										/>
+										<span class="truncate" title={describeNostrKind(opt.kind)}>{opt.label}</span>
+									</Command.Item>
+								{/each}
+							</Command.Group>
+						</Command.List>
+					</Command.Root>
+				</Popover.Content>
+			</Popover.Root>
 		</div>
 		<div class="space-y-2">
 			<Label for="pk">Pubkey</Label>
