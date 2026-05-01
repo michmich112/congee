@@ -613,9 +613,7 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 	})
 }
 
-func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
-	var rows []storage.AuditLogRow
-	q := s.db.NewSelect().Model(&rows).Order("created_at DESC")
+func applySQLiteAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.SelectQuery {
 	if query.Since > 0 {
 		q = q.Where("created_at >= ?", query.Since)
 	}
@@ -628,6 +626,15 @@ func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
+	if sql, args := storage.AuditDetailKindSuffixMatchOr(true, query.Kinds); sql != "" {
+		q = q.Where(sql, args...)
+	}
+	return q
+}
+
+func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
+	var rows []storage.AuditLogRow
+	q := applySQLiteAuditLogFilters(s.db.NewSelect().Model(&rows), query).Order("created_at DESC")
 	if query.Limit > 0 {
 		q = q.Limit(query.Limit)
 	}
@@ -646,6 +653,45 @@ func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]
 			Pubkey:    r.Pubkey,
 		}
 	}
+	return out, nil
+}
+
+func (s *Store) CountAuditLog(ctx context.Context, query storage.AuditQuery) (int64, error) {
+	q := applySQLiteAuditLogFilters(s.db.NewSelect().Model((*storage.AuditLogRow)(nil)), query)
+	n, err := q.Count(ctx)
+	return int64(n), err
+}
+
+func (s *Store) ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]int, error) {
+	if scanLimit <= 0 {
+		scanLimit = storage.DefaultAuditKindsScanLimit
+	}
+	if scanLimit > storage.MaxAuditKindsScanLimit {
+		scanLimit = storage.MaxAuditKindsScanLimit
+	}
+	var rows []struct {
+		Detail string `bun:"detail"`
+	}
+	err := s.db.NewSelect().
+		Model((*storage.AuditLogRow)(nil)).
+		Column("detail").
+		Order("created_at DESC").
+		Limit(scanLimit).
+		Scan(ctx, &rows)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[int]struct{})
+	for _, r := range rows {
+		if k, ok := storage.ParseAuditDetailTrailingKind(r.Detail); ok {
+			seen[k] = struct{}{}
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Ints(out)
 	return out, nil
 }
 

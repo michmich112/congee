@@ -29,6 +29,9 @@ type AuditQuery struct {
 	Offset int
 	Action string
 	Pubkey string
+	// Kinds, when non-empty, matches audit rows whose detail ends with " kind=<n>" (NIP-01 post-hook format)
+	// for any n in the list (OR semantics). Values are deduped and sorted by the admin API layer.
+	Kinds []int
 }
 
 // Store is the relay persistence API (SQLite, PostgreSQL, etc.).
@@ -44,6 +47,11 @@ type Store interface {
 
 	SaveAuditEntry(ctx context.Context, e AuditEntry) error
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, error)
+	// CountAuditLog returns the number of rows matching the same filters as QueryAuditLog
+	// (since, until, action, pubkey, kinds). Limit and Offset are ignored.
+	CountAuditLog(ctx context.Context, q AuditQuery) (int64, error)
+	// ListDistinctAuditKinds returns sorted unique trailing kinds from the newest scanLimit audit rows.
+	ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]int, error)
 	PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error)
 
 	SaveConfigChange(ctx context.Context, c ConfigChange) error
