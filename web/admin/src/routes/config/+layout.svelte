@@ -39,6 +39,7 @@
 	let rawErr = $state<string | null>(null);
 	let changelogExpanded = $state(false);
 	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
+	let relayInstanceRuntime = $state<{ instance_id: string; env_locked: boolean } | null>(null);
 
 	function markDirty() {
 		dirty = true;
@@ -88,16 +89,29 @@
 		saveMessage = null;
 		saveErr = null;
 		relayIdentity = null;
+		relayInstanceRuntime = null;
 		try {
 			const idRes = await adminFetch('/api/relay-identity');
 			if (idRes.ok) {
-				const j = (await idRes.json()) as { pubkey_hex?: string; npub?: string };
+				const j = (await idRes.json()) as {
+					pubkey_hex?: string;
+					npub?: string;
+					relay_instance_id?: string;
+					relay_instance_id_env_locked?: boolean;
+				};
 				if (j.pubkey_hex && j.npub) {
 					relayIdentity = { pubkey_hex: j.pubkey_hex, npub: j.npub };
+				}
+				if (typeof j.relay_instance_id === 'string') {
+					relayInstanceRuntime = {
+						instance_id: j.relay_instance_id,
+						env_locked: j.relay_instance_id_env_locked === true
+					};
 				}
 			}
 		} catch {
 			relayIdentity = null;
+			relayInstanceRuntime = null;
 		}
 		try {
 			const cfgRes = await adminFetch('/api/config');
@@ -216,6 +230,9 @@
 		},
 		get relayIdentity() {
 			return relayIdentity;
+		},
+		get relayInstanceRuntime() {
+			return relayInstanceRuntime;
 		},
 		get loading() {
 			return loading;

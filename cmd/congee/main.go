@@ -35,7 +35,7 @@ func main() {
 
 	path := os.Getenv("CONFIG_PATH")
 	if path == "" {
-		path = "./config.json"
+		path = "/data/config/config.json"
 	}
 	if err := config.EnsureConfigFile(path); err != nil {
 		panic("config: " + err.Error())
@@ -47,6 +47,10 @@ func main() {
 	if err := config.ApplyBootstrapEnvOverrides(cfg); err != nil {
 		panic("config: " + err.Error())
 	}
+	if err := config.EnsureRelayInstanceIDFile(cfg, path); err != nil {
+		panic("config: ensure relay instance id: " + err.Error())
+	}
+	relayInst := config.ResolveRelayInstance(cfg)
 	secretsPath := relayidentity.ResolvePath(path)
 	relayID, err := relayidentity.Load(secretsPath)
 	if err != nil {
@@ -60,7 +64,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	storeDB, err := db.Open(ctx, cfg.Database, log)
+	storeDB, err := db.Open(ctx, cfg.Database, relayInst.EffectiveID, log)
 	if err != nil {
 		log.Fatal().Err(err).Msg("database open failed")
 	}
@@ -102,7 +106,7 @@ func main() {
 	var adminSrv *admin.Server
 	if admin.Enabled() {
 		staticDir := filepath.Join("web", "admin", "build")
-		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, relayID)
+		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, relayID, relayInst)
 		go func() {
 			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("admin server stopped")

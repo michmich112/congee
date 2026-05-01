@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Database from '@lucide/svelte/icons/database';
+	import CircleHelp from '@lucide/svelte/icons/circle-help';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
+	import ClipCopy from '$lib/components/ClipCopy.svelte';
 	import MigrationTool from '$lib/components/MigrationTool.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
@@ -13,6 +15,9 @@
 	function draft() {
 		return ctx.draft!;
 	}
+
+	const envLockedTooltip =
+		'This process uses CONGEE_INSTANCE_ID from the environment. To change it, update the environment variable and restart the relay; it cannot be edited here.';
 </script>
 
 <div class="space-y-8">
@@ -56,6 +61,63 @@
 						}}
 					/>
 				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="text-base">Relay instance ID</Card.Title>
+				<Card.Description>
+					Origin id for PostgreSQL LISTEN/NOTIFY when multiple relay instances share one database. Persisted as
+					relay.instance_id in the JSON config.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="space-y-3">
+				<div class="flex flex-wrap items-center gap-2">
+					<Label for="relay-instance-id" class="text-sm font-medium">Instance ID</Label>
+					{#if ctx.relayInstanceRuntime?.env_locked}
+						<span
+							class="inline-flex text-muted-foreground"
+							role="img"
+							aria-label={envLockedTooltip}
+							title={envLockedTooltip}
+						>
+							<CircleHelp class="size-4" />
+						</span>
+					{/if}
+				</div>
+				<p class="text-muted-foreground text-xs">
+					Multi-instance relays use this value so each process does not re-broadcast its own writes. Restart the relay
+					after changing it so the database listener picks up the new id.
+				</p>
+				<div class="flex gap-2">
+					<Input
+						id="relay-instance-id"
+						class="min-w-0 flex-1 font-mono text-sm"
+						readonly={ctx.relayInstanceRuntime?.env_locked === true}
+						tabindex={ctx.relayInstanceRuntime?.env_locked === true ? -1 : undefined}
+						value={ctx.relayInstanceRuntime?.env_locked === true
+							? (ctx.relayInstanceRuntime?.instance_id ?? '')
+							: (draft().relay.instance_id ?? '')}
+						oninput={(e) => {
+							if (ctx.relayInstanceRuntime?.env_locked === true) return;
+							draft().relay.instance_id = e.currentTarget.value;
+							ctx.markDirty();
+						}}
+					/>
+					<ClipCopy
+						value={ctx.relayInstanceRuntime?.env_locked === true
+							? (ctx.relayInstanceRuntime?.instance_id ?? '')
+							: (draft().relay.instance_id ?? '')}
+						ariaLabel="Copy relay instance ID"
+						title="Copy relay instance ID"
+					/>
+				</div>
+				{#if ctx.relayInstanceRuntime?.env_locked}
+					<p class="text-muted-foreground text-xs">
+						Set via <code class="rounded bg-muted px-1">CONGEE_INSTANCE_ID</code>.
+					</p>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	</section>

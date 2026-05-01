@@ -27,8 +27,9 @@ func (h *Handle) Close() error {
 }
 
 // Open opens the database from JSON config (SQLite or PostgreSQL).
+// relayInstanceID is the PostgreSQL LISTEN/NOTIFY origin id (ignored for SQLite).
 // log is passed to the store implementation for optional connector debug (use zerolog.Nop() when silent).
-func Open(ctx context.Context, sec config.DatabaseSection, log zerolog.Logger) (*Handle, error) {
+func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID string, log zerolog.Logger) (*Handle, error) {
 	switch sec.Type {
 	case "", "sqlite":
 		st, err := sqlite.Open(ctx, sec.DSN, nil, log)
@@ -41,7 +42,7 @@ func Open(ctx context.Context, sec config.DatabaseSection, log zerolog.Logger) (
 			closeFn:       st.Close,
 		}, nil
 	case "postgres":
-		st, err := postgres.Open(ctx, sec.DSN, log)
+		st, err := postgres.Open(ctx, sec.DSN, relayInstanceID, log)
 		if err != nil {
 			return nil, err
 		}

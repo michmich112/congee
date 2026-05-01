@@ -51,7 +51,10 @@
 				<div>
 					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>
 					<p class="text-muted-foreground mt-1 text-xs">
-						Your public key is generated from your private key and can be configured through the <code class="rounded bg-muted px-1">RELAY_SECRETS_PATH</code> environment variable.
+						Your public key is generated from your private key. The signing key file defaults to
+						<code class="rounded bg-muted px-1">relay.secrets.json</code> next to the JSON config (for example
+						<code class="rounded bg-muted px-1">/data/config/relay.secrets.json</code> with the default config path), unless
+						<code class="rounded bg-muted px-1">RELAY_SECRETS_PATH</code> is set.
 					</p>
 				</div>
 				{#if ctx.relayIdentity}

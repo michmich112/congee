@@ -14,21 +14,19 @@ Phase implementation checklists live in [`docs/plans/`](docs/plans/).
 
 Images are built in CI and pushed to GitHub Container Registry. The `nightly` tag tracks the latest successful build on `main`. Replace `ghcr.io/michmich112/congee` with `ghcr.io/<github-owner>/<repo>` if you use a fork or a different registry path.
 
-1. Copy [`config.example.json`](config.example.json) to a host file (for example `./config.json`) and adjust ports, NIPs, and metadata as needed.
-2. Run the container with a **writable** config mount if you plan to save settings from the admin UI (`PUT /api/config` fails when the file is read-only).
+1. Optional: seed [`config.example.json`](config.example.json) into the volume if you want non-default settings before the first start. Otherwise the relay creates **`/data/config/config.json`** with defaults on first boot (same directory holds **`relay.secrets.json`**).
+2. Mount a **writable** `/data` volume so SQLite, config, and secrets persist (`PUT /api/config` fails when the config file is read-only).
 
 ```bash
 docker run -d --name congee \
   -p 3334:3334 -p 3335:3335 \
-  -v "$PWD/config.json:/config/config.json" \
   -v congee-data:/data \
-  -e CONFIG_PATH=/config/config.json \
   -e ENABLE_ADMIN_UI=true \
   -e ADMIN_PASSWORD=your-secure-password \
   ghcr.io/michmich112/congee:nightly
 ```
 
-The image sets `CONGEE_DATA_DIR=/data` by default, so SQLite uses `/data/congee.db` on the `congee-data` volume. Optional overrides: `CONGEE_RELAY_PORT`, `CONGEE_ADMIN_PORT` (see [environment variables](docs/environment-variables.md)). The second port in `-p host:container` must match the **container** listen ports (from JSON or those env vars).
+You do **not** need `CONFIG_PATH`, `RELAY_SECRETS_PATH`, or `CONGEE_DATA_DIR` unless you want non-default locations. The image sets `CONGEE_DATA_DIR=/data` by default, so SQLite uses `/data/congee.db`. Optional overrides: `CONGEE_RELAY_PORT`, `CONGEE_ADMIN_PORT` (see [environment variables](docs/environment-variables.md)). The second port in `-p host:container` must match the **container** listen ports (from JSON or those env vars).
 
 **Binary version** (no relay start):
 

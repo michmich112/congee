@@ -23,6 +23,8 @@ export type AdminConfigContext = {
 	get draft(): AppConfig | null;
 	get nipCatalog(): NipRow[];
 	get relayIdentity(): { pubkey_hex: string; npub: string } | null;
+	/** Runtime LISTEN/NOTIFY origin id (matches process start); null if not reported by the API. */
+	get relayInstanceRuntime(): { instance_id: string; env_locked: boolean } | null;
 	get loading(): boolean;
 	get saving(): boolean;
 	get loadErr(): string | null;

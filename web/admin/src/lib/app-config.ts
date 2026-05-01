@@ -1,6 +1,6 @@
 /** Mirrors `internal/config/config_types.go` JSON shape (admin config file). */
 export type AppConfig = {
-	relay: { port: number };
+	relay: { port: number; instance_id?: string };
 	admin: { port: number };
 	database: { type: string; dsn: string };
 	logging: { level: string; format: string };
@@ -92,6 +92,12 @@ export function ensureNipsDraft(cfg: AppConfig): void {
 	}
 }
 
+/** Ensures relay.instance_id exists for older config files and the Storage settings form. */
+export function ensureRelayDraft(cfg: AppConfig): void {
+	cfg.relay ??= { port: 3334 };
+	cfg.relay.instance_id ??= '';
+}
+
 /** Ensures nip29 exists for older config files and the config form. */
 export function ensureNip29Draft(cfg: AppConfig): void {
 	cfg.nip29 ??= defaultNip29();
@@ -109,6 +115,7 @@ export function parseConfigJson(text: string): AppConfig {
 	ensureNip42Draft(cfg);
 	ensureNip29Draft(cfg);
 	ensureNipsDraft(cfg);
+	ensureRelayDraft(cfg);
 	return cfg;
 }
 

@@ -18,7 +18,8 @@ type Config struct {
 }
 
 type RelaySection struct {
-	Port int `json:"port"`
+	Port       int    `json:"port"`
+	InstanceID string `json:"instance_id,omitempty"`
 }
 
 type AdminSection struct {

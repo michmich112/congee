@@ -24,7 +24,9 @@ Copy the example config and edit paths, ports, and database settings:
 cp config.example.json config.json
 ```
 
-The active config path defaults to `./config.json` and can be overridden with the `CONFIG_PATH` environment variable.
+The active config path defaults to **`/data/config/config.json`** (creates parent directories on first run when missing). Override with **`CONFIG_PATH`** when developing on your machine — for example `CONFIG_PATH=./config.json` in `.env` or the shell so files stay in your project directory.
+
+Relay secrets default to **`relay.secrets.json` next to the config file** (so `/data/config/relay.secrets.json` with the default config path), unless `RELAY_SECRETS_PATH` is set.
 
 Optional **local** environment (admin UI, dev mode, secrets) can live in a **`.env`** file in the project root — see [environment-variables.md](environment-variables.md). Copy `.env.example` to `.env` and adjust. The relay loads `.env` automatically when you start it from that directory.
 
@@ -86,4 +88,4 @@ make lint
 make docker-build
 ```
 
-Mount your `config.json` (or config directory) into the container as documented in the `Dockerfile` comments.
+Mount a single **`/data`** volume for SQLite (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`.

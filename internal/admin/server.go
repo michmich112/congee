@@ -11,7 +11,7 @@
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
 //	GET    /api/stats            — relay connection count, ports, relay_version (binary)
-//	GET    /api/relay-identity   — relay pubkey_hex and npub (read-only)
+//	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
 //	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
@@ -51,22 +51,24 @@ import (
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
 //	GET      /stats            — relay connection count, ports, relay_version
-//	GET      /relay-identity   — relay pubkey_hex and npub (read-only)
+//	GET      /relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 //	POST     /migration/start  — data migration (SSE); body may set make_target_primary to update config
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
 // otherwise static files from web/admin/build with SPA fallback to index.html.
 type Server struct {
-	cfg       *config.Config
-	cfgPath   string
-	store     storage.Store
-	relay     *relay.Server
-	relayID   *relayidentity.Identity
-	log       zerolog.Logger
-	password  string
-	staticDir string
-	devProxy  *httputil.ReverseProxy
-	static    http.Handler // SPA file server (production, or dev fallback when Vite is down)
+	cfg     *config.Config
+	cfgPath string
+	store   storage.Store
+	relay   *relay.Server
+	relayID *relayidentity.Identity
+	// relayInstanceBoot is fixed at process start (same value used for postgres Open); not refreshed on PUT /api/config.
+	relayInstanceBoot config.RelayInstanceResolution
+	log               zerolog.Logger
+	password          string
+	staticDir         string
+	devProxy          *httputil.ReverseProxy
+	static            http.Handler // SPA file server (production, or dev fallback when Vite is down)
 
 	cfgMu sync.Mutex
 	http  *http.Server
@@ -76,16 +78,20 @@ type Server struct {
 // assets (e.g. web/admin/build). relaySrv may be nil (stats will show 0 connections).
 // scheduleRestart is invoked after a successful config write or NIP toggle when the
 // running process should be replaced (nil in tests or when restart is disabled).
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity) *Server {
+// relayInstanceBoot must be the config.RelayInstanceResolution from the same process
+// start as db.Open (see cmd/congee); it is served by GET /relay-identity and does not
+// track in-memory config mutations until the process restarts.
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution) *Server {
 	s := &Server{
-		cfg:       cfg,
-		cfgPath:   cfgPath,
-		store:     store,
-		relay:     relaySrv,
-		relayID:   relayID,
-		log:       log,
-		password:  password,
-		staticDir: staticDir,
+		cfg:               cfg,
+		cfgPath:           cfgPath,
+		store:             store,
+		relay:             relaySrv,
+		relayID:           relayID,
+		relayInstanceBoot: relayInstanceBoot,
+		log:               log,
+		password:          password,
+		staticDir:         staticDir,
 	}
 	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
 	s.static = s.onlyGET(serveAdminStatic(s.staticDir, http.FileServer(spaFS)))
@@ -115,7 +121,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
 	//   GET      /api/stats            — relay connection count, ports (placeholders OK)
-	//   GET      /api/relay-identity   — relay pubkey_hex and npub
+	//   GET      /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 	//   POST     /api/migration/start  — sqlite/postgres copy; SSE progress events
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
@@ -127,7 +133,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv).ServeHTTP)
-	api.Handle("GET /relay-identity", handleRelayIdentity(relayID))
+	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))

@@ -73,8 +73,8 @@ func migrationSourceMatchesConfig(cfg *config.Config, src migrationEndpoint) boo
 		strings.TrimSpace(src.DSN) == strings.TrimSpace(cfg.Database.DSN)
 }
 
-func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
-	switch typ {
+func openMigrationSource(ctx context.Context, dbType, dsn, congeeInstanceID string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
+	switch dbType {
 	case "sqlite":
 		if dsn == "" {
 			return nil, nil, errors.New("sqlite dsn is required")
@@ -88,13 +88,13 @@ func openMigrationSource(ctx context.Context, typ, dsn string, log zerolog.Logge
 		if dsn == "" {
 			return nil, nil, errors.New("postgres dsn is required")
 		}
-		st, err := postgres.Open(ctx, dsn, log)
+		st, err := postgres.Open(ctx, dsn, congeeInstanceID, log)
 		if err != nil {
 			return nil, nil, err
 		}
 		return st, func() { _ = st.Close() }, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported database type %q (use sqlite or postgres)", typ)
+		return nil, nil, fmt.Errorf("unsupported database type %q (use sqlite or postgres)", dbType)
 	}
 }
 
@@ -197,7 +197,9 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		ctx := r.Context()
 		migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
 
-		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, l)
+		congeeInstanceID := config.ResolveRelayInstance(cfg).EffectiveID
+
+		src, closeSrc, err := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, congeeInstanceID, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "source", req.Source.Type, req.Source.DSN).
 				Err(err).Str("phase", "open_source").Msg("migration rejected: open source failed")
@@ -208,7 +210,7 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 
 		migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("opening migration target")
 
-		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, l)
+		dst, closeDst, err := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, congeeInstanceID, l)
 		if err != nil {
 			migrationLogConn(log.Warn(), "target", req.Target.Type, req.Target.DSN).
 				Err(err).Str("phase", "open_target").Msg("migration rejected: open target failed")
