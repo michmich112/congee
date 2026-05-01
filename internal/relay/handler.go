@@ -229,10 +229,16 @@ func (c *Conn) logInboundWSDebug(payload []byte) {
 
 func (c *Conn) dispatchPayload(payload []byte) {
 	if !c.server.limiter.AllowMessage(c.peerIP) {
+		if c.server.metrics != nil {
+			c.server.metrics.IncRateLimitMessages()
+		}
 		_ = c.sendNotice("rate limited: too many messages from this IP")
 		return
 	}
 	if !c.limiter.AllowInboundBytes(len(payload)) {
+		if c.server.metrics != nil {
+			c.server.metrics.IncRateLimitBandwidth()
+		}
 		_ = c.sendNotice("rate limited: bandwidth")
 		return
 	}
@@ -251,16 +257,25 @@ func (c *Conn) dispatchPayload(payload []byte) {
 	switch msg.(type) {
 	case *nostr.EventMessage:
 		if !c.limiter.AllowEvent() {
+			if c.server.metrics != nil {
+				c.server.metrics.IncRateLimitEvents()
+			}
 			_ = c.sendNotice("rate limited: events")
 			return
 		}
 	case *nostr.ReqMessage:
 		if !c.limiter.AllowReq() {
+			if c.server.metrics != nil {
+				c.server.metrics.IncRateLimitReqs()
+			}
 			_ = c.sendNotice("rate limited: subscription requests")
 			return
 		}
 	case *nostr.AuthMessage:
 		if !c.limiter.AllowReq() {
+			if c.server.metrics != nil {
+				c.server.metrics.IncRateLimitReqs()
+			}
 			_ = c.sendNotice("rate limited: subscription requests")
 			return
 		}

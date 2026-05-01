@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
@@ -36,6 +37,12 @@ type Server struct {
 	open   atomic.Int64
 	conns  sync.Map // conn id -> *Conn
 	connWG sync.WaitGroup
+
+	metrics       *RelayMetrics
+	metricsCtx    context.Context
+	metricsCancel context.CancelFunc
+	startedUnix   atomic.Int64
+	serveOnce     sync.Once
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -47,16 +54,20 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 	if store == nil {
 		return nil, errors.New("relay: nil store")
 	}
+	mctx, mcancel := context.WithCancel(context.Background())
 	s := &Server{
-		cfg:        cfg,
-		store:      store,
-		log:        log,
-		relayID:    relayID,
-		registry:   NewRegistry(),
-		validators: &ValidatorChain{},
-		hooks:      &HookChain{},
-		subs:       NewSubscriptionManager(cfg),
-		limiter:    NewLimiterHub(cfg),
+		cfg:           cfg,
+		store:         store,
+		log:           log,
+		relayID:       relayID,
+		registry:      NewRegistry(),
+		validators:    &ValidatorChain{},
+		hooks:         &HookChain{},
+		subs:          NewSubscriptionManager(cfg),
+		limiter:       NewLimiterHub(cfg),
+		metrics:       newRelayMetrics(),
+		metricsCtx:    mctx,
+		metricsCancel: mcancel,
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/health", &HealthHandler{Store: store})
@@ -91,6 +102,12 @@ func (s *Server) Subscriptions() *SubscriptionManager { return s.subs }
 // OpenConnections returns the number of active WebSocket relay connections.
 func (s *Server) OpenConnections() int64 { return s.open.Load() }
 
+// StartedAtUnix is set when Serve begins (0 before first Serve).
+func (s *Server) StartedAtUnix() int64 { return s.startedUnix.Load() }
+
+// Metrics returns wire-level counters and latency samples for the admin API.
+func (s *Server) Metrics() *RelayMetrics { return s.metrics }
+
 // Addr returns the bound listener address when serving.
 func (s *Server) Addr() string {
 	if s.http == nil {
@@ -110,6 +127,12 @@ func (s *Server) ListenAndServe(addr string) error {
 
 // Serve runs the HTTP server on an existing listener (e.g. :0 in tests).
 func (s *Server) Serve(ln net.Listener) error {
+	s.serveOnce.Do(func() {
+		s.startedUnix.Store(time.Now().Unix())
+		if s.metrics != nil && s.store != nil {
+			s.metrics.StartFlushLoop(s.metricsCtx, s.store, s.cfg.Metrics.RelayBucketRetentionDays, s.log)
+		}
+	})
 	s.http.Addr = ln.Addr().String()
 	return s.http.Serve(ln)
 }
@@ -203,11 +226,17 @@ func stringsFoldEq(a, b string) bool {
 
 func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request) {
 	if int(s.open.Load()) >= s.cfg.ConnectionLimits.MaxOpen {
+		if s.metrics != nil {
+			s.metrics.IncRateLimitMaxConnections()
+		}
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
 	peer := peerIP(r.RemoteAddr)
 	if !s.limiter.AllowNewConnection(peer) {
+		if s.metrics != nil {
+			s.metrics.IncRateLimitNewConnections()
+		}
 		http.Error(w, "connection rate limit", http.StatusTooManyRequests)
 		return
 	}
@@ -312,6 +341,12 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate b
 
 // Shutdown stops listening and closes active WebSocket connections.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.metricsCancel != nil {
+		s.metricsCancel()
+	}
+	if s.metrics != nil && s.store != nil {
+		_ = s.metrics.FlushOpenMinute(context.Background(), s.store)
+	}
 	s.conns.Range(func(_, v any) bool {
 		c := v.(*Conn)
 		c.cancel()
