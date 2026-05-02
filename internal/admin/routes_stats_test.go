@@ -50,7 +50,7 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 		t.Fatal("relay_counters not object")
 	}
 	for _, k := range []string{
-		"events_stored_ok", "events_rejected", "req_total", "close_total",
+		"events_stored_ok", "events_rejected", "events_ephemeral_ok", "req_total", "close_total",
 		"rate_limit_messages", "rate_limit_bandwidth", "rate_limit_events", "rate_limit_reqs",
 		"rate_limit_new_connections", "rate_limit_max_connections",
 	} {

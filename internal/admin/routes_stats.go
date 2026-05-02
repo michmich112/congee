@@ -97,6 +97,7 @@ func zeroRelayCountersShape() map[string]any {
 	return map[string]any{
 		"events_stored_ok":           int64(0),
 		"events_rejected":            int64(0),
+		"events_ephemeral_ok":        int64(0),
 		"req_total":                  int64(0),
 		"close_total":                int64(0),
 		"rate_limit_messages":        int64(0),

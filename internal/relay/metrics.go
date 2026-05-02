@@ -19,6 +19,7 @@ type RelayMetrics struct {
 	// Lifetime (since relay Serve started).
 	eventsStoredOK          atomic.Int64
 	eventsRejected          atomic.Int64
+	eventsEphemeralOK       atomic.Int64
 	reqTotal                atomic.Int64
 	closeTotal              atomic.Int64
 	rateLimitMessages       atomic.Int64
@@ -61,6 +62,10 @@ func (m *RelayMetrics) IncEventsStoredOK() {
 func (m *RelayMetrics) IncEventsRejected() {
 	m.eventsRejected.Add(1)
 	m.curEventsRejected.Add(1)
+}
+
+func (m *RelayMetrics) IncEventsEphemeralOK() {
+	m.eventsEphemeralOK.Add(1)
 }
 
 func (m *RelayMetrics) IncReq() {
@@ -123,6 +128,7 @@ func (m *RelayMetrics) CountersJSON() map[string]any {
 	return map[string]any{
 		"events_stored_ok":           m.eventsStoredOK.Load(),
 		"events_rejected":            m.eventsRejected.Load(),
+		"events_ephemeral_ok":        m.eventsEphemeralOK.Load(),
 		"req_total":                  m.reqTotal.Load(),
 		"close_total":                m.closeTotal.Load(),
 		"rate_limit_messages":        m.rateLimitMessages.Load(),

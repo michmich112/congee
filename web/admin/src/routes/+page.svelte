@@ -24,8 +24,8 @@
 	import DashboardGraphCard from '$lib/components/DashboardGraphCard.svelte';
 	import DashboardLatencyChart from '$lib/components/DashboardLatencyChart.svelte';
 	import DashboardLineSeriesChart from '$lib/components/DashboardLineSeriesChart.svelte';
+	import StatInfoIcon from '$lib/components/StatInfoIcon.svelte';
 	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 
@@ -44,9 +44,26 @@
 			'How many open REQ filter subscriptions the relay is serving. Each point is a snapshot: per minute the value at the end of that minute; per hour the last sample in the hour.',
 	} as const;
 
+	/** Hover tooltips for dashboard metric tiles (first rows + rate limits). */
+	const DASHBOARD_METRIC_INFO = {
+		ws: 'Current WebSocket connections to this relay process.',
+		subs: 'Open REQ filter subscriptions across all connections.',
+		uptime: 'Time since this relay process started serving, and local wall-clock start time.',
+		storage: 'Database footprint plus row counts for events, tags, and audit log.',
+		eventsStored:
+			'Events that passed validation and were persisted (lifetime counter since process start).',
+		ephemeral:
+			'Ephemeral event kinds (NIP-01): accepted with OK, not written to the database, still broadcast to subscribers. Excludes rejected events.',
+		eventsRejected:
+			'Events that failed validation or storage (lifetime counter since process start).',
+		reqClose:
+			'Total REQ subscription requests and CLOSE messages handled since process start (shown as REQ / CLOSE).',
+		rateLimits:
+			'How often per-connection or per-IP limits blocked traffic (cumulative since process start).',
+	} as const;
+
 	type Stats = {
 		open_connections?: number;
-		relay_version?: string;
 		subscriptions_open?: number;
 		started_at_unix?: number;
 		uptime_sec?: number;
@@ -184,15 +201,14 @@
 		</div>
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<AnalyticsStatCard label="WebSocket connections" value={stats.open_connections ?? 0}>
-				{#snippet badge()}
-					<Badge variant="secondary">live</Badge>
-				{/snippet}
-			</AnalyticsStatCard>
-			<AnalyticsStatCard label="Subscriptions" value={stats.subscriptions_open ?? 0} />
-			<Card.Root>
+			<AnalyticsStatCard label="WebSocket connections" value={stats.open_connections ?? 0} info={DASHBOARD_METRIC_INFO.ws} />
+			<AnalyticsStatCard label="Subscriptions" value={stats.subscriptions_open ?? 0} info={DASHBOARD_METRIC_INFO.subs} />
+			<Card.Root class="overflow-visible">
 				<Card.Header class="pb-2">
-					<Card.Description>Uptime</Card.Description>
+					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<Card.Description>Uptime</Card.Description>
+						<StatInfoIcon info={DASHBOARD_METRIC_INFO.uptime} />
+					</div>
 					<Card.Title class="text-xl tabular-nums leading-snug">
 						{formatDurationSec(stats.uptime_sec ?? 0)}
 					</Card.Title>
@@ -205,9 +221,12 @@
 					{/if}
 				</Card.Content>
 			</Card.Root>
-			<Card.Root>
+			<Card.Root class="overflow-visible">
 				<Card.Header class="pb-2">
-					<Card.Description>Storage (DB)</Card.Description>
+					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<Card.Description>Storage (DB)</Card.Description>
+						<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage} />
+					</div>
 					<Card.Title class="text-xl tabular-nums leading-snug">
 						{formatBytes(stats.storage?.bytes ?? 0)}
 					</Card.Title>
@@ -220,28 +239,46 @@
 		</div>
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<AnalyticsStatCard label="Events stored (ok)" value={counter('events_stored_ok')} compactNumber />
-			<AnalyticsStatCard label="Events rejected" value={counter('events_rejected')} compactNumber />
-			<Card.Root>
+			<AnalyticsStatCard
+				label="Events stored (ok)"
+				value={counter('events_stored_ok')}
+				compactNumber
+				info={DASHBOARD_METRIC_INFO.eventsStored}
+			/>
+			<AnalyticsStatCard
+				label="Ephemeral processed (ok)"
+				value={counter('events_ephemeral_ok')}
+				compactNumber
+				info={DASHBOARD_METRIC_INFO.ephemeral}
+			/>
+			<AnalyticsStatCard
+				label="Events rejected"
+				value={counter('events_rejected')}
+				compactNumber
+				info={DASHBOARD_METRIC_INFO.eventsRejected}
+			/>
+			<Card.Root class="overflow-visible">
 				<Card.Header class="pb-2">
-					<Card.Description>REQ / CLOSE (total)</Card.Description>
+					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+						<Card.Description>REQ / CLOSE (total)</Card.Description>
+						<StatInfoIcon info={DASHBOARD_METRIC_INFO.reqClose} />
+					</div>
 					<Card.Title class="text-3xl tabular-nums">
 						{formatCompactCount(counter('req_total'))} / {formatCompactCount(counter('close_total'))}
 					</Card.Title>
 				</Card.Header>
 			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Relay version</Card.Description>
-					<Card.Title class="font-mono text-sm leading-relaxed break-all">{stats.relay_version ?? '—'}</Card.Title>
-				</Card.Header>
-			</Card.Root>
 		</div>
 
-		<Card.Root>
+		<Card.Root class="overflow-visible">
 			<Card.Header class="pb-2">
-				<Card.Title class="text-base">Rate limits (cumulative)</Card.Title>
-				<Card.Description>Hits since relay process start</Card.Description>
+				<div class="flex flex-wrap items-start gap-x-2 gap-y-1">
+					<div class="grid min-w-0 flex-1 gap-0.5">
+						<Card.Title class="text-base">Rate limits (cumulative)</Card.Title>
+						<Card.Description>Hits since relay process start</Card.Description>
+					</div>
+					<StatInfoIcon info={DASHBOARD_METRIC_INFO.rateLimits} />
+				</div>
 			</Card.Header>
 			<Card.Content class="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
 				<div>
