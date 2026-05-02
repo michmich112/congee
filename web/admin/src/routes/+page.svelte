@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { adminFetch } from '$lib/admin-api';
 	import { formatBytes } from '$lib/format-bytes';
 	import { formatDurationSec } from '$lib/format-duration';
@@ -303,45 +304,53 @@
 		</Card.Root>
 
 		<div
-			class="border-border bg-muted/30 flex flex-wrap items-end gap-4 rounded-lg border p-4"
+			class="border-border bg-muted/30 flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-end sm:justify-between"
 			aria-label="Chart range and refresh options"
 		>
-			<div class="grid gap-1.5">
-				<Label for="dash-time-range">Time range</Label>
-				<select id="dash-time-range" class={selectClass} bind:value={timeRange}>
-					<option value="15m">Last 15 minutes</option>
-					<option value="1h">Last hour</option>
-					<option value="6h">Last 6 hours</option>
-					<option value="24h">Last 24 hours</option>
-				</select>
+			<div class="flex flex-wrap items-end gap-4">
+				<div class="grid gap-1.5">
+					<Label for="dash-time-range">Time range</Label>
+					<select id="dash-time-range" class={selectClass} bind:value={timeRange}>
+						<option value="15m">Last 15 minutes</option>
+						<option value="1h">Last hour</option>
+						<option value="6h">Last 6 hours</option>
+						<option value="24h">Last 24 hours</option>
+					</select>
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="dash-resolution">Resolution</Label>
+					<select id="dash-resolution" class={selectClass} bind:value={resolution}>
+						<option value="minute">Per minute</option>
+						<option value="hour">Per hour</option>
+					</select>
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="dash-refresh">Refresh</Label>
+					<select id="dash-refresh" class={selectClass} bind:value={refreshSec}>
+						<option value={3}>3s</option>
+						<option value={5}>5s</option>
+						<option value={10}>10s</option>
+						<option value={30}>30s</option>
+						<option value={60}>1m</option>
+					</select>
+				</div>
 			</div>
-			<div class="grid gap-1.5">
-				<Label for="dash-resolution">Resolution</Label>
-				<select id="dash-resolution" class={selectClass} bind:value={resolution}>
-					<option value="minute">Per minute</option>
-					<option value="hour">Per hour</option>
-				</select>
-			</div>
-			<div class="grid gap-1.5">
-				<Label for="dash-refresh">Refresh</Label>
-				<select id="dash-refresh" class={selectClass} bind:value={refreshSec}>
-					<option value={3}>3s</option>
-					<option value={5}>5s</option>
-					<option value={10}>10s</option>
-					<option value={30}>30s</option>
-					<option value={60}>1m</option>
-				</select>
-			</div>
-			<div class="flex items-end pb-0.5">
+			<div class="flex justify-end sm:shrink-0">
 				<Button
 					type="button"
 					variant="secondary"
 					size="sm"
 					class="h-9"
 					disabled={refreshBusy}
+					aria-busy={refreshBusy}
 					onclick={() => void refreshStats(true)}
 				>
-					{refreshBusy ? 'Refreshing…' : 'Refresh now'}
+					{#if refreshBusy}
+						<Loader2Icon class="size-3.5 animate-spin" aria-hidden="true" />
+						<span>Refreshing…</span>
+					{:else}
+						Refresh now
+					{/if}
 				</Button>
 			</div>
 		</div>
