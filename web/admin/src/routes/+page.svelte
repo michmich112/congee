@@ -33,6 +33,18 @@
 	const selectClass =
 		'border-input bg-background focus-visible:ring-ring/50 h-9 min-w-[8rem] rounded-md border px-2.5 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-none';
 
+	/** Shown in the (i) tooltip next to each dashboard chart title. */
+	const DASHBOARD_CHART_INFO = {
+		eventsStored:
+			'Nostr events this relay accepted and stored, per time bucket. Per minute: each UTC minute. Per hour: sums of those minutes in each UTC hour.',
+		reqCount:
+			'How many incoming REQ (subscription) messages the relay handled in each bucket. Per hour adds the per-minute counts in that hour.',
+		latency:
+			'How long REQ query work took. With enough recent samples, lines are mean, median, and 99th percentile; otherwise the chart uses stored per-minute averages (the three series overlap as the same value).',
+		subs:
+			'How many open REQ filter subscriptions the relay is serving. Each point is a snapshot: per minute the value at the end of that minute; per hour the last sample in the hour.',
+	} as const;
+
 	type Stats = {
 		open_connections?: number;
 		relay_port?: number;
@@ -256,7 +268,7 @@
 		</div>
 
 		<div class="grid gap-4 lg:grid-cols-2">
-			<DashboardGraphCard title="Events stored">
+			<DashboardGraphCard title="Events stored" info={DASHBOARD_CHART_INFO.eventsStored}>
 				<DashboardLineSeriesChart
 					data={eventsChartData}
 					seriesLabel="Events"
@@ -264,7 +276,7 @@
 					seriesKey="events"
 				/>
 			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ count">
+			<DashboardGraphCard title="REQ count" info={DASHBOARD_CHART_INFO.reqCount}>
 				<DashboardLineSeriesChart
 					data={reqChartData}
 					seriesLabel="REQ"
@@ -272,10 +284,10 @@
 					seriesKey="req"
 				/>
 			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ query latency">
+			<DashboardGraphCard title="REQ query latency" info={DASHBOARD_CHART_INFO.latency}>
 				<DashboardLatencyChart data={latencyChartData} />
 			</DashboardGraphCard>
-			<DashboardGraphCard title="Open subscriptions">
+			<DashboardGraphCard title="Open subscriptions" info={DASHBOARD_CHART_INFO.subs}>
 				<DashboardLineSeriesChart
 					data={subsChartData}
 					seriesLabel="Subs"
