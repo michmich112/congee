@@ -100,6 +100,17 @@ func (m *SubscriptionManager) Remove(connID, subID string) {
 	}
 }
 
+// TotalSubscriptions returns the number of open REQ subscriptions across all connections.
+func (m *SubscriptionManager) TotalSubscriptions() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, cmap := range m.subs {
+		n += len(cmap)
+	}
+	return n
+}
+
 // filtersMatch is true if any filter matches the event (NIP-01 OR semantics).
 func filtersMatch(filters []nostr.Filter, ev *nostr.Event) bool {
 	for i := range filters {

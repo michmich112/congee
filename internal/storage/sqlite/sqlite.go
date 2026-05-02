@@ -39,6 +39,7 @@ type Store struct {
 	baseCtx   context.Context
 	shutdown  atomic.Bool
 	closedErr error
+	dbPath    string // main database file path (for AdminStorageSnapshot size)
 }
 
 var _ storage.Store = (*Store)(nil)
@@ -98,6 +99,12 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log z
 	log.Debug().Msg("open: schema migrations done")
 
 	baseCtx, cancel := context.WithCancel(context.Background())
+	dbPath, err := sqliteMainFilePath(dsn)
+	if err != nil {
+		cancel()
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlite: resolve db path: %w", err)
+	}
 	s := &Store{
 		db:        db,
 		notifier:  notifier,
@@ -105,6 +112,7 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log z
 		cancel:    cancel,
 		baseCtx:   baseCtx,
 		closedErr: errors.New("sqlite: store closed"),
+		dbPath:    dbPath,
 	}
 	s.wg.Add(1)
 	go s.writerLoop(baseCtx)

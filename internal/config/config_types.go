@@ -7,6 +7,7 @@ type Config struct {
 	Database                DatabaseSection         `json:"database"`
 	Logging                 LoggingSection          `json:"logging"`
 	Audit                   AuditSection            `json:"audit"`
+	Metrics                 MetricsSection          `json:"metrics"`
 	RateLimits              RateLimitsSection       `json:"rate_limits"`
 	ConnectionLimits        ConnectionLimitsSection `json:"connection_limits"`
 	WebSocket               WebSocketSection        `json:"websocket"`
@@ -40,6 +41,12 @@ type AuditSection struct {
 	RetentionDays int `json:"retention_days"`
 }
 
+// MetricsSection configures persisted relay telemetry (per-minute buckets).
+type MetricsSection struct {
+	// RelayBucketRetentionDays drops relay_metric_buckets older than this many days (UTC minute buckets).
+	RelayBucketRetentionDays int `json:"relay_bucket_retention_days"`
+}
+
 type RateLimitsSection struct {
 	EventsPerMinutePerConnection int `json:"events_per_minute_per_connection"`
 	BytesPerSecondPerConnection  int `json:"bytes_per_second_per_connection"`
@@ -58,7 +65,7 @@ type ConnectionLimitsSection struct {
 
 type WebSocketSection struct {
 	CompressionEnabled bool `json:"compression_enabled"`
-	MaxMessageBytes    int `json:"max_message_bytes"`
+	MaxMessageBytes    int  `json:"max_message_bytes"`
 }
 
 type NIP11Section struct {
@@ -67,7 +74,7 @@ type NIP11Section struct {
 	PubKey             string `json:"pubkey"`
 	Contact            string `json:"contact"`
 	Software           string `json:"software"`
-	CORSAllowAnyOrigin bool `json:"cors_allow_any_origin"`
+	CORSAllowAnyOrigin bool   `json:"cors_allow_any_origin"`
 }
 
 type NIPsSection struct {
@@ -76,8 +83,8 @@ type NIPsSection struct {
 
 // NIP42Section configures NIP-42 client authentication (optional NIP).
 type NIP42Section struct {
-	RelayURL                  string   `json:"relay_url"`
-	SendChallengeOnConnect    bool     `json:"send_challenge_on_connect"`
+	RelayURL               string `json:"relay_url"`
+	SendChallengeOnConnect bool   `json:"send_challenge_on_connect"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
 	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`

@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 2
+const schemaVersion = 4
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var version int
@@ -39,6 +39,22 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return err
 		}
 		log.Debug().Msg("schema: v1 to v2 complete")
+		return nil
+	}
+	if version == 2 {
+		log.Debug().Msg("schema: migrating v2 to v3")
+		if err := migrateV2ToV3(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v2 to v3 complete")
+		return nil
+	}
+	if version == 3 {
+		log.Debug().Msg("schema: migrating v3 to v4")
+		if err := migrateV3ToV4(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v3 to v4 complete")
 		return nil
 	}
 	return fmt.Errorf("sqlite: unsupported schema version %d", version)
@@ -83,6 +99,17 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			json_diff TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
+			bucket_start_unix INTEGER NOT NULL PRIMARY KEY,
+			events_stored INTEGER NOT NULL DEFAULT 0,
+			events_rejected INTEGER NOT NULL DEFAULT 0,
+			req_count INTEGER NOT NULL DEFAULT 0,
+			close_count INTEGER NOT NULL DEFAULT 0,
+			query_ms_sum INTEGER NOT NULL DEFAULT 0,
+			query_ms_count INTEGER NOT NULL DEFAULT 0,
+			subscriptions_open INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
 	}
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
@@ -110,7 +137,43 @@ func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	if _, err := db.ExecContext(ctx, `INSERT INTO event_fts(event_id, content) SELECT id, content FROM events`); err != nil {
 		return fmt.Errorf("sqlite: backfill event_fts: %w", err)
 	}
-	log.Debug().Int("schema_version", schemaVersion).Msg("schema v1->v2: set user_version")
+	log.Debug().Msg("schema v1->v2: chain v2->v3")
+	return migrateV2ToV3(ctx, db, log)
+}
+
+func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
+			bucket_start_unix INTEGER NOT NULL PRIMARY KEY,
+			events_stored INTEGER NOT NULL DEFAULT 0,
+			events_rejected INTEGER NOT NULL DEFAULT 0,
+			req_count INTEGER NOT NULL DEFAULT 0,
+			close_count INTEGER NOT NULL DEFAULT 0,
+			query_ms_sum INTEGER NOT NULL DEFAULT 0,
+			query_ms_count INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
+	}
+	for i := range stmts {
+		log.Debug().Int("ddl_step", i).Msg("schema v2->v3: relay_metric_buckets")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
+			return fmt.Errorf("sqlite: migrate v2->v3: %w", err)
+		}
+	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema v2->v3: set user_version 3 (chain v3->v4)")
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
+		return fmt.Errorf("sqlite: set user_version: %w", err)
+	}
+	log.Debug().Msg("schema v2->v3: chain v3->v4")
+	return migrateV3ToV4(ctx, db, log)
+}
+
+func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
+	if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN subscriptions_open INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
+	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema v3->v4: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return fmt.Errorf("sqlite: set user_version: %w", err)
 	}

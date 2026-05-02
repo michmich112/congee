@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 2
+const schemaVersion = 4
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var evExists bool
@@ -48,6 +48,22 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return err
 		}
 		log.Debug().Msg("schema: v1 to v2 complete")
+		return nil
+	}
+	if version == 2 {
+		log.Debug().Msg("schema: migrating v2 to v3")
+		if err := migrateV2ToV3(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v2 to v3 complete")
+		return nil
+	}
+	if version == 3 {
+		log.Debug().Msg("schema: migrating v3 to v4")
+		if err := migrateV3ToV4(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v3 to v4 complete")
 		return nil
 	}
 	return fmt.Errorf("postgres: unsupported schema version %d", version)
@@ -101,6 +117,17 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			json_diff TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
+			bucket_start_unix BIGINT NOT NULL PRIMARY KEY,
+			events_stored BIGINT NOT NULL DEFAULT 0,
+			events_rejected BIGINT NOT NULL DEFAULT 0,
+			req_count BIGINT NOT NULL DEFAULT 0,
+			close_count BIGINT NOT NULL DEFAULT 0,
+			query_ms_sum BIGINT NOT NULL DEFAULT 0,
+			query_ms_count BIGINT NOT NULL DEFAULT 0,
+			subscriptions_open BIGINT NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
 	}
 
 	for i, s := range stmts {
@@ -133,8 +160,47 @@ func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	if _, err := db.ExecContext(ctx, stmts[1]); err != nil {
 		return fmt.Errorf("postgres: gin index: %w", err)
 	}
-	log.Debug().Int("step", 2).Msg("schema v1->v2: bump schema version")
-	if _, err := db.ExecContext(ctx, stmts[2], schemaVersion); err != nil {
+	log.Debug().Int("step", 2).Msg("schema v1->v2: bump schema version to 2")
+	if _, err := db.ExecContext(ctx, stmts[2], 2); err != nil {
+		return fmt.Errorf("postgres: bump schema version: %w", err)
+	}
+	log.Debug().Msg("schema v1->v2: chain v2->v3")
+	return migrateV2ToV3(ctx, db, log)
+}
+
+func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
+			bucket_start_unix BIGINT NOT NULL PRIMARY KEY,
+			events_stored BIGINT NOT NULL DEFAULT 0,
+			events_rejected BIGINT NOT NULL DEFAULT 0,
+			req_count BIGINT NOT NULL DEFAULT 0,
+			close_count BIGINT NOT NULL DEFAULT 0,
+			query_ms_sum BIGINT NOT NULL DEFAULT 0,
+			query_ms_count BIGINT NOT NULL DEFAULT 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
+		`UPDATE congee_schema_version SET version = ? WHERE id = 1`,
+	}
+	for i := 0; i < 2; i++ {
+		log.Debug().Int("ddl_step", i).Msg("schema v2->v3: relay_metric_buckets")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
+			return fmt.Errorf("postgres: migrate v2->v3: %w", err)
+		}
+	}
+	log.Debug().Msg("schema v2->v3: bump schema version to 3 (chain v3->v4)")
+	if _, err := db.ExecContext(ctx, stmts[2], 3); err != nil {
+		return fmt.Errorf("postgres: bump schema version: %w", err)
+	}
+	return migrateV3ToV4(ctx, db, log)
+}
+
+func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
+	if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN IF NOT EXISTS subscriptions_open BIGINT NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("postgres: migrate v3->v4: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, schemaVersion); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
 	}
 	return nil

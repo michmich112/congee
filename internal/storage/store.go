@@ -70,4 +70,13 @@ type Store interface {
 	GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
 	// IsGroupMember uses the latest relay-signed kind 9000 or 9001 for the group with p=memberPubkey.
 	IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error)
+
+	// AdminStorageSnapshot returns table row counts and best-effort database bytes on disk (SQLite file+WAL+SHM, Postgres pg_database_size).
+	AdminStorageSnapshot(ctx context.Context) (AdminStorageSnapshot, error)
+	// UpsertRelayMetricBucket writes or replaces one UTC-minute aggregate row.
+	UpsertRelayMetricBucket(ctx context.Context, b RelayMetricBucket) error
+	// QueryRelayMetricBuckets returns buckets with bucket_start_unix >= MinBucketStartUnix ordered ascending, capped by Limit.
+	QueryRelayMetricBuckets(ctx context.Context, q RelayMetricBucketQuery) ([]RelayMetricBucket, error)
+	// PurgeRelayMetricBucketsBefore deletes rows with bucket_start_unix < cutoffStartUnixExclusive.
+	PurgeRelayMetricBucketsBefore(ctx context.Context, cutoffStartUnixExclusive int64) (int64, error)
 }

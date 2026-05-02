@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/nostr"
@@ -48,6 +49,9 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
 	if err := s.validators.Validate(ctx, c, ev); err != nil {
+		if s.metrics != nil {
+			s.metrics.IncEventsRejected()
+		}
 		msg := err.Error()
 		if strings.HasPrefix(msg, "auth-required:") {
 			_ = nip42EnqueueAuthChallenge(c, s.cfg)
@@ -58,6 +62,9 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		if err := c.sendOK(ev.ID, true, ""); err != nil {
 			return err
 		}
+		if s.metrics != nil {
+			s.metrics.IncEventsEphemeralOK()
+		}
 		env := HookEnv{Conn: c, Event: ev, Stored: false}
 		if err := s.hooks.Run(ctx, env); err != nil {
 			log.Error().Err(err).Str("pubkey", ev.PubKey).Str("conn_id", c.ID).Msg("post-hook error")
@@ -65,7 +72,13 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		return nil
 	}
 	if err := store.SaveEvent(ctx, ev); err != nil {
+		if s.metrics != nil {
+			s.metrics.IncEventsRejected()
+		}
 		return c.sendOK(ev.ID, false, err.Error())
+	}
+	if s.metrics != nil {
+		s.metrics.IncEventsStoredOK()
 	}
 	env := HookEnv{Conn: c, Event: ev, Stored: true}
 	if err := s.hooks.Run(ctx, env); err != nil {
@@ -78,6 +91,9 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 }
 
 func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, log zerolog.Logger, searchEnabled bool) error {
+	if s.metrics != nil {
+		s.metrics.IncReq()
+	}
 	for i := range msg.Filters {
 		if msg.Filters[i].HasSearch() && !searchEnabled {
 			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
@@ -100,7 +116,11 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 			return c.sendClosed(msg.SubID, err.Error())
 		}
 	}
+	t0 := time.Now()
 	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled)
+	if s.metrics != nil {
+		s.metrics.RecordQueryLatency(time.Since(t0))
+	}
 	if err != nil {
 		log.Error().Err(err).Str("conn_id", c.ID).Msg("query failed")
 		return c.sendClosed(msg.SubID, "internal error")
@@ -119,5 +139,8 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessage, log zerolog.Logger) {
 	_ = ctx
 	s.subs.Remove(c.ID, msg.SubID)
+	if s.metrics != nil {
+		s.metrics.IncClose()
+	}
 	log.Debug().Str("conn_id", c.ID).Str("sub_id", msg.SubID).Msg("subscription closed")
 }
