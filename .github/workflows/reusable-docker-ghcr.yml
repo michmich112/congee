@@ -56,6 +56,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Required for non-native platforms (e.g. linux/arm64 when the runner is amd64).
+      - uses: docker/setup-qemu-action@v4
+
       - name: Resolve image name (lowercase)
         id: img
         run: |
