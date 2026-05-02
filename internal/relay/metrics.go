@@ -10,7 +10,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const recentQueryRingCap = 256
+// In-memory ring of individual REQ query timings for /api/stats and percentile detail on
+// the latest windows. Main history comes from persisted relay_metric_buckets.
+const recentQueryRingCap = 8192
 
 // RelayMetrics holds hot-path atomics, a partial-minute buffer for DB flush, and a fixed ring of REQ query latencies.
 type RelayMetrics struct {
