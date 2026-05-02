@@ -16,7 +16,7 @@
 {#if data.length === 0}
 	<p class="text-muted-foreground py-8 text-center text-sm">No latency samples in this range.</p>
 {:else}
-	<Chart.Container config={chartConfig} class="aspect-auto min-h-[260px] w-full max-w-full">
+	<Chart.Container config={chartConfig} class="aspect-auto h-[260px] w-full max-w-full">
 		<LineChart
 			data={data}
 			x="date"
@@ -30,8 +30,6 @@
 			props={{
 				yAxis: {
 					label: 'Latency (ms)',
-					format: (v: Date | number) =>
-						typeof v === 'number' && Number.isFinite(v) ? `${Math.round(v)} ms` : String(v),
 				},
 			}}
 		>

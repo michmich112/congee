@@ -177,24 +177,6 @@
 		return binLatencyChartRows(f, resolution);
 	});
 
-	function graphSubtitle(metric: 'counter' | 'subs'): string {
-		if (metric === 'subs') {
-			if (resolution === 'hour') return 'Last open-count sample in each UTC hour.';
-			if (resolution === 'second') return 'Snapshot per minute (same points as per-minute view).';
-			return 'Open REQ subscriptions sampled each UTC minute.';
-		}
-		if (resolution === 'minute') return 'Counts per UTC minute bucket.';
-		if (resolution === 'second') return 'Average per second within each minute (count ÷ 60).';
-		return 'Totals summed into UTC hour bins.';
-	}
-
-	function latencySubtitle(): string {
-		const base =
-			'Mean = arithmetic average; median = p50; P99 = 99th percentile. Y-axis: latency (ms).';
-		if (resolution === 'minute') return `${base} Buckets: UTC minute.`;
-		if (resolution === 'second') return `${base} Buckets: UTC second.`;
-		return `${base} Buckets: UTC hour.`;
-	}
 </script>
 
 <div class="space-y-6">
@@ -259,7 +241,7 @@
 		</div>
 
 		<div class="grid gap-4 lg:grid-cols-2">
-			<DashboardGraphCard title="Events stored" description={graphSubtitle('counter')}>
+			<DashboardGraphCard title="Events stored">
 				<DashboardLineSeriesChart
 					data={eventsChartData}
 					seriesLabel="Events"
@@ -267,7 +249,7 @@
 					seriesKey="events"
 				/>
 			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ count" description={graphSubtitle('counter')}>
+			<DashboardGraphCard title="REQ count">
 				<DashboardLineSeriesChart
 					data={reqChartData}
 					seriesLabel="REQ"
@@ -275,10 +257,10 @@
 					seriesKey="req"
 				/>
 			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ query latency" description={latencySubtitle()}>
+			<DashboardGraphCard title="REQ query latency">
 				<DashboardLatencyChart data={latencyChartData} />
 			</DashboardGraphCard>
-			<DashboardGraphCard title="Open subscriptions" description={graphSubtitle('subs')}>
+			<DashboardGraphCard title="Open subscriptions">
 				<DashboardLineSeriesChart
 					data={subsChartData}
 					seriesLabel="Subs"
