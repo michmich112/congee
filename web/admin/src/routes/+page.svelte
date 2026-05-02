@@ -27,7 +27,6 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
 
 	const selectClass =
@@ -47,8 +46,6 @@
 
 	type Stats = {
 		open_connections?: number;
-		relay_port?: number;
-		admin_port?: number;
 		relay_version?: string;
 		subscriptions_open?: number;
 		started_at_unix?: number;
@@ -59,21 +56,12 @@
 		series?: { bucket_sec?: number; buckets?: MetricBucket[] };
 	};
 
-	type RelayIdentity = {
-		pubkey_hex: string;
-		npub: string;
-	};
-
 	let stats = $state<Stats | null>(null);
-	let relayIdentity = $state.raw<RelayIdentity | null>(null);
 	let loadErr = $state<string | null>(null);
-	let relayIdErr = $state<string | null>(null);
 	let loading = $state(true);
 	let pollErr = $state<string | null>(null);
 	let refreshBusy = $state(false);
 	let lastUpdated = $state<number | null>(null);
-	let showNpub = $state(true);
-	let copyHint = $state<string | null>(null);
 
 	let timeRange = $state<TimeRangePreset>('1h');
 	let resolution = $state<Resolution>('minute');
@@ -90,23 +78,13 @@
 		if ([3, 5, 10, 30, 60].includes(rv)) refreshSec = rv;
 
 		try {
-			const [statsRes, idRes] = await Promise.all([
-				adminFetch('/api/stats'),
-				adminFetch('/api/relay-identity')
-			]);
+			const statsRes = await adminFetch('/api/stats');
 			if (!statsRes.ok) {
 				loadErr = statsRes.status === 401 ? 'Unauthorized' : `HTTP ${statsRes.status}`;
 				return;
 			}
 			stats = (await statsRes.json()) as Stats;
 			lastUpdated = Date.now();
-			if (idRes.ok) {
-				relayIdentity = (await idRes.json()) as RelayIdentity;
-			} else if (idRes.status === 503) {
-				relayIdErr = 'Relay identity is not available on this process.';
-			} else {
-				relayIdErr = idRes.status === 401 ? 'Unauthorized' : `HTTP ${idRes.status}`;
-			}
 		} catch (e) {
 			loadErr = e instanceof Error ? e.message : 'request failed';
 		} finally {
@@ -148,24 +126,6 @@
 		return () => window.clearInterval(id);
 	});
 
-	function visiblePubkey(): string {
-		if (!relayIdentity) return '';
-		return showNpub ? relayIdentity.npub : relayIdentity.pubkey_hex;
-	}
-
-	async function copyVisiblePubkey() {
-		const t = visiblePubkey();
-		if (!t) return;
-		try {
-			await navigator.clipboard.writeText(t);
-			copyHint = 'Copied';
-			window.setTimeout(() => (copyHint = null), 2000);
-		} catch {
-			copyHint = 'Copy failed';
-			window.setTimeout(() => (copyHint = null), 2000);
-		}
-	}
-
 	function counter(name: string): number {
 		const v = stats?.relay_counters?.[name];
 		return typeof v === 'number' && Number.isFinite(v) ? v : 0;
@@ -204,7 +164,7 @@
 
 	{#if loading}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			{#each Array(4) as _, i (i)}
+			{#each Array(8) as _, i (i)}
 				<div class="bg-muted/50 h-24 animate-pulse rounded-lg"></div>
 			{/each}
 		</div>
@@ -222,112 +182,6 @@
 				<span>Refreshing every {refreshSec}s</span>
 			{/if}
 		</div>
-
-		<div
-			class="border-border bg-muted/30 flex flex-wrap items-end gap-4 rounded-lg border p-4"
-			aria-label="Chart range and refresh options"
-		>
-			<div class="grid gap-1.5">
-				<Label for="dash-time-range">Time range</Label>
-				<select id="dash-time-range" class={selectClass} bind:value={timeRange}>
-					<option value="15m">Last 15 minutes</option>
-					<option value="1h">Last hour</option>
-					<option value="6h">Last 6 hours</option>
-					<option value="24h">Last 24 hours</option>
-				</select>
-			</div>
-			<div class="grid gap-1.5">
-				<Label for="dash-resolution">Resolution</Label>
-				<select id="dash-resolution" class={selectClass} bind:value={resolution}>
-					<option value="minute">Per minute</option>
-					<option value="hour">Per hour</option>
-				</select>
-			</div>
-			<div class="grid gap-1.5">
-				<Label for="dash-refresh">Refresh</Label>
-				<select id="dash-refresh" class={selectClass} bind:value={refreshSec}>
-					<option value={3}>3s</option>
-					<option value={5}>5s</option>
-					<option value={10}>10s</option>
-					<option value={30}>30s</option>
-					<option value={60}>1m</option>
-				</select>
-			</div>
-			<div class="flex items-end pb-0.5">
-				<Button
-					type="button"
-					variant="secondary"
-					size="sm"
-					class="h-9"
-					disabled={refreshBusy}
-					onclick={() => void refreshStats(true)}
-				>
-					{refreshBusy ? 'Refreshing…' : 'Refresh now'}
-				</Button>
-			</div>
-		</div>
-
-		<div class="grid gap-4 lg:grid-cols-2">
-			<DashboardGraphCard title="Events stored" info={DASHBOARD_CHART_INFO.eventsStored}>
-				<DashboardLineSeriesChart
-					data={eventsChartData}
-					seriesLabel="Events"
-					color="var(--chart-1)"
-					seriesKey="events"
-				/>
-			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ count" info={DASHBOARD_CHART_INFO.reqCount}>
-				<DashboardLineSeriesChart
-					data={reqChartData}
-					seriesLabel="REQ"
-					color="var(--chart-2)"
-					seriesKey="req"
-				/>
-			</DashboardGraphCard>
-			<DashboardGraphCard title="REQ query latency" info={DASHBOARD_CHART_INFO.latency}>
-				<DashboardLatencyChart data={latencyChartData} />
-			</DashboardGraphCard>
-			<DashboardGraphCard title="Open subscriptions" info={DASHBOARD_CHART_INFO.subs}>
-				<DashboardLineSeriesChart
-					data={subsChartData}
-					seriesLabel="Subs"
-					color="var(--chart-4)"
-					seriesKey="subs"
-				/>
-			</DashboardGraphCard>
-		</div>
-
-		{#if relayIdentity}
-			<Card.Root class="sm:col-span-2 lg:col-span-3">
-				<Card.Header class="pb-2">
-					<Card.Description>Relay identity (read-only)</Card.Description>
-					<div class="flex flex-wrap items-center gap-4">
-						<Label for="npub-switch" class="text-sm font-medium">Show as npub</Label>
-						<Switch id="npub-switch" bind:checked={showNpub} />
-					</div>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					<div class="flex flex-wrap items-start gap-2">
-						<p class="font-mono text-sm leading-relaxed break-all">{visiblePubkey()}</p>
-						<Button type="button" variant="outline" size="sm" onclick={() => void copyVisiblePubkey()}>
-							Copy
-						</Button>
-						{#if copyHint}
-							<span class="text-muted-foreground text-xs">{copyHint}</span>
-						{/if}
-					</div>
-				</Card.Content>
-			</Card.Root>
-		{:else if relayIdErr}
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Relay identity</Card.Description>
-				</Card.Header>
-				<Card.Content>
-					<p class="text-destructive text-sm">{relayIdErr}</p>
-				</Card.Content>
-			</Card.Root>
-		{/if}
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			<AnalyticsStatCard label="WebSocket connections" value={stats.open_connections ?? 0}>
@@ -411,19 +265,78 @@
 			</Card.Content>
 		</Card.Root>
 
-		<div class="grid gap-4 sm:grid-cols-2">
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Relay port</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.relay_port ?? '—'}</Card.Title>
-				</Card.Header>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Admin port</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.admin_port ?? '—'}</Card.Title>
-				</Card.Header>
-			</Card.Root>
+		<div
+			class="border-border bg-muted/30 flex flex-wrap items-end gap-4 rounded-lg border p-4"
+			aria-label="Chart range and refresh options"
+		>
+			<div class="grid gap-1.5">
+				<Label for="dash-time-range">Time range</Label>
+				<select id="dash-time-range" class={selectClass} bind:value={timeRange}>
+					<option value="15m">Last 15 minutes</option>
+					<option value="1h">Last hour</option>
+					<option value="6h">Last 6 hours</option>
+					<option value="24h">Last 24 hours</option>
+				</select>
+			</div>
+			<div class="grid gap-1.5">
+				<Label for="dash-resolution">Resolution</Label>
+				<select id="dash-resolution" class={selectClass} bind:value={resolution}>
+					<option value="minute">Per minute</option>
+					<option value="hour">Per hour</option>
+				</select>
+			</div>
+			<div class="grid gap-1.5">
+				<Label for="dash-refresh">Refresh</Label>
+				<select id="dash-refresh" class={selectClass} bind:value={refreshSec}>
+					<option value={3}>3s</option>
+					<option value={5}>5s</option>
+					<option value={10}>10s</option>
+					<option value={30}>30s</option>
+					<option value={60}>1m</option>
+				</select>
+			</div>
+			<div class="flex items-end pb-0.5">
+				<Button
+					type="button"
+					variant="secondary"
+					size="sm"
+					class="h-9"
+					disabled={refreshBusy}
+					onclick={() => void refreshStats(true)}
+				>
+					{refreshBusy ? 'Refreshing…' : 'Refresh now'}
+				</Button>
+			</div>
+		</div>
+
+		<div class="grid gap-4 lg:grid-cols-2">
+			<DashboardGraphCard title="Events stored" info={DASHBOARD_CHART_INFO.eventsStored}>
+				<DashboardLineSeriesChart
+					data={eventsChartData}
+					seriesLabel="Events"
+					color="var(--chart-1)"
+					seriesKey="events"
+				/>
+			</DashboardGraphCard>
+			<DashboardGraphCard title="REQ count" info={DASHBOARD_CHART_INFO.reqCount}>
+				<DashboardLineSeriesChart
+					data={reqChartData}
+					seriesLabel="REQ"
+					color="var(--chart-2)"
+					seriesKey="req"
+				/>
+			</DashboardGraphCard>
+			<DashboardGraphCard title="REQ query latency" info={DASHBOARD_CHART_INFO.latency}>
+				<DashboardLatencyChart data={latencyChartData} />
+			</DashboardGraphCard>
+			<DashboardGraphCard title="Open subscriptions" info={DASHBOARD_CHART_INFO.subs}>
+				<DashboardLineSeriesChart
+					data={subsChartData}
+					seriesLabel="Subs"
+					color="var(--chart-4)"
+					seriesKey="subs"
+				/>
+			</DashboardGraphCard>
 		</div>
 	{/if}
 </div>
