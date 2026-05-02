@@ -203,7 +203,7 @@
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			<AnalyticsStatCard label="WebSocket connections" value={stats.open_connections ?? 0} info={DASHBOARD_METRIC_INFO.ws} />
 			<AnalyticsStatCard label="Subscriptions" value={stats.subscriptions_open ?? 0} info={DASHBOARD_METRIC_INFO.subs} />
-			<Card.Root class="overflow-visible">
+			<Card.Root>
 				<Card.Header class="pb-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<Card.Description>Uptime</Card.Description>
@@ -221,7 +221,7 @@
 					{/if}
 				</Card.Content>
 			</Card.Root>
-			<Card.Root class="overflow-visible">
+			<Card.Root>
 				<Card.Header class="pb-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<Card.Description>Storage (DB)</Card.Description>
@@ -257,7 +257,7 @@
 				compactNumber
 				info={DASHBOARD_METRIC_INFO.eventsRejected}
 			/>
-			<Card.Root class="overflow-visible">
+			<Card.Root>
 				<Card.Header class="pb-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<Card.Description>REQ / CLOSE (total)</Card.Description>
@@ -270,7 +270,7 @@
 			</Card.Root>
 		</div>
 
-		<Card.Root class="overflow-visible">
+		<Card.Root>
 			<Card.Header class="pb-2">
 				<div class="flex flex-wrap items-start gap-x-2 gap-y-1">
 					<div class="grid min-w-0 flex-1 gap-0.5">

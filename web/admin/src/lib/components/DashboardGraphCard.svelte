@@ -17,7 +17,7 @@
 	} = $props();
 </script>
 
-<Card.Root class="overflow-visible">
+<Card.Root>
 	<Card.Header class="pb-2">
 		<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 			<Card.Title class="text-base">{title}</Card.Title>

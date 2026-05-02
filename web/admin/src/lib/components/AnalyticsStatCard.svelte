@@ -33,7 +33,7 @@
 	}
 </script>
 
-<Card.Root class={info ? 'overflow-visible' : undefined}>
+<Card.Root>
 	<Card.Header class="pb-2">
 		<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 			<Card.Description>{label}</Card.Description>
