@@ -32,4 +32,5 @@ jobs:
       push: true
       tag_latest: false
       extra_tag_suffixes: nightly
+      platforms: linux/amd64,linux/arm64
     secrets: inherit
