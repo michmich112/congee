@@ -34,10 +34,17 @@ type RelayMetrics struct {
 	curQueryMsSum     atomic.Int64
 	curQueryMsCount   atomic.Int64
 
-	recentMu      sync.Mutex
-	recentHead    int
-	recentCount   int
-	recentQueryMs [recentQueryRingCap]int64
+	recentMu       sync.Mutex
+	recentHead     int
+	recentCount    int
+	recentUnixMs   [recentQueryRingCap]int64
+	recentQueryMs  [recentQueryRingCap]int64
+}
+
+// RecentLatencySample is one REQ query latency observation for GET /api/stats JSON.
+type RecentLatencySample struct {
+	TUnixMs int64 `json:"t_unix_ms"`
+	Ms      int64 `json:"ms"`
 }
 
 func newRelayMetrics() *RelayMetrics {
@@ -76,6 +83,7 @@ func (m *RelayMetrics) RecordQueryLatency(d time.Duration) {
 	if ms < 0 {
 		ms = 0
 	}
+	tUnixMs := time.Now().UnixMilli()
 	m.curQueryMsSum.Add(ms)
 	m.curQueryMsCount.Add(1)
 
@@ -83,25 +91,27 @@ func (m *RelayMetrics) RecordQueryLatency(d time.Duration) {
 	defer m.recentMu.Unlock()
 	if m.recentCount < recentQueryRingCap {
 		pos := (m.recentHead + m.recentCount) % recentQueryRingCap
+		m.recentUnixMs[pos] = tUnixMs
 		m.recentQueryMs[pos] = ms
 		m.recentCount++
 		return
 	}
+	m.recentUnixMs[m.recentHead] = tUnixMs
 	m.recentQueryMs[m.recentHead] = ms
 	m.recentHead = (m.recentHead + 1) % recentQueryRingCap
 }
 
-// RecentQueryMS returns up to recentQueryRingCap newest samples (oldest first).
-func (m *RelayMetrics) RecentQueryMS() []int64 {
+// RecentLatencySamples returns up to recentQueryRingCap newest samples (oldest first).
+func (m *RelayMetrics) RecentLatencySamples() []RecentLatencySample {
 	m.recentMu.Lock()
 	defer m.recentMu.Unlock()
 	if m.recentCount == 0 {
 		return nil
 	}
-	out := make([]int64, m.recentCount)
+	out := make([]RecentLatencySample, m.recentCount)
 	for j := 0; j < m.recentCount; j++ {
 		idx := (m.recentHead + j) % recentQueryRingCap
-		out[j] = m.recentQueryMs[idx]
+		out[j] = RecentLatencySample{TUnixMs: m.recentUnixMs[idx], Ms: m.recentQueryMs[idx]}
 	}
 	return out
 }
@@ -138,17 +148,22 @@ func (m *RelayMetrics) PartialMinuteBucket() (startUnix int64, b storage.RelayMe
 	return startUnix, b
 }
 
-func (m *RelayMetrics) flushCompletedMinute(ctx context.Context, store storage.Store, completedStart int64) error {
-	b := storage.RelayMetricBucket{
-		BucketStartUnix: completedStart,
-		EventsStored:    m.curEventsStored.Swap(0),
-		EventsRejected:  m.curEventsRejected.Swap(0),
-		ReqCount:        m.curReq.Swap(0),
-		CloseCount:      m.curClose.Swap(0),
-		QueryMsSum:      m.curQueryMsSum.Swap(0),
-		QueryMsCount:    m.curQueryMsCount.Swap(0),
+func (m *RelayMetrics) flushCompletedMinute(ctx context.Context, store storage.Store, completedStart int64, subsSnapshot func() int) error {
+	subs := int64(0)
+	if subsSnapshot != nil {
+		subs = int64(subsSnapshot())
 	}
-	if b.EventsStored == 0 && b.EventsRejected == 0 && b.ReqCount == 0 && b.CloseCount == 0 && b.QueryMsSum == 0 && b.QueryMsCount == 0 {
+	b := storage.RelayMetricBucket{
+		BucketStartUnix:   completedStart,
+		EventsStored:      m.curEventsStored.Swap(0),
+		EventsRejected:    m.curEventsRejected.Swap(0),
+		ReqCount:          m.curReq.Swap(0),
+		CloseCount:        m.curClose.Swap(0),
+		QueryMsSum:        m.curQueryMsSum.Swap(0),
+		QueryMsCount:      m.curQueryMsCount.Swap(0),
+		SubscriptionsOpen: subs,
+	}
+	if b.EventsStored == 0 && b.EventsRejected == 0 && b.ReqCount == 0 && b.CloseCount == 0 && b.QueryMsSum == 0 && b.QueryMsCount == 0 && b.SubscriptionsOpen == 0 {
 		return nil
 	}
 	return store.UpsertRelayMetricBucket(ctx, b)
@@ -164,7 +179,8 @@ func (m *RelayMetrics) purgeOldBuckets(ctx context.Context, store storage.Store,
 }
 
 // StartFlushLoop aligns to UTC minute boundaries, flushes the previous minute, and prunes old buckets.
-func (m *RelayMetrics) StartFlushLoop(ctx context.Context, store storage.Store, retentionDays int, log zerolog.Logger) {
+// subsSnapshot, if non-nil, records open REQ subscription count for the completed minute row.
+func (m *RelayMetrics) StartFlushLoop(ctx context.Context, store storage.Store, retentionDays int, log zerolog.Logger, subsSnapshot func() int) {
 	go func() {
 		d := time.Until(time.Now().Truncate(time.Minute).Add(time.Minute))
 		select {
@@ -176,7 +192,7 @@ func (m *RelayMetrics) StartFlushLoop(ctx context.Context, store storage.Store, 
 		defer tick.Stop()
 		for {
 			completed := (time.Now().Unix()/60)*60 - 60
-			if err := m.flushCompletedMinute(ctx, store, completed); err != nil {
+			if err := m.flushCompletedMinute(ctx, store, completed, subsSnapshot); err != nil {
 				log.Error().Err(err).Int64("bucket_start_unix", completed).Msg("relay metrics flush failed")
 			}
 			m.purgeOldBuckets(ctx, store, retentionDays)
@@ -190,18 +206,23 @@ func (m *RelayMetrics) StartFlushLoop(ctx context.Context, store storage.Store, 
 }
 
 // FlushOpenMinute writes the current partial UTC minute to storage (best-effort shutdown).
-func (m *RelayMetrics) FlushOpenMinute(ctx context.Context, store storage.Store) error {
+func (m *RelayMetrics) FlushOpenMinute(ctx context.Context, store storage.Store, subsSnapshot func() int) error {
 	start := (time.Now().Unix() / 60) * 60
-	b := storage.RelayMetricBucket{
-		BucketStartUnix: start,
-		EventsStored:    m.curEventsStored.Swap(0),
-		EventsRejected:  m.curEventsRejected.Swap(0),
-		ReqCount:        m.curReq.Swap(0),
-		CloseCount:      m.curClose.Swap(0),
-		QueryMsSum:      m.curQueryMsSum.Swap(0),
-		QueryMsCount:    m.curQueryMsCount.Swap(0),
+	subs := int64(0)
+	if subsSnapshot != nil {
+		subs = int64(subsSnapshot())
 	}
-	if b.EventsStored == 0 && b.EventsRejected == 0 && b.ReqCount == 0 && b.CloseCount == 0 && b.QueryMsSum == 0 && b.QueryMsCount == 0 {
+	b := storage.RelayMetricBucket{
+		BucketStartUnix:   start,
+		EventsStored:      m.curEventsStored.Swap(0),
+		EventsRejected:    m.curEventsRejected.Swap(0),
+		ReqCount:          m.curReq.Swap(0),
+		CloseCount:        m.curClose.Swap(0),
+		QueryMsSum:        m.curQueryMsSum.Swap(0),
+		QueryMsCount:      m.curQueryMsCount.Swap(0),
+		SubscriptionsOpen: subs,
+	}
+	if b.EventsStored == 0 && b.EventsRejected == 0 && b.ReqCount == 0 && b.CloseCount == 0 && b.QueryMsSum == 0 && b.QueryMsCount == 0 && b.SubscriptionsOpen == 0 {
 		return nil
 	}
 	return store.UpsertRelayMetricBucket(ctx, b)

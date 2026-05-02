@@ -130,7 +130,9 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.serveOnce.Do(func() {
 		s.startedUnix.Store(time.Now().Unix())
 		if s.metrics != nil && s.store != nil {
-			s.metrics.StartFlushLoop(s.metricsCtx, s.store, s.cfg.Metrics.RelayBucketRetentionDays, s.log)
+			s.metrics.StartFlushLoop(s.metricsCtx, s.store, s.cfg.Metrics.RelayBucketRetentionDays, s.log, func() int {
+				return s.subs.TotalSubscriptions()
+			})
 		}
 	})
 	s.http.Addr = ln.Addr().String()
@@ -345,7 +347,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.metricsCancel()
 	}
 	if s.metrics != nil && s.store != nil {
-		_ = s.metrics.FlushOpenMinute(context.Background(), s.store)
+		_ = s.metrics.FlushOpenMinute(context.Background(), s.store, func() int {
+			return s.subs.TotalSubscriptions()
+		})
 	}
 	s.conns.Range(func(_, v any) bool {
 		c := v.(*Conn)

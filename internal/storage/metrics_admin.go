@@ -15,8 +15,9 @@ type RelayMetricBucket struct {
 	EventsRejected  int64 `json:"events_rejected"`
 	ReqCount        int64 `json:"req_count"`
 	CloseCount      int64 `json:"close_count"`
-	QueryMsSum      int64 `json:"query_ms_sum"`
-	QueryMsCount    int64 `json:"query_ms_count"`
+	QueryMsSum          int64 `json:"query_ms_sum"`
+	QueryMsCount        int64 `json:"query_ms_count"`
+	SubscriptionsOpen   int64 `json:"subscriptions_open"`
 }
 
 // RelayMetricBucketQuery loads recent buckets for charting (newest last or first — callers document order).

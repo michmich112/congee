@@ -39,7 +39,7 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 	for _, k := range []string{
 		"open_connections", "relay_port", "admin_port", "relay_version",
 		"subscriptions_open", "started_at_unix", "uptime_sec",
-		"relay_counters", "recent_query_ms", "storage", "series",
+		"relay_counters", "recent_query_latency", "storage", "series",
 	} {
 		if _, ok := body[k]; !ok {
 			t.Errorf("missing key %q", k)

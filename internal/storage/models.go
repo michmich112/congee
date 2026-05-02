@@ -62,6 +62,7 @@ type RelayMetricBucketRow struct {
 	EventsRejected  int64 `bun:"events_rejected,notnull"`
 	ReqCount        int64 `bun:"req_count,notnull"`
 	CloseCount      int64 `bun:"close_count,notnull"`
-	QueryMsSum      int64 `bun:"query_ms_sum,notnull"`
-	QueryMsCount    int64 `bun:"query_ms_count,notnull"`
+	QueryMsSum          int64 `bun:"query_ms_sum,notnull"`
+	QueryMsCount        int64 `bun:"query_ms_count,notnull"`
+	SubscriptionsOpen   int64 `bun:"subscriptions_open,notnull"`
 }

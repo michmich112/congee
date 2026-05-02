@@ -26,7 +26,7 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 		var started int64
 		var uptime int64
 		relayCounters := zeroRelayCountersShape()
-		var recentMs []int64
+		recentLatency := []relay.RecentLatencySample{}
 		var partialStart int64
 		var partialBucket storage.RelayMetricBucket
 
@@ -39,8 +39,11 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 			}
 			if m := relaySrv.Metrics(); m != nil {
 				relayCounters = m.CountersJSON()
-				recentMs = m.RecentQueryMS()
+				if s := m.RecentLatencySamples(); s != nil {
+					recentLatency = s
+				}
 				partialStart, partialBucket = m.PartialMinuteBucket()
+				partialBucket.SubscriptionsOpen = int64(subs)
 			}
 		}
 
@@ -75,7 +78,7 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 			"started_at_unix":    started,
 			"uptime_sec":         uptime,
 			"relay_counters":     relayCounters,
-			"recent_query_ms":    recentMs,
+			"recent_query_latency": recentLatency,
 			"storage": map[string]any{
 				"bytes":  snap.Bytes,
 				"events": snap.Events,
@@ -126,13 +129,14 @@ func mergeSeriesBuckets(persisted []storage.RelayMetricBucket, partialStart int6
 
 func relayBucketToJSON(b storage.RelayMetricBucket) map[string]any {
 	m := map[string]any{
-		"bucket_start_unix": b.BucketStartUnix,
-		"events_stored":     b.EventsStored,
-		"events_rejected":   b.EventsRejected,
-		"req_count":         b.ReqCount,
-		"close_count":       b.CloseCount,
-		"query_ms_sum":      b.QueryMsSum,
-		"query_ms_count":    b.QueryMsCount,
+		"bucket_start_unix":     b.BucketStartUnix,
+		"events_stored":         b.EventsStored,
+		"events_rejected":       b.EventsRejected,
+		"req_count":             b.ReqCount,
+		"close_count":           b.CloseCount,
+		"query_ms_sum":          b.QueryMsSum,
+		"query_ms_count":        b.QueryMsCount,
+		"subscriptions_open":    b.SubscriptionsOpen,
 	}
 	if b.QueryMsCount > 0 {
 		m["query_ms_avg"] = float64(b.QueryMsSum) / float64(b.QueryMsCount)

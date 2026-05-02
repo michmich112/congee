@@ -29,16 +29,17 @@ SELECT
 func (s *Store) UpsertRelayMetricBucket(ctx context.Context, b storage.RelayMetricBucket) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO relay_metric_buckets (
-  bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count
-) VALUES ($1,$2,$3,$4,$5,$6,$7)
+  bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count, subscriptions_open
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 ON CONFLICT (bucket_start_unix) DO UPDATE SET
   events_stored = EXCLUDED.events_stored,
   events_rejected = EXCLUDED.events_rejected,
   req_count = EXCLUDED.req_count,
   close_count = EXCLUDED.close_count,
   query_ms_sum = EXCLUDED.query_ms_sum,
-  query_ms_count = EXCLUDED.query_ms_count
-`, b.BucketStartUnix, b.EventsStored, b.EventsRejected, b.ReqCount, b.CloseCount, b.QueryMsSum, b.QueryMsCount)
+  query_ms_count = EXCLUDED.query_ms_count,
+  subscriptions_open = EXCLUDED.subscriptions_open
+`, b.BucketStartUnix, b.EventsStored, b.EventsRejected, b.ReqCount, b.CloseCount, b.QueryMsSum, b.QueryMsCount, b.SubscriptionsOpen)
 	if err != nil {
 		return fmt.Errorf("postgres: upsert relay_metric_buckets: %w", err)
 	}
@@ -67,13 +68,14 @@ func (s *Store) QueryRelayMetricBuckets(ctx context.Context, q storage.RelayMetr
 	for i := range rows {
 		r := rows[i]
 		out = append(out, storage.RelayMetricBucket{
-			BucketStartUnix: r.BucketStartUnix,
-			EventsStored:    r.EventsStored,
-			EventsRejected:  r.EventsRejected,
-			ReqCount:        r.ReqCount,
-			CloseCount:      r.CloseCount,
-			QueryMsSum:      r.QueryMsSum,
-			QueryMsCount:    r.QueryMsCount,
+			BucketStartUnix:     r.BucketStartUnix,
+			EventsStored:        r.EventsStored,
+			EventsRejected:      r.EventsRejected,
+			ReqCount:            r.ReqCount,
+			CloseCount:          r.CloseCount,
+			QueryMsSum:          r.QueryMsSum,
+			QueryMsCount:        r.QueryMsCount,
+			SubscriptionsOpen: r.SubscriptionsOpen,
 		})
 	}
 	return out, nil

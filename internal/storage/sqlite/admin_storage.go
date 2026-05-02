@@ -74,16 +74,17 @@ func (s *Store) UpsertRelayMetricBucket(ctx context.Context, b storage.RelayMetr
 	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
 		_, err := db.ExecContext(ctx, `
 INSERT INTO relay_metric_buckets (
-  bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count
-) VALUES (?,?,?,?,?,?,?)
+  bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count, subscriptions_open
+) VALUES (?,?,?,?,?,?,?,?)
 ON CONFLICT(bucket_start_unix) DO UPDATE SET
   events_stored = excluded.events_stored,
   events_rejected = excluded.events_rejected,
   req_count = excluded.req_count,
   close_count = excluded.close_count,
   query_ms_sum = excluded.query_ms_sum,
-  query_ms_count = excluded.query_ms_count
-`, b.BucketStartUnix, b.EventsStored, b.EventsRejected, b.ReqCount, b.CloseCount, b.QueryMsSum, b.QueryMsCount)
+  query_ms_count = excluded.query_ms_count,
+  subscriptions_open = excluded.subscriptions_open
+`, b.BucketStartUnix, b.EventsStored, b.EventsRejected, b.ReqCount, b.CloseCount, b.QueryMsSum, b.QueryMsCount, b.SubscriptionsOpen)
 		return err
 	})
 }
@@ -110,13 +111,14 @@ func (s *Store) QueryRelayMetricBuckets(ctx context.Context, q storage.RelayMetr
 	for i := range rows {
 		r := rows[i]
 		out = append(out, storage.RelayMetricBucket{
-			BucketStartUnix: r.BucketStartUnix,
-			EventsStored:    r.EventsStored,
-			EventsRejected:  r.EventsRejected,
-			ReqCount:        r.ReqCount,
-			CloseCount:      r.CloseCount,
-			QueryMsSum:      r.QueryMsSum,
-			QueryMsCount:    r.QueryMsCount,
+			BucketStartUnix:     r.BucketStartUnix,
+			EventsStored:        r.EventsStored,
+			EventsRejected:      r.EventsRejected,
+			ReqCount:            r.ReqCount,
+			CloseCount:          r.CloseCount,
+			QueryMsSum:          r.QueryMsSum,
+			QueryMsCount:        r.QueryMsCount,
+			SubscriptionsOpen:   r.SubscriptionsOpen,
 		})
 	}
 	return out, nil

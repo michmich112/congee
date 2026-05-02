@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var evExists bool
@@ -56,6 +56,14 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return err
 		}
 		log.Debug().Msg("schema: v2 to v3 complete")
+		return nil
+	}
+	if version == 3 {
+		log.Debug().Msg("schema: migrating v3 to v4")
+		if err := migrateV3ToV4(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v3 to v4 complete")
 		return nil
 	}
 	return fmt.Errorf("postgres: unsupported schema version %d", version)
@@ -116,7 +124,8 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			req_count BIGINT NOT NULL DEFAULT 0,
 			close_count BIGINT NOT NULL DEFAULT 0,
 			query_ms_sum BIGINT NOT NULL DEFAULT 0,
-			query_ms_count BIGINT NOT NULL DEFAULT 0
+			query_ms_count BIGINT NOT NULL DEFAULT 0,
+			subscriptions_open BIGINT NOT NULL DEFAULT 0
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
 	}
@@ -179,8 +188,19 @@ func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return fmt.Errorf("postgres: migrate v2->v3: %w", err)
 		}
 	}
-	log.Debug().Msg("schema v2->v3: bump schema version")
-	if _, err := db.ExecContext(ctx, stmts[2], schemaVersion); err != nil {
+	log.Debug().Msg("schema v2->v3: bump schema version to 3 (chain v3->v4)")
+	if _, err := db.ExecContext(ctx, stmts[2], 3); err != nil {
+		return fmt.Errorf("postgres: bump schema version: %w", err)
+	}
+	return migrateV3ToV4(ctx, db, log)
+}
+
+func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
+	if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN IF NOT EXISTS subscriptions_open BIGINT NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("postgres: migrate v3->v4: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, schemaVersion); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
 	}
 	return nil
