@@ -24,6 +24,7 @@
 		"bits-ui": "^2.17.1",
 		"clsx": "^2.1.1",
 		"inline-style-parser": "^0.2.7",
+		"layerchart": "^2.0.0-next.48",
 		"mode-watcher": "^1.1.0",
 		"shadcn-svelte": "^1.2.7",
 		"svelte": "^5.54.0",

@@ -1,24 +1,37 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import { adminFetch } from '$lib/admin-api';
 	import { formatBytes } from '$lib/format-bytes';
 	import { formatDurationSec } from '$lib/format-duration';
+	import { formatCompactCount } from '$lib/format-compact-count';
+	import {
+		LS_REFRESH_SEC,
+		LS_RESOLUTION,
+		LS_TIME_RANGE,
+		TIME_RANGE_MS,
+		binLatencySamples,
+		bucketSeries,
+		filterBucketsByRange,
+		filterLatencyByRange,
+		type LatencySample,
+		type MetricBucket,
+		type Resolution,
+		type TimeRangePreset
+	} from '$lib/dashboard-metrics';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
+	import AnalyticsStatCard from '$lib/components/AnalyticsStatCard.svelte';
+	import DashboardGraphCard from '$lib/components/DashboardGraphCard.svelte';
+	import DashboardLineSeriesChart from '$lib/components/DashboardLineSeriesChart.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
 
-	type Bucket = {
-		bucket_start_unix: number;
-		events_stored: number;
-		events_rejected: number;
-		req_count: number;
-		close_count: number;
-		query_ms_avg?: number;
-	};
+	const selectClass =
+		'border-input bg-background focus-visible:ring-ring/50 h-9 min-w-[8rem] rounded-md border px-2.5 text-sm shadow-xs focus-visible:ring-2 focus-visible:outline-none';
 
 	type Stats = {
 		open_connections?: number;
@@ -29,9 +42,9 @@
 		started_at_unix?: number;
 		uptime_sec?: number;
 		relay_counters?: Record<string, number>;
-		recent_query_ms?: number[];
+		recent_query_latency?: LatencySample[];
 		storage?: { bytes?: number; events?: number; tags?: number; audit?: number };
-		series?: { bucket_sec?: number; buckets?: Bucket[] };
+		series?: { bucket_sec?: number; buckets?: MetricBucket[] };
 	};
 
 	type RelayIdentity = {
@@ -49,24 +62,19 @@
 	let showNpub = $state(true);
 	let copyHint = $state<string | null>(null);
 
-	const pollMs = 4000;
-
-	async function refreshStats() {
-		try {
-			const statsRes = await adminFetch('/api/stats');
-			if (!statsRes.ok) {
-				pollErr = statsRes.status === 401 ? 'Unauthorized' : `HTTP ${statsRes.status}`;
-				return;
-			}
-			pollErr = null;
-			stats = (await statsRes.json()) as Stats;
-			lastUpdated = Date.now();
-		} catch (e) {
-			pollErr = e instanceof Error ? e.message : 'request failed';
-		}
-	}
+	let timeRange = $state<TimeRangePreset>('1h');
+	let resolution = $state<Resolution>('minute');
+	let refreshSec = $state(5);
 
 	onMount(async () => {
+		const tr = localStorage.getItem(LS_TIME_RANGE);
+		if (tr === '15m' || tr === '1h' || tr === '6h' || tr === '24h') timeRange = tr;
+		const res = localStorage.getItem(LS_RESOLUTION);
+		if (res === 'minute' || res === 'second' || res === 'hour') resolution = res;
+		const rs = localStorage.getItem(LS_REFRESH_SEC);
+		const rv = rs ? Number(rs) : NaN;
+		if ([3, 5, 10, 30, 60].includes(rv)) refreshSec = rv;
+
 		try {
 			const [statsRes, idRes] = await Promise.all([
 				adminFetch('/api/stats'),
@@ -93,21 +101,35 @@
 	});
 
 	$effect(() => {
-		if (typeof window === 'undefined') return;
-		const id = window.setInterval(() => {
-			void refreshStats();
-		}, pollMs);
-		return () => window.clearInterval(id);
+		if (!browser) return;
+		localStorage.setItem(LS_TIME_RANGE, timeRange);
+		localStorage.setItem(LS_RESOLUTION, resolution);
+		localStorage.setItem(LS_REFRESH_SEC, String(refreshSec));
 	});
 
-	function bucketTimeLabel(u: number): string {
-		return new Date(u * 1000).toLocaleString(undefined, {
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+	async function refreshStats() {
+		try {
+			const statsRes = await adminFetch('/api/stats');
+			if (!statsRes.ok) {
+				pollErr = statsRes.status === 401 ? 'Unauthorized' : `HTTP ${statsRes.status}`;
+				return;
+			}
+			pollErr = null;
+			stats = (await statsRes.json()) as Stats;
+			lastUpdated = Date.now();
+		} catch (e) {
+			pollErr = e instanceof Error ? e.message : 'request failed';
+		}
 	}
+
+	$effect(() => {
+		if (!browser || loading) return;
+		const ms = refreshSec * 1000;
+		const id = window.setInterval(() => {
+			void refreshStats();
+		}, ms);
+		return () => window.clearInterval(id);
+	});
 
 	function visiblePubkey(): string {
 		if (!relayIdentity) return '';
@@ -132,40 +154,43 @@
 		return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 	}
 
-	function trafficChartPoints(buckets: Bucket[]): { ev: string; rq: string } {
-		if (!buckets.length) return { ev: '', rq: '' };
-		const maxE = Math.max(1, ...buckets.map((b) => b.events_stored));
-		const maxR = Math.max(1, ...buckets.map((b) => b.req_count));
-		const w = 400;
-		const h = 120;
-		const pad = 8;
-		const n = buckets.length;
-		const evPts: string[] = [];
-		const rqPts: string[] = [];
-		for (let i = 0; i < n; i++) {
-			const x = pad + (i * (w - 2 * pad)) / Math.max(1, n - 1);
-			const evY = h - pad - (buckets[i].events_stored / maxE) * (h - 2 * pad);
-			const rqY = h - pad - (buckets[i].req_count / maxR) * (h - 2 * pad);
-			evPts.push(`${x},${evY}`);
-			rqPts.push(`${x},${rqY}`);
+	const rangeMs = $derived(TIME_RANGE_MS[timeRange]);
+
+	const filteredBuckets = $derived.by((): MetricBucket[] => {
+		const b = stats?.series?.buckets;
+		if (!b?.length) return [];
+		return filterBucketsByRange(b, rangeMs);
+	});
+
+	const eventsChartData = $derived.by(() =>
+		bucketSeries(filteredBuckets, 'events_stored', resolution));
+
+	const reqChartData = $derived.by(() => bucketSeries(filteredBuckets, 'req_count', resolution));
+
+	const subsChartData = $derived.by(() =>
+		bucketSeries(filteredBuckets, 'subscriptions_open', resolution));
+
+	const latencyChartData = $derived.by(() => {
+		const samples = stats?.recent_query_latency ?? [];
+		const f = filterLatencyByRange(samples, rangeMs);
+		return binLatencySamples(f, resolution);
+	});
+
+	function graphSubtitle(metric: 'counter' | 'subs'): string {
+		if (metric === 'subs') {
+			if (resolution === 'hour') return 'Last open-count sample in each UTC hour.';
+			if (resolution === 'second') return 'Snapshot per minute (same points as per-minute view).';
+			return 'Open REQ subscriptions sampled each UTC minute.';
 		}
-		return { ev: evPts.join(' '), rq: rqPts.join(' ') };
+		if (resolution === 'minute') return 'Counts per UTC minute bucket.';
+		if (resolution === 'second') return 'Average per second within each minute (count ÷ 60).';
+		return 'Totals summed into UTC hour bins.';
 	}
 
-	function latencyChartPoints(ms: number[]): string {
-		if (!ms.length) return '';
-		const maxV = Math.max(1, ...ms);
-		const w = 400;
-		const h = 100;
-		const pad = 8;
-		const n = ms.length;
-		const pts: string[] = [];
-		for (let i = 0; i < n; i++) {
-			const x = pad + (i * (w - 2 * pad)) / Math.max(1, n - 1);
-			const y = h - pad - (ms[i] / maxV) * (h - 2 * pad);
-			pts.push(`${x},${y}`);
-		}
-		return pts.join(' ');
+	function latencySubtitle(): string {
+		if (resolution === 'minute') return 'Mean latency per UTC minute (from timestamped samples).';
+		if (resolution === 'second') return 'Mean latency per UTC second.';
+		return 'Mean latency per UTC hour.';
 	}
 </script>
 
@@ -193,8 +218,76 @@
 			{#if pollErr}
 				<span class="text-destructive">Poll failed: {pollErr}</span>
 			{:else}
-				<span>Refreshing every {pollMs / 1000}s</span>
+				<span>Refreshing every {refreshSec}s</span>
 			{/if}
+		</div>
+
+		<div
+			class="border-border bg-muted/30 flex flex-wrap items-end gap-4 rounded-lg border p-4"
+			aria-label="Chart range and refresh options"
+		>
+			<div class="grid gap-1.5">
+				<Label for="dash-time-range">Time range</Label>
+				<select id="dash-time-range" class={selectClass} bind:value={timeRange}>
+					<option value="15m">Last 15 minutes</option>
+					<option value="1h">Last hour</option>
+					<option value="6h">Last 6 hours</option>
+					<option value="24h">Last 24 hours</option>
+				</select>
+			</div>
+			<div class="grid gap-1.5">
+				<Label for="dash-resolution">Resolution</Label>
+				<select id="dash-resolution" class={selectClass} bind:value={resolution}>
+					<option value="minute">Per minute</option>
+					<option value="second">Per second (rates)</option>
+					<option value="hour">Per hour</option>
+				</select>
+			</div>
+			<div class="grid gap-1.5">
+				<Label for="dash-refresh">Refresh</Label>
+				<select id="dash-refresh" class={selectClass} bind:value={refreshSec}>
+					<option value={3}>3s</option>
+					<option value={5}>5s</option>
+					<option value={10}>10s</option>
+					<option value={30}>30s</option>
+					<option value={60}>1m</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="grid gap-4 lg:grid-cols-2">
+			<DashboardGraphCard title="Events stored" description={graphSubtitle('counter')}>
+				<DashboardLineSeriesChart
+					data={eventsChartData}
+					seriesLabel="Events"
+					color="var(--chart-1)"
+					seriesKey="events"
+				/>
+			</DashboardGraphCard>
+			<DashboardGraphCard title="REQ count" description={graphSubtitle('counter')}>
+				<DashboardLineSeriesChart
+					data={reqChartData}
+					seriesLabel="REQ"
+					color="var(--chart-2)"
+					seriesKey="req"
+				/>
+			</DashboardGraphCard>
+			<DashboardGraphCard title="REQ query latency" description={latencySubtitle()}>
+				<DashboardLineSeriesChart
+					data={latencyChartData}
+					seriesLabel="ms"
+					color="var(--chart-3)"
+					seriesKey="latency"
+				/>
+			</DashboardGraphCard>
+			<DashboardGraphCard title="Open subscriptions" description={graphSubtitle('subs')}>
+				<DashboardLineSeriesChart
+					data={subsChartData}
+					seriesLabel="Subs"
+					color="var(--chart-4)"
+					seriesKey="subs"
+				/>
+			</DashboardGraphCard>
 		</div>
 
 		{#if relayIdentity}
@@ -230,21 +323,12 @@
 		{/if}
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>WebSocket connections</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.open_connections ?? 0}</Card.Title>
-				</Card.Header>
-				<Card.Content>
+			<AnalyticsStatCard label="WebSocket connections" value={stats.open_connections ?? 0}>
+				{#snippet badge()}
 					<Badge variant="secondary">live</Badge>
-				</Card.Content>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Subscriptions</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{stats.subscriptions_open ?? 0}</Card.Title>
-				</Card.Header>
-			</Card.Root>
+				{/snippet}
+			</AnalyticsStatCard>
+			<AnalyticsStatCard label="Subscriptions" value={stats.subscriptions_open ?? 0} />
 			<Card.Root>
 				<Card.Header class="pb-2">
 					<Card.Description>Uptime</Card.Description>
@@ -275,23 +359,13 @@
 		</div>
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Events stored (ok)</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{counter('events_stored_ok')}</Card.Title>
-				</Card.Header>
-			</Card.Root>
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Description>Events rejected</Card.Description>
-					<Card.Title class="text-3xl tabular-nums">{counter('events_rejected')}</Card.Title>
-				</Card.Header>
-			</Card.Root>
+			<AnalyticsStatCard label="Events stored (ok)" value={counter('events_stored_ok')} compactNumber />
+			<AnalyticsStatCard label="Events rejected" value={counter('events_rejected')} compactNumber />
 			<Card.Root>
 				<Card.Header class="pb-2">
 					<Card.Description>REQ / CLOSE (total)</Card.Description>
 					<Card.Title class="text-3xl tabular-nums">
-						{counter('req_total')} / {counter('close_total')}
+						{formatCompactCount(counter('req_total'))} / {formatCompactCount(counter('close_total'))}
 					</Card.Title>
 				</Card.Header>
 			</Card.Root>
@@ -309,100 +383,26 @@
 				<Card.Description>Hits since relay process start</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-				<div>Messages / IP: <span class="font-mono">{counter('rate_limit_messages')}</span></div>
-				<div>Bandwidth: <span class="font-mono">{counter('rate_limit_bandwidth')}</span></div>
-				<div>Events / conn: <span class="font-mono">{counter('rate_limit_events')}</span></div>
-				<div>REQ / conn: <span class="font-mono">{counter('rate_limit_reqs')}</span></div>
-				<div>New conn / IP: <span class="font-mono">{counter('rate_limit_new_connections')}</span></div>
-				<div>Max connections: <span class="font-mono">{counter('rate_limit_max_connections')}</span></div>
+				<div>
+					Messages / IP: <span class="font-mono">{formatCompactCount(counter('rate_limit_messages'))}</span>
+				</div>
+				<div>
+					Bandwidth: <span class="font-mono">{formatCompactCount(counter('rate_limit_bandwidth'))}</span>
+				</div>
+				<div>
+					Events / conn: <span class="font-mono">{formatCompactCount(counter('rate_limit_events'))}</span>
+				</div>
+				<div>
+					REQ / conn: <span class="font-mono">{formatCompactCount(counter('rate_limit_reqs'))}</span>
+				</div>
+				<div>
+					New conn / IP: <span class="font-mono">{formatCompactCount(counter('rate_limit_new_connections'))}</span>
+				</div>
+				<div>
+					Max connections: <span class="font-mono">{formatCompactCount(counter('rate_limit_max_connections'))}</span>
+				</div>
 			</Card.Content>
 		</Card.Root>
-
-		<div class="grid gap-4 lg:grid-cols-2">
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Title class="text-base">Traffic (per minute)</Card.Title>
-					<Card.Description>Events stored vs REQ count (UTC buckets)</Card.Description>
-				</Card.Header>
-				<Card.Content>
-					{#if stats.series?.buckets?.length}
-						{@const pts = trafficChartPoints(stats.series.buckets)}
-						<svg
-							class="text-chart-1 h-40 w-full max-w-xl"
-							viewBox="0 0 400 120"
-							preserveAspectRatio="none"
-							role="img"
-							aria-label="Traffic chart"
-						>
-							<rect width="400" height="120" class="fill-muted/30" rx="4" />
-							<polyline
-								fill="none"
-								stroke="var(--chart-1)"
-								stroke-width="2"
-								points={pts.ev}
-								vector-effect="non-scaling-stroke"
-							/>
-							<polyline
-								fill="none"
-								stroke="var(--chart-2)"
-								stroke-width="2"
-								points={pts.rq}
-								vector-effect="non-scaling-stroke"
-							/>
-						</svg>
-						<div class="text-muted-foreground mt-2 flex justify-between text-xs">
-							<span>{bucketTimeLabel(stats.series.buckets[0].bucket_start_unix)}</span>
-							<span
-								>{bucketTimeLabel(
-									stats.series.buckets[stats.series.buckets.length - 1].bucket_start_unix
-								)}</span
-							>
-						</div>
-						<div class="text-muted-foreground mt-1 flex gap-4 text-xs">
-							<span class="inline-flex items-center gap-1"
-								><span class="inline-block h-2 w-4 rounded-sm" style="background: var(--chart-1)"></span> Events
-								stored</span
-							>
-							<span class="inline-flex items-center gap-1"
-								><span class="inline-block h-2 w-4 rounded-sm" style="background: var(--chart-2)"></span> REQ</span
-							>
-						</div>
-					{:else}
-						<p class="text-muted-foreground text-sm">No bucket data yet (wait up to one minute).</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Header class="pb-2">
-					<Card.Title class="text-base">REQ query latency</Card.Title>
-					<Card.Description>Recent samples (ms) + per-minute average in table above</Card.Description>
-				</Card.Header>
-				<Card.Content>
-					{#if stats.recent_query_ms?.length}
-						{@const lp = latencyChartPoints(stats.recent_query_ms)}
-						<svg
-							class="h-36 w-full max-w-xl"
-							viewBox="0 0 400 100"
-							preserveAspectRatio="none"
-							role="img"
-							aria-label="Latency chart"
-						>
-							<rect width="400" height="100" class="fill-muted/30" rx="4" />
-							<polyline
-								fill="none"
-								stroke="var(--chart-3)"
-								stroke-width="2"
-								points={lp}
-								vector-effect="non-scaling-stroke"
-							/>
-						</svg>
-					{:else}
-						<p class="text-muted-foreground text-sm">No latency samples yet.</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-		</div>
 
 		<div class="grid gap-4 sm:grid-cols-2">
 			<Card.Root>
