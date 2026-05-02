@@ -1,4 +1,4 @@
-export type Resolution = 'minute' | 'second' | 'hour';
+export type Resolution = 'minute' | 'hour';
 
 export type TimeRangePreset = '15m' | '1h' | '6h' | '24h';
 
@@ -16,6 +16,8 @@ export type MetricBucket = {
 	req_count: number;
 	close_count: number;
 	query_ms_avg?: number;
+	query_ms_sum?: number;
+	query_ms_count?: number;
 	subscriptions_open?: number;
 };
 
@@ -115,11 +117,69 @@ export function rollupBucketsHourly(buckets: MetricBucket[]): MetricBucket[] {
 	return out;
 }
 
-function ratePerSecond(n: number): number {
-	return n / 60;
+/** UTC hour bins with summed counters and weighted REQ latency (sum/count). */
+export function rollupBucketsHourlyWithLatency(buckets: MetricBucket[]): MetricBucket[] {
+	if (!buckets.length) return [];
+	const sorted = [...buckets].sort((a, b) => a.bucket_start_unix - b.bucket_start_unix);
+	const out: MetricBucket[] = [];
+	let curHour = Math.floor(sorted[0].bucket_start_unix / HOUR_SEC) * HOUR_SEC;
+	let acc: MetricBucket = {
+		bucket_start_unix: curHour,
+		events_stored: 0,
+		events_rejected: 0,
+		req_count: 0,
+		close_count: 0,
+		query_ms_sum: 0,
+		query_ms_count: 0,
+		subscriptions_open: sorted[0].subscriptions_open ?? 0,
+	};
+	const flush = () => {
+		const qCnt = Number(acc.query_ms_count ?? 0);
+		const qSum = Number(acc.query_ms_sum ?? 0);
+		const row: MetricBucket = {
+			bucket_start_unix: acc.bucket_start_unix,
+			events_stored: acc.events_stored,
+			events_rejected: acc.events_rejected,
+			req_count: acc.req_count,
+			close_count: acc.close_count,
+			subscriptions_open: acc.subscriptions_open,
+		};
+		if (qCnt > 0) {
+			row.query_ms_sum = qSum;
+			row.query_ms_count = qCnt;
+			row.query_ms_avg = qSum / qCnt;
+		}
+		out.push(row);
+	};
+	for (const b of sorted) {
+		const hourStart = Math.floor(b.bucket_start_unix / HOUR_SEC) * HOUR_SEC;
+		if (hourStart !== curHour) {
+			flush();
+			curHour = hourStart;
+			acc = {
+				bucket_start_unix: curHour,
+				events_stored: 0,
+				events_rejected: 0,
+				req_count: 0,
+				close_count: 0,
+				query_ms_sum: 0,
+				query_ms_count: 0,
+				subscriptions_open: b.subscriptions_open ?? 0,
+			};
+		}
+		acc.events_stored += b.events_stored;
+		acc.events_rejected += b.events_rejected;
+		acc.req_count += b.req_count;
+		acc.close_count += b.close_count;
+		acc.query_ms_sum = (acc.query_ms_sum ?? 0) + Number(b.query_ms_sum ?? 0);
+		acc.query_ms_count = (acc.query_ms_count ?? 0) + Number(b.query_ms_count ?? 0);
+		acc.subscriptions_open = b.subscriptions_open ?? acc.subscriptions_open;
+	}
+	flush();
+	return out;
 }
 
-/** Events / REQ / close counts: optional avg-per-second view within each minute. Subscriptions stay snapshot per minute. */
+/** Events / REQ / close counts from minute buckets (per-minute or rolled up per hour). */
 export function bucketSeries(
 	buckets: MetricBucket[],
 	field: 'events_stored' | 'req_count' | 'subscriptions_open',
@@ -129,53 +189,93 @@ export function bucketSeries(
 	if (resolution === 'hour') {
 		rows = rollupBucketsHourly(buckets);
 	}
-	return rows.map((b) => {
-		const raw = Number(b[field] ?? 0);
-		let value = raw;
-		if (resolution === 'second') {
-			value = field === 'subscriptions_open' ? raw : ratePerSecond(raw);
-		}
-		return {
-			date: new Date(b.bucket_start_unix * 1000),
-			value,
-		};
-	});
+	return rows.map((b) => ({
+		date: new Date(b.bucket_start_unix * 1000),
+		value: Number(b[field] ?? 0),
+	}));
 }
 
-/** Bin REQ latency samples into rows with mean, median, and p99 per time bucket. */
-export function binLatencyChartRows(samples: LatencySample[], resolution: Resolution): LatencyChartRow[] {
-	if (!samples.length) return [];
-	const sorted = [...samples].sort((a, b) => a.t_unix_ms - b.t_unix_ms);
+/**
+ * REQ latency rows aligned to persisted metric buckets (same retention as other charts).
+ * Uses recent in-memory samples for mean/median/p99 when present; otherwise falls back to
+ * per-bucket average latency from storage (median/p99 equal mean in that case).
+ */
+export function latencyChartRowsFromBucketsAndSamples(
+	buckets: MetricBucket[],
+	samples: LatencySample[],
+	resolution: Resolution,
+	rangeMs: number,
+	now = Date.now()
+): LatencyChartRow[] {
+	const fb = filterBucketsByRange(buckets, rangeMs, now);
+	const fs = filterLatencyByRange(samples, rangeMs, now);
 
-	function bucketKey(tUnixMs: number): number {
-		if (resolution === 'minute') return Math.floor(tUnixMs / MIN_MS) * MIN_MS;
-		if (resolution === 'hour')
-			return Math.floor(tUnixMs / (HOUR_SEC * 1000)) * HOUR_SEC * 1000;
-		return Math.floor(tUnixMs / 1000) * 1000;
+	let timeline = fb;
+	if (resolution === 'hour') {
+		timeline = rollupBucketsHourlyWithLatency(fb);
 	}
 
-	const groups = new Map<number, number[]>();
-	for (const s of sorted) {
-		const k = bucketKey(s.t_unix_ms);
-		let g = groups.get(k);
-		if (!g) {
-			g = [];
-			groups.set(k, g);
+	const sampleBins = new Map<number, number[]>();
+	for (const s of fs) {
+		const k =
+			resolution === 'minute'
+				? Math.floor(s.t_unix_ms / MIN_MS) * MIN_MS
+				: Math.floor(s.t_unix_ms / (HOUR_SEC * 1000)) * HOUR_SEC * 1000;
+		let arr = sampleBins.get(k);
+		if (!arr) {
+			arr = [];
+			sampleBins.set(k, arr);
 		}
-		g.push(s.ms);
+		arr.push(s.ms);
 	}
 
-	return [...groups.entries()]
-		.sort(([a], [b]) => a - b)
-		.map(([t, arr]) => {
-			const st = latencyStats(arr);
-			return {
-				date: new Date(t),
+	const sorted = [...timeline].sort((a, b) => a.bucket_start_unix - b.bucket_start_unix);
+	const rows: LatencyChartRow[] = [];
+
+	for (const b of sorted) {
+		const tMs = b.bucket_start_unix * 1000;
+		const key =
+			resolution === 'minute'
+				? Math.floor(tMs / MIN_MS) * MIN_MS
+				: Math.floor(tMs / (HOUR_SEC * 1000)) * HOUR_SEC * 1000;
+
+		const binSamples = sampleBins.get(key);
+		if (binSamples?.length) {
+			const st = latencyStats(binSamples);
+			rows.push({
+				date: new Date(key),
 				meanMs: st.meanMs,
 				medianMs: st.medianMs,
 				p99Ms: st.p99Ms,
-			};
-		});
+			});
+			continue;
+		}
+
+		const qCnt = Number(b.query_ms_count ?? 0);
+		const qSum = Number(b.query_ms_sum ?? 0);
+		if (qCnt > 0) {
+			const avg = qSum / qCnt;
+			rows.push({
+				date: new Date(key),
+				meanMs: avg,
+				medianMs: avg,
+				p99Ms: avg,
+			});
+			continue;
+		}
+
+		const avgOnly = b.query_ms_avg;
+		if (typeof avgOnly === 'number' && Number.isFinite(avgOnly) && avgOnly > 0) {
+			rows.push({
+				date: new Date(key),
+				meanMs: avgOnly,
+				medianMs: avgOnly,
+				p99Ms: avgOnly,
+			});
+		}
+	}
+
+	return rows;
 }
 
 export const LS_TIME_RANGE = 'congee.dashboard.timeRange';

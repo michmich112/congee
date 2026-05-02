@@ -11,10 +11,9 @@
 		LS_RESOLUTION,
 		LS_TIME_RANGE,
 		TIME_RANGE_MS,
-		binLatencyChartRows,
+		latencyChartRowsFromBucketsAndSamples,
 		bucketSeries,
 		filterBucketsByRange,
-		filterLatencyByRange,
 		type LatencySample,
 		type MetricBucket,
 		type Resolution,
@@ -59,6 +58,7 @@
 	let relayIdErr = $state<string | null>(null);
 	let loading = $state(true);
 	let pollErr = $state<string | null>(null);
+	let refreshBusy = $state(false);
 	let lastUpdated = $state<number | null>(null);
 	let showNpub = $state(true);
 	let copyHint = $state<string | null>(null);
@@ -71,7 +71,8 @@
 		const tr = localStorage.getItem(LS_TIME_RANGE);
 		if (tr === '15m' || tr === '1h' || tr === '6h' || tr === '24h') timeRange = tr;
 		const res = localStorage.getItem(LS_RESOLUTION);
-		if (res === 'minute' || res === 'second' || res === 'hour') resolution = res;
+		if (res === 'minute' || res === 'hour') resolution = res;
+		if (res === 'second') resolution = 'minute';
 		const rs = localStorage.getItem(LS_REFRESH_SEC);
 		const rv = rs ? Number(rs) : NaN;
 		if ([3, 5, 10, 30, 60].includes(rv)) refreshSec = rv;
@@ -108,7 +109,8 @@
 		localStorage.setItem(LS_REFRESH_SEC, String(refreshSec));
 	});
 
-	async function refreshStats() {
+	async function refreshStats(manual = false) {
+		if (manual) refreshBusy = true;
 		try {
 			const statsRes = await adminFetch('/api/stats');
 			if (!statsRes.ok) {
@@ -120,6 +122,8 @@
 			lastUpdated = Date.now();
 		} catch (e) {
 			pollErr = e instanceof Error ? e.message : 'request failed';
+		} finally {
+			if (manual) refreshBusy = false;
 		}
 	}
 
@@ -127,7 +131,7 @@
 		if (!browser || loading) return;
 		const ms = refreshSec * 1000;
 		const id = window.setInterval(() => {
-			void refreshStats();
+			void refreshStats(false);
 		}, ms);
 		return () => window.clearInterval(id);
 	});
@@ -172,9 +176,9 @@
 		bucketSeries(filteredBuckets, 'subscriptions_open', resolution));
 
 	const latencyChartData = $derived.by(() => {
+		const buckets = stats?.series?.buckets ?? [];
 		const samples = stats?.recent_query_latency ?? [];
-		const f = filterLatencyByRange(samples, rangeMs);
-		return binLatencyChartRows(f, resolution);
+		return latencyChartRowsFromBucketsAndSamples(buckets, samples, resolution, rangeMs);
 	});
 
 </script>
@@ -224,7 +228,6 @@
 				<Label for="dash-resolution">Resolution</Label>
 				<select id="dash-resolution" class={selectClass} bind:value={resolution}>
 					<option value="minute">Per minute</option>
-					<option value="second">Per second (rates)</option>
 					<option value="hour">Per hour</option>
 				</select>
 			</div>
@@ -237,6 +240,18 @@
 					<option value={30}>30s</option>
 					<option value={60}>1m</option>
 				</select>
+			</div>
+			<div class="flex items-end pb-0.5">
+				<Button
+					type="button"
+					variant="secondary"
+					size="sm"
+					class="h-9"
+					disabled={refreshBusy}
+					onclick={() => void refreshStats(true)}
+				>
+					{refreshBusy ? 'Refreshing…' : 'Refresh now'}
+				</Button>
 			</div>
 		</div>
 

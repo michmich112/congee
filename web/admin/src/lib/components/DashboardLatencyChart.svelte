@@ -16,10 +16,14 @@
 {#if data.length === 0}
 	<p class="text-muted-foreground py-8 text-center text-sm">No latency samples in this range.</p>
 {:else}
-	<Chart.Container config={chartConfig} class="aspect-auto h-[260px] w-full max-w-full">
+	<Chart.Container
+		config={chartConfig}
+		class="aspect-auto h-[260px] w-full max-w-full px-1 py-2 sm:px-2"
+	>
 		<LineChart
 			data={data}
 			x="date"
+			yPadding={[20, 20]}
 			legend={true}
 			axis={true}
 			series={[
@@ -29,7 +33,7 @@
 			]}
 			props={{
 				yAxis: {
-					label: 'Latency (ms)',
+					label: 'ms',
 				},
 			}}
 		>
