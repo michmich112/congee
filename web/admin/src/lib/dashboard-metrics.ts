@@ -23,8 +23,46 @@ export type LatencySample = { t_unix_ms: number; ms: number };
 
 export type ChartPoint = { date: Date; value: number };
 
+/** One row per time bin for REQ latency (multi-series chart). */
+export type LatencyChartRow = {
+	date: Date;
+	meanMs: number;
+	medianMs: number;
+	p99Ms: number;
+};
+
 const MIN_MS = 60_000;
 const HOUR_SEC = 3600;
+
+function percentileLinear(sorted: number[], p: number): number {
+	if (sorted.length === 0) return 0;
+	if (sorted.length === 1) return sorted[0];
+	const rank = (p / 100) * (sorted.length - 1);
+	const lo = Math.floor(rank);
+	const hi = Math.ceil(rank);
+	if (lo === hi) return sorted[lo];
+	return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
+}
+
+function medianSorted(sorted: number[]): number {
+	const n = sorted.length;
+	if (n === 0) return 0;
+	const mid = Math.floor(n / 2);
+	return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function latencyStats(values: number[]): { meanMs: number; medianMs: number; p99Ms: number } {
+	if (values.length === 0) {
+		return { meanMs: 0, medianMs: 0, p99Ms: 0 };
+	}
+	const sorted = [...values].sort((a, b) => a - b);
+	const sum = sorted.reduce((a, b) => a + b, 0);
+	return {
+		meanMs: sum / sorted.length,
+		medianMs: medianSorted(sorted),
+		p99Ms: percentileLinear(sorted, 99),
+	};
+}
 
 export function filterBucketsByRange(buckets: MetricBucket[], rangeMs: number, now = Date.now()): MetricBucket[] {
 	const cutoff = now - rangeMs;
@@ -104,52 +142,21 @@ export function bucketSeries(
 	});
 }
 
-export function binLatencySamples(samples: LatencySample[], resolution: Resolution): ChartPoint[] {
+/** Bin REQ latency samples into rows with mean, median, and p99 per time bucket. */
+export function binLatencyChartRows(samples: LatencySample[], resolution: Resolution): LatencyChartRow[] {
 	if (!samples.length) return [];
 	const sorted = [...samples].sort((a, b) => a.t_unix_ms - b.t_unix_ms);
 
-	if (resolution === 'minute') {
-		const groups = new Map<number, number[]>();
-		for (const s of sorted) {
-			const k = Math.floor(s.t_unix_ms / MIN_MS) * MIN_MS;
-			let g = groups.get(k);
-			if (!g) {
-				g = [];
-				groups.set(k, g);
-			}
-			g.push(s.ms);
-		}
-		return [...groups.entries()]
-			.sort(([a], [b]) => a - b)
-			.map(([t, arr]) => ({
-				date: new Date(t),
-				value: arr.reduce((x, y) => x + y, 0) / arr.length,
-			}));
+	function bucketKey(tUnixMs: number): number {
+		if (resolution === 'minute') return Math.floor(tUnixMs / MIN_MS) * MIN_MS;
+		if (resolution === 'hour')
+			return Math.floor(tUnixMs / (HOUR_SEC * 1000)) * HOUR_SEC * 1000;
+		return Math.floor(tUnixMs / 1000) * 1000;
 	}
 
-	if (resolution === 'hour') {
-		const groups = new Map<number, number[]>();
-		for (const s of sorted) {
-			const k = Math.floor(s.t_unix_ms / (HOUR_SEC * 1000)) * HOUR_SEC * 1000;
-			let g = groups.get(k);
-			if (!g) {
-				g = [];
-				groups.set(k, g);
-			}
-			g.push(s.ms);
-		}
-		return [...groups.entries()]
-			.sort(([a], [b]) => a - b)
-			.map(([t, arr]) => ({
-				date: new Date(t),
-				value: arr.reduce((x, y) => x + y, 0) / arr.length,
-			}));
-	}
-
-	// second
 	const groups = new Map<number, number[]>();
 	for (const s of sorted) {
-		const k = Math.floor(s.t_unix_ms / 1000) * 1000;
+		const k = bucketKey(s.t_unix_ms);
 		let g = groups.get(k);
 		if (!g) {
 			g = [];
@@ -157,12 +164,18 @@ export function binLatencySamples(samples: LatencySample[], resolution: Resoluti
 		}
 		g.push(s.ms);
 	}
+
 	return [...groups.entries()]
 		.sort(([a], [b]) => a - b)
-		.map(([t, arr]) => ({
-			date: new Date(t),
-			value: arr.reduce((x, y) => x + y, 0) / arr.length,
-		}));
+		.map(([t, arr]) => {
+			const st = latencyStats(arr);
+			return {
+				date: new Date(t),
+				meanMs: st.meanMs,
+				medianMs: st.medianMs,
+				p99Ms: st.p99Ms,
+			};
+		});
 }
 
 export const LS_TIME_RANGE = 'congee.dashboard.timeRange';

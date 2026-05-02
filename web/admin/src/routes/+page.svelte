@@ -11,7 +11,7 @@
 		LS_RESOLUTION,
 		LS_TIME_RANGE,
 		TIME_RANGE_MS,
-		binLatencySamples,
+		binLatencyChartRows,
 		bucketSeries,
 		filterBucketsByRange,
 		filterLatencyByRange,
@@ -23,6 +23,7 @@
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import AnalyticsStatCard from '$lib/components/AnalyticsStatCard.svelte';
 	import DashboardGraphCard from '$lib/components/DashboardGraphCard.svelte';
+	import DashboardLatencyChart from '$lib/components/DashboardLatencyChart.svelte';
 	import DashboardLineSeriesChart from '$lib/components/DashboardLineSeriesChart.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -173,7 +174,7 @@
 	const latencyChartData = $derived.by(() => {
 		const samples = stats?.recent_query_latency ?? [];
 		const f = filterLatencyByRange(samples, rangeMs);
-		return binLatencySamples(f, resolution);
+		return binLatencyChartRows(f, resolution);
 	});
 
 	function graphSubtitle(metric: 'counter' | 'subs'): string {
@@ -188,9 +189,11 @@
 	}
 
 	function latencySubtitle(): string {
-		if (resolution === 'minute') return 'Mean latency per UTC minute (from timestamped samples).';
-		if (resolution === 'second') return 'Mean latency per UTC second.';
-		return 'Mean latency per UTC hour.';
+		const base =
+			'Mean = arithmetic average; median = p50; P99 = 99th percentile. Y-axis: latency (ms).';
+		if (resolution === 'minute') return `${base} Buckets: UTC minute.`;
+		if (resolution === 'second') return `${base} Buckets: UTC second.`;
+		return `${base} Buckets: UTC hour.`;
 	}
 </script>
 
@@ -273,12 +276,7 @@
 				/>
 			</DashboardGraphCard>
 			<DashboardGraphCard title="REQ query latency" description={latencySubtitle()}>
-				<DashboardLineSeriesChart
-					data={latencyChartData}
-					seriesLabel="ms"
-					color="var(--chart-3)"
-					seriesKey="latency"
-				/>
+				<DashboardLatencyChart data={latencyChartData} />
 			</DashboardGraphCard>
 			<DashboardGraphCard title="Open subscriptions" description={graphSubtitle('subs')}>
 				<DashboardLineSeriesChart
