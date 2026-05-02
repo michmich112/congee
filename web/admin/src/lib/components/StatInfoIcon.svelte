@@ -78,7 +78,8 @@
 	});
 </script>
 
-<span class="inline-flex shrink-0 translate-y-px">
+<!-- No transform on this wrapper: it would make `position:fixed` tooltips use this span as their containing block. -->
+<span class="relative top-px inline-flex shrink-0">
 	<button
 		type="button"
 		bind:this={buttonEl}
