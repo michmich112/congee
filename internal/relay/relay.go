@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -234,7 +235,7 @@ func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
-	peer := peerIP(r.RemoteAddr)
+	peer := clientIP(r)
 	if !s.limiter.AllowNewConnection(peer) {
 		if s.metrics != nil {
 			s.metrics.IncRateLimitNewConnections()
@@ -274,9 +275,18 @@ func (s *Server) upgradeConn(w http.ResponseWriter, r *http.Request) (net.Conn, 
 	return c, ok, nil
 }
 
-func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate bool) {
+func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, useFlate bool) {
 	defer s.connWG.Done()
 	defer s.open.Add(-1)
+
+	_, port, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		port = ""
+	}
+	remoteAddr := resolvedPeerIP
+	if port != "" {
+		remoteAddr = net.JoinHostPort(resolvedPeerIP, port)
+	}
 
 	id := newConnID()
 	log := s.log.With().Str("conn_id", id).Logger()
@@ -288,8 +298,8 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, peerIP string, useFlate b
 	c := &Conn{
 		ID:          id,
 		server:      s,
-		peerIP:      peerIP,
-		remoteAddr:  r.RemoteAddr,
+		peerIP:      resolvedPeerIP,
+		remoteAddr:  remoteAddr,
 		wsTransport: wsTransport,
 		nc:          nc,
 		send:        make(chan []byte, 256),
@@ -366,4 +376,37 @@ func peerIP(remote string) string {
 		return remote
 	}
 	return host
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first := strings.SplitN(xff, ",", 2)[0]
+		trimmed := strings.TrimSpace(first)
+		if net.ParseIP(trimmed) != nil {
+			return trimmed
+		}
+	}
+
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		trimmed := strings.TrimSpace(xri)
+		if net.ParseIP(trimmed) != nil {
+			return trimmed
+		}
+	}
+
+	if fwd := r.Header.Get("Forwarded"); fwd != "" {
+		for _, part := range strings.Split(fwd, ";") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "for=") {
+				ip := strings.TrimPrefix(part, "for=")
+				ip = strings.Trim(ip, "\" \t")
+				if net.ParseIP(ip) != nil {
+					return ip
+				}
+				break
+			}
+		}
+	}
+
+	return peerIP(r.RemoteAddr)
 }
