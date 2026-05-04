@@ -33,3 +33,17 @@ jobs:
           cache-dependency-path: go.sum
 
       - run: go test ./...
+
+  test-race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: ${{ inputs.checkout-fetch-depth }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: go.sum
+
+      - run: go test -race ./...
