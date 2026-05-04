@@ -138,6 +138,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 
 func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessage, log zerolog.Logger) {
 	_ = ctx
+	c.sendClosed(msg.SubID, "")
 	s.subs.Remove(c.ID, msg.SubID)
 	if s.metrics != nil {
 		s.metrics.IncClose()
