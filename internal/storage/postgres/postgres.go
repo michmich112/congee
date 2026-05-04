@@ -329,22 +329,122 @@ func (s *Store) DeleteEvent(ctx context.Context, id string) error {
 	})
 }
 
-// CountEvents returns how many distinct events match any filter (OR).
+// countFilterSubQuery builds "SELECT id FROM events WHERE ..." + args for a single filter.
+// Returns ("", nil, true) when the filter should be skipped (e.g. contains search).
+func countFilterSubQuery(f *nostr.Filter) (sql string, args []interface{}, skip bool) {
+	if f != nil && f.HasSearch() {
+		return "", nil, true
+	}
+	var sb strings.Builder
+	sb.WriteString("SELECT id FROM events")
+	first := true
+	addWhere := func(cond string, a ...interface{}) {
+		args = append(args, a...)
+		if first {
+			sb.WriteString(" WHERE ")
+			first = false
+		} else {
+			sb.WriteString(" AND ")
+		}
+		sb.WriteString(cond)
+	}
+	appendIn := func(col string, vals []string) {
+		if len(vals) == 0 {
+			return
+		}
+		ph := strings.Repeat(", ?", len(vals)-1)
+		if len(ph) > 0 {
+			ph = "?" + ph
+		} else {
+			ph = "?"
+		}
+		ifaces := make([]interface{}, len(vals))
+		for i, v := range vals {
+			ifaces[i] = v
+		}
+		addWhere(col+" IN ("+ph+")", ifaces...)
+	}
+	if len(f.IDs) > 0 {
+		appendIn("id", f.IDs)
+	}
+	if len(f.Authors) > 0 {
+		appendIn("pubkey", f.Authors)
+	}
+	if len(f.Kinds) > 0 {
+		parts := make([]string, len(f.Kinds))
+		vals := make([]interface{}, len(f.Kinds))
+		for i, k := range f.Kinds {
+			parts[i] = "?"
+			vals[i] = k
+		}
+		addWhere("kind IN ("+strings.Join(parts, ", ")+")", vals...)
+	}
+	if f.Since != nil {
+		addWhere("created_at >= ?", *f.Since)
+	}
+	if f.Until != nil {
+		addWhere("created_at <= ?", *f.Until)
+	}
+	for key, vals := range f.Tag {
+		if len(vals) == 0 {
+			if first {
+				sb.WriteString(" WHERE ")
+				first = false
+			} else {
+				sb.WriteString(" AND ")
+			}
+			sb.WriteString("FALSE")
+			continue
+		}
+		name := key[1:]
+		ph := strings.Repeat(", ?", len(vals)-1)
+		if len(ph) > 0 {
+			ph = "?" + ph
+		} else {
+			ph = "?"
+		}
+		tagArgs := make([]interface{}, 0, 1+len(vals))
+		tagArgs = append(tagArgs, name)
+		for _, v := range vals {
+			tagArgs = append(tagArgs, v)
+		}
+		addWhere("id IN (SELECT event_id FROM event_tags WHERE name = ? AND value IN ("+ph+"))", tagArgs...)
+	}
+	return sb.String(), args, false
+}
+
+// CountEvents returns how many distinct events match any filter (OR) via SQL COUNT.
 func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, error) {
-	if len(filters) == 0 {
+	if filters == nil || len(filters) == 0 {
+		var count int
+		err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&count)
+		return count, err
+	}
+
+	subQueries := make([]string, 0, len(filters))
+	var allArgs []interface{}
+	for i := range filters {
+		q, args, skip := countFilterSubQuery(&filters[i])
+		if skip {
+			continue
+		}
+		subQueries = append(subQueries, q)
+		allArgs = append(allArgs, args...)
+	}
+	if len(subQueries) == 0 {
 		return 0, nil
 	}
-	byID := make(map[string]struct{})
-	for i := range filters {
-		rows, err := s.selectRows(ctx, &filters[i], false)
-		if err != nil {
-			return 0, err
-		}
-		for _, r := range rows {
-			byID[r.ID] = struct{}{}
-		}
+
+	var fullSQL string
+	if len(subQueries) == 1 {
+		fullSQL = "SELECT COUNT(*) FROM (" + subQueries[0] + ") t"
+	} else {
+		fullSQL = "SELECT COUNT(*) FROM (" + strings.Join(subQueries, " UNION ") + ") t"
 	}
-	return len(byID), nil
+
+	var count int
+	err := s.db.QueryRowContext(ctx, fullSQL, allArgs...).Scan(&count)
+	return count, err
 }
 
 // HasEventID implements storage.Store.
