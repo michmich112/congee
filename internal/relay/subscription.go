@@ -22,24 +22,7 @@ var (
 // subEntry wraps a subscription's filters with an atomic closed flag.
 type subEntry struct {
 	filters []nostr.Filter
-	closed  atomicBool
-}
-
-type atomicBool int32
-
-func (b *atomicBool) Load() bool {
-	return atomic.LoadInt32((*int32)(b)) != 0
-}
-
-func (b *atomicBool) Store(v bool) {
-	atomic.StoreInt32((*int32)(b), boolToInt32(v))
-}
-
-func boolToInt32(b bool) int32 {
-	if b {
-		return 1
-	}
-	return 0
+	closed  atomic.Bool
 }
 
 // SubscriptionManager tracks REQ subscriptions per connection and broadcasts events.
