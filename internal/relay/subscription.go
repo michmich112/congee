@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
@@ -18,11 +19,34 @@ var (
 	ErrTooManyFilters = errors.New("relay: too many filters per REQ")
 )
 
+// subEntry wraps a subscription's filters with an atomic closed flag.
+type subEntry struct {
+	filters []nostr.Filter
+	closed  atomicBool
+}
+
+type atomicBool int32
+
+func (b *atomicBool) Load() bool {
+	return atomic.LoadInt32((*int32)(b)) != 0
+}
+
+func (b *atomicBool) Store(v bool) {
+	atomic.StoreInt32((*int32)(b), boolToInt32(v))
+}
+
+func boolToInt32(b bool) int32 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // SubscriptionManager tracks REQ subscriptions per connection and broadcasts events.
 type SubscriptionManager struct {
 	mu sync.RWMutex
-	// connID -> subID -> filters
-	subs map[string]map[string][]nostr.Filter
+	// connID -> subID -> *subEntry
+	subs map[string]map[string]*subEntry
 	// connID -> enqueue outbound JSON
 	senders map[string]func([]byte) bool
 
@@ -34,7 +58,7 @@ type SubscriptionManager struct {
 // NewSubscriptionManager builds a manager from relay config slices.
 func NewSubscriptionManager(cfg *config.Config) *SubscriptionManager {
 	return &SubscriptionManager{
-		subs:            make(map[string]map[string][]nostr.Filter),
+		subs:            make(map[string]map[string]*subEntry),
 		senders:         make(map[string]func([]byte) bool),
 		maxSubsPerConn:  cfg.ConnectionLimits.MaxSubscriptionsPerConnection,
 		maxSubIDLen:     cfg.MaxSubscriptionIDLength,
@@ -78,18 +102,26 @@ func (m *SubscriptionManager) Add(connID, subID string, filters []nostr.Filter) 
 	defer m.mu.Unlock()
 	cmap := m.subs[connID]
 	if cmap == nil {
-		cmap = make(map[string][]nostr.Filter)
+		cmap = make(map[string]*subEntry)
 		m.subs[connID] = cmap
 	}
 	if _, exists := cmap[subID]; !exists && len(cmap) >= m.maxSubsPerConn {
 		return ErrTooManySubscriptions
 	}
-	cmap[subID] = filters
+	cmap[subID] = &subEntry{filters: filters}
 	return nil
 }
 
 // Remove drops one subscription.
 func (m *SubscriptionManager) Remove(connID, subID string) {
+	m.mu.RLock()
+	if cmap, ok := m.subs[connID]; ok {
+		if entry, ok := cmap[subID]; ok {
+			entry.closed.Store(true)
+		}
+	}
+	m.mu.RUnlock()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if cmap := m.subs[connID]; cmap != nil {
@@ -137,8 +169,11 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 		if !visible(connID, ev) {
 			continue
 		}
-		for subID, filters := range cmap {
-			if !filtersMatch(filters, ev) {
+		for subID, entry := range cmap {
+			if entry.closed.Load() {
+				continue
+			}
+			if !filtersMatch(entry.filters, ev) {
 				continue
 			}
 			b, err := nostr.MarshalRelayEvent(subID, ev)
