@@ -195,15 +195,29 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 	if err != nil {
 		return nil, err
 	}
-	tags := make([][]string, 0, len(tagRows))
-	for _, tr := range tagRows {
-		parts, err := storage.DecodeTagFullJSON(tr.FullJSON)
-		if err != nil {
-			return nil, err
-		}
-		tags = append(tags, parts)
+	tags, err := storage.GroupTagRows(tagRows)
+	if err != nil {
+		return nil, err
 	}
-	return &nostr.Event{
+	return rowToEventWithTags(row, tags[row.ID]), nil
+}
+
+func (s *Store) tagsByEventID(ctx context.Context, ids []string) (map[string][][]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var tagRows []storage.EventTagRow
+	if err := s.db.NewSelect().Model(&tagRows).
+		Where("event_id IN (?)", bun.In(ids)).
+		Order("event_id ASC", "pos ASC").
+		Scan(ctx); err != nil {
+		return nil, err
+	}
+	return storage.GroupTagRows(tagRows)
+}
+
+func rowToEventWithTags(row *storage.EventRow, tags [][]string) *nostr.Event {
+	ev := &nostr.Event{
 		ID:        row.ID,
 		PubKey:    row.Pubkey,
 		CreatedAt: row.CreatedAt,
@@ -211,7 +225,8 @@ func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.E
 		Tags:      tags,
 		Content:   row.Content,
 		Sig:       row.Sig,
-	}, nil
+	}
+	return ev
 }
 
 func filterLimit(f *nostr.Filter, applyLimits bool) int {
@@ -306,14 +321,14 @@ func (s *Store) QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nos
 		}
 		return a.ID < b.ID
 	})
+	tagsMap, err := s.tagsByEventID(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*nostr.Event, 0, len(ids))
 	for _, id := range ids {
 		row := byID[id]
-		ev, err := s.rowToEvent(ctx, &row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ev)
+		out = append(out, rowToEventWithTags(&row, tagsMap[row.ID]))
 	}
 	return out, nil
 }
@@ -461,8 +476,8 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	}
 	cons := constraints.WithoutSearch()
 
-	var rows []storage.EventRow
-	sel := s.db.NewSelect().Model(&rows)
+	var eventRows []storage.EventRow
+	sel := s.db.NewSelect().Model(&eventRows)
 	sel = sel.Where("search_vector @@ websearch_to_tsquery('english', ?)", q)
 	sel = sel.OrderExpr("ts_rank_cd(search_vector, websearch_to_tsquery('english', ?)) DESC", q)
 	sel = applyFilterQueryPrefix(sel, &cons, "")
@@ -473,13 +488,18 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	if err := sel.Scan(ctx); err != nil {
 		return nil, err
 	}
-	out := make([]*nostr.Event, 0, len(rows))
-	for i := range rows {
-		ev, err := s.rowToEvent(ctx, &rows[i])
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ev)
+
+	ids := make([]string, len(eventRows))
+	for i, r := range eventRows {
+		ids[i] = r.ID
+	}
+	tagsMap, err := s.tagsByEventID(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*nostr.Event, 0, len(eventRows))
+	for i := range eventRows {
+		out = append(out, rowToEventWithTags(&eventRows[i], tagsMap[eventRows[i].ID]))
 	}
 	return out, nil
 }
