@@ -231,30 +231,33 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 			if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
 				return err
 			}
-			for i, t := range ev.Tags {
-				full, err := json.Marshal(t)
-				if err != nil {
-					return err
-				}
-				val := ""
-				if len(t) > 1 {
-					val = t[1]
-				}
-				name := ""
-				if len(t) > 0 {
-					name = t[0]
-				}
-				tag := storage.EventTagRow{
-					EventID:  ev.ID,
-					Pos:      i,
-					Name:     name,
-					Value:    val,
-					FullJSON: string(full),
-				}
-				if _, err := tx.NewInsert().Model(&tag).Exec(ctx); err != nil {
-					return err
-				}
+		tags := make([]storage.EventTagRow, 0, len(ev.Tags))
+		for i, t := range ev.Tags {
+			full, err := json.Marshal(t)
+			if err != nil {
+				return err
 			}
+			val := ""
+			if len(t) > 1 {
+				val = t[1]
+			}
+			name := ""
+			if len(t) > 0 {
+				name = t[0]
+			}
+			tags = append(tags, storage.EventTagRow{
+				EventID:  ev.ID,
+				Pos:      i,
+				Name:     name,
+				Value:    val,
+				FullJSON: string(full),
+			})
+		}
+		if len(tags) > 0 {
+			if _, err := tx.NewInsert().Model(&tags).Exec(ctx); err != nil {
+				return err
+			}
+		}
 			return nil
 		})
 	})

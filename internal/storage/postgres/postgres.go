@@ -148,6 +148,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 		if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
 			return err
 		}
+		tags := make([]eventTagInsert, 0, len(ev.Tags))
 		for i, t := range ev.Tags {
 			full, err := json.Marshal(t)
 			if err != nil {
@@ -161,14 +162,16 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 			if len(t) > 0 {
 				name = t[0]
 			}
-			tag := eventTagInsert{
+			tags = append(tags, eventTagInsert{
 				EventID:  ev.ID,
 				Pos:      i,
 				Name:     name,
 				Value:    val,
 				FullJSON: full,
-			}
-			if _, err := tx.NewInsert().Model(&tag).Exec(ctx); err != nil {
+			})
+		}
+		if len(tags) > 0 {
+			if _, err := tx.NewInsert().Model(&tags).Exec(ctx); err != nil {
 				return err
 			}
 		}
