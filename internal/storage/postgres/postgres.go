@@ -399,7 +399,7 @@ func (s *Store) EventIDPrefixExists(ctx context.Context, prefix string, groupID 
 		return false, nil
 	}
 	q := s.db.NewSelect().Model((*storage.EventRow)(nil)).
-		Where("LOWER(SUBSTR(id, 1, 8)) = ?", p)
+		Where("id LIKE ?", p+"%")
 	if requireSameH && groupID != "" {
 		q = q.Where("id IN (SELECT event_id FROM event_tags WHERE name = 'h' AND value = ?)", groupID)
 	}
