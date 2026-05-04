@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var version int
@@ -55,6 +55,14 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return err
 		}
 		log.Debug().Msg("schema: v3 to v4 complete")
+		return nil
+	}
+	if version == 4 {
+		log.Debug().Msg("schema: migrating v4 to v5")
+		if err := migrateV4ToV5(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v4 to v5 complete")
 		return nil
 	}
 	return fmt.Errorf("sqlite: unsupported schema version %d", version)
@@ -174,6 +182,26 @@ func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema v3->v4: set user_version")
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("sqlite: set user_version: %w", err)
+	}
+	return nil
+}
+
+func migrateV4ToV5(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	stmts := []string{
+		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value_event_id ON event_tags (name, value, event_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id_pos ON event_tags (event_id, pos)`,
+		`DROP INDEX IF EXISTS idx_event_tags_event_id`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_pubkey_created_at ON audit_log (pubkey, created_at DESC)`,
+	}
+	for i := range stmts {
+		log.Debug().Int("ddl_step", i).Msg("schema v4->v5: exec ddl statement")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
+			return fmt.Errorf("sqlite: migrate v4->v5: %w", err)
+		}
+	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema v4->v5: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return fmt.Errorf("sqlite: set user_version: %w", err)
 	}
