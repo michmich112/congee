@@ -715,11 +715,13 @@ func (s *Store) GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, grou
 func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error) {
 	var row storage.EventRow
 	err := s.db.NewSelect().Model(&row).
-		Where("pubkey = ?", relayPubkey).
-		Where("kind IN (?, ?)", 9000, 9001).
-		Where("id IN (SELECT event_id FROM event_tags WHERE name = 'h' AND value = ?)", groupID).
-		Where("id IN (SELECT event_id FROM event_tags WHERE name = 'p' AND value = ?)", memberPubkey).
-		Order("created_at DESC", "id ASC").
+		TableExpr("events e").
+		Column("e.id", "e.pubkey", "e.created_at", "e.kind", "e.content", "e.sig", "e.d_tag").
+		Join("INNER JOIN event_tags et_h ON et_h.event_id = e.id AND et_h.name = 'h' AND et_h.value = ?", groupID).
+		Join("INNER JOIN event_tags et_p ON et_p.event_id = e.id AND et_p.name = 'p' AND et_p.value = ?", memberPubkey).
+		Where("e.pubkey = ?", relayPubkey).
+		Where("e.kind IN (?, ?)", 9000, 9001).
+		Order("e.created_at DESC", "e.id ASC").
 		Limit(1).
 		Scan(ctx)
 	if err != nil {
