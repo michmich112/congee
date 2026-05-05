@@ -25,7 +25,16 @@ func hexStr(r *rand.Rand, n int) string {
 	return string(b)
 }
 
-func openSeededStore(t testing.TB) *sq.Store {
+// seedData holds the pools and event IDs generated during seeding so
+// benchmarks can query for rows that actually exist.
+type seedData struct {
+	AuthorPool []string
+	ETagPool   []string
+	PTagPool   []string
+	EventIDs   []string
+}
+
+func openSeededStore(t testing.TB) (*sq.Store, seedData) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bench.db")
 	ctx := context.Background()
@@ -60,13 +69,16 @@ func openSeededStore(t testing.TB) *sq.Store {
 		"benchmarking congee relay performance now",
 	}
 
+	eventIDs := make([]string, 1000)
 	for i := 0; i < 1000; i++ {
 		kind := 1
 		if r.Intn(5) == 0 {
 			kind = 7
 		}
+		id := hexStr(r, 64)
+		eventIDs[i] = id
 		ev := &nostr.Event{
-			ID:        hexStr(r, 64),
+			ID:        id,
 			PubKey:    authorPool[r.Intn(len(authorPool))],
 			CreatedAt: baseTime + int64(i)*10,
 			Kind:      kind,
@@ -89,115 +101,141 @@ func openSeededStore(t testing.TB) *sq.Store {
 			t.Fatalf("seed event %d: %v", i, err)
 		}
 	}
-	return store
+	sd := seedData{
+		AuthorPool: authorPool,
+		ETagPool:   eTagPool,
+		PTagPool:   pTagPool,
+		EventIDs:   eventIDs,
+	}
+	return store, sd
 }
 
 func BenchmarkQueryEventsByID(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
-	f := nostr.Filter{IDs: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+	f := nostr.Filter{IDs: []string{sd.EventIDs[0]}}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.QueryEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
 }
 
 func BenchmarkQueryEventsByAuthor(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
-	auth := hexStr(rand.New(rand.NewSource(42)), 64)
-	f := nostr.Filter{Authors: []string{auth}}
+	f := nostr.Filter{Authors: []string{sd.AuthorPool[0]}}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.QueryEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
 }
 
 func BenchmarkQueryEventsByKind(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
 	f := nostr.Filter{Kinds: []int{1}}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.QueryEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
+	_ = sd
 }
 
 func BenchmarkQueryEventsByTag(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
 	f := nostr.Filter{
-		Tag: map[string][]string{"#e": {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		Tag: map[string][]string{"#e": {sd.ETagPool[0]}},
 	}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.QueryEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
 }
 
 func BenchmarkQueryEventsComplex(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
 	since := int64(1735689600)
 	until := int64(1735776000)
-	auth := hexStr(rand.New(rand.NewSource(42)), 64)
 	f := nostr.Filter{
-		Authors: []string{auth},
+		Authors: []string{sd.AuthorPool[0]},
 		Kinds:   []int{1},
 		Since:   &since,
 		Until:   &until,
 	}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.QueryEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
 }
 
 func BenchmarkQueryEventsMultiFilter(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
 	f1 := nostr.Filter{Kinds: []int{1}}
-	f2 := nostr.Filter{Authors: []string{hexStr(rand.New(rand.NewSource(42)), 64)}}
+	f2 := nostr.Filter{Authors: []string{sd.AuthorPool[1]}}
 	filters := []nostr.Filter{f1, f2}
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.QueryEvents(ctx, filters)
+		sink, _ = store.QueryEvents(ctx, filters)
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
 }
 
 func BenchmarkCountEventsAll(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
+	var sink int
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.CountEvents(ctx, nil)
+		sink, _ = store.CountEvents(ctx, nil)
 	}
+	b.ReportMetric(float64(sink), "events/op")
+	_ = sd
 }
 
 func BenchmarkCountEventsByFilter(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
 	f := nostr.Filter{Kinds: []int{1}}
+	var sink int
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.CountEvents(ctx, []nostr.Filter{f})
+		sink, _ = store.CountEvents(ctx, []nostr.Filter{f})
 	}
+	b.ReportMetric(float64(sink), "events/op")
+	_ = sd
 }
 
 func BenchmarkSearchEvents(b *testing.B) {
-	store := openSeededStore(b)
+	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
+	var sink []*nostr.Event
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.SearchEvents(ctx, "hello", nostr.Filter{})
+		sink, _ = store.SearchEvents(ctx, "hello", nostr.Filter{})
 	}
+	b.ReportMetric(float64(len(sink)), "events/op")
+	_ = sd
 }
