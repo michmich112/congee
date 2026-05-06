@@ -17,6 +17,9 @@ import (
 
 const hexChars = "0123456789abcdef"
 
+// benchSeedEpoch must match seeded event created_at window used in openSeededStore.
+var benchSeedEpoch = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
 func hexStr(r *rand.Rand, n int) string {
 	b := make([]byte, n)
 	for i := range b {
@@ -46,7 +49,7 @@ func openSeededStore(t testing.TB) (*sq.Store, seedData) {
 		t.Fatalf("open: %v", err)
 	}
 	r := rand.New(rand.NewSource(42))
-	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	baseTime := benchSeedEpoch
 
 	authorPool := make([]string, 20)
 	for i := range authorPool {
@@ -169,8 +172,8 @@ func BenchmarkQueryEventsComplex(b *testing.B) {
 	store, sd := openSeededStore(b)
 	defer store.Close()
 	ctx := context.Background()
-	since := int64(1735689600)
-	until := int64(1735776000)
+	since := benchSeedEpoch
+	until := benchSeedEpoch + 86400
 	f := nostr.Filter{
 		Authors: []string{sd.AuthorPool[0]},
 		Kinds:   []int{1},
