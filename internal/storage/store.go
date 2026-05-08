@@ -39,6 +39,10 @@ type Store interface {
 	SaveEvent(ctx context.Context, ev *nostr.Event) error
 	QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error)
 	DeleteEvent(ctx context.Context, id string) error
+	// CountEvents returns the number of distinct stored events matching any of the filters (OR).
+	// When filters is nil or empty, implementations run COUNT(*) over all events (used by health
+	// checks to verify the database is reachable). Filters that only carry NIP-50 search text are
+	// ignored for counting, matching QueryEvents behavior for those filters.
 	CountEvents(ctx context.Context, filters []nostr.Filter) (int, error)
 	// HasEventID reports whether an event with the given id is already stored.
 	HasEventID(ctx context.Context, id string) (bool, error)
