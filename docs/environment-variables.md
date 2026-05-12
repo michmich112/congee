@@ -23,17 +23,7 @@ If a file named **`.env`** exists in the **current working directory** when the 
 | `CONGEE_INSTANCE_ID` | PostgreSQL multi-instance identity | Optional. When `database.type` is `postgres`, identifies this process in `LISTEN`/`NOTIFY` payloads so the relay does not re-broadcast its own writes. If unset, Congee generates a UUID on first start, writes it to `relay.instance_id` in the JSON config, and reuses it on later boots. Setting this variable overrides the config value for the running process and locks it from edits in the admin UI under **Config → Storage** (restart still applies after config changes elsewhere). |
 | `TEST_POSTGRES_DSN` | Integration tests only | If set, enables PostgreSQL store/notifier tests (`go test`). Not used at runtime. |
 
-Most relay behavior — logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, etc. — is configured in the JSON file referenced by `CONFIG_PATH`. Listen ports and the SQLite file path can additionally be overridden at process start by the variables above (applied after JSON load, then the merged config is validated).
-
-### `connection_limits.default_query_limit`
-
-Optional integer under `connection_limits` in the JSON config. Controls the maximum number of events returned per subscription filter when the client **omits** the `limit` field.
-
-- **`null`** or **omitted**: built-in default (**500** events per filter)
-- **`0` or negative**: disables that relay default for omitted limits (no cap from config; same as unlimited for filters without a positive `limit`)
-- **Positive integer** (e.g. `1000`): caps responses to that many events per filter when `limit` is omitted
-
-In subscription filters, a **positive** `limit` is sent to storage as-is. **`limit` of `0` or negative** means no row cap for that filter (unlimited matching rows).
+Most relay behavior — logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, etc. — is configured in the JSON file referenced by `CONFIG_PATH`. Listen ports and the SQLite file path can additionally be overridden at process start by the variables above (applied after JSON load, then the merged config is validated). For JSON-only fields such as `connection_limits.default_query_limit`, see [Getting started — Configuration](getting-started.md#configuration).
 
 For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md).
 

@@ -30,6 +30,16 @@ Relay secrets default to **`relay.secrets.json` next to the config file** (so `/
 
 Optional **local** environment (admin UI, dev mode, secrets) can live in a **`.env`** file in the project root — see [environment-variables.md](environment-variables.md). Copy `.env.example` to `.env` and adjust. The relay loads `.env` automatically when you start it from that directory.
 
+### Default query limit (`connection_limits.default_query_limit`)
+
+This value lives in the **JSON config only** (not in environment variables). It caps how many events the relay returns **per subscription filter** when the client **omits** the NIP-01 `limit` field on that filter.
+
+- **`null`** or **omitted**: built-in default (**500** events per filter)
+- **`0` or negative**: disables that relay default for omitted limits (no cap from config for filters without a positive `limit`)
+- **Positive integer** (e.g. `1000`): caps responses to that many events per filter when `limit` is omitted
+
+In subscription filters, a **positive** `limit` is sent to storage as-is. A **`limit` of `0` or negative** means no row cap for that filter (unlimited matching rows).
+
 ## Run the relay
 
 **Development (no `bin/` build):** from the repo root, with optional `.env` picked up automatically:
