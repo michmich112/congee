@@ -44,8 +44,8 @@ func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Stor
 		id := fmt.Sprintf("%064x", i+100)
 		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 			CreatedAt: int64(5000 - i),
-			Action:    "event_accepted",
-			Detail:    fmt.Sprintf("event_id=%s conn_id=c stored=true kind=%d", id, i%4),
+			Action:    "event_stored",
+			Detail:    fmt.Sprintf("event_id=%s conn_id=c kind=%d", id, i%4),
 			Pubkey:    strings.Repeat("9", 64),
 		}); err != nil {
 			t.Fatal(err)
@@ -54,13 +54,13 @@ func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Stor
 }
 
 // seedAuditFilterRows writes 10 rows: created_at 2000..2009, kinds (i%3)+1 in relay-shaped detail,
-// actions event_accepted for i<8 and special_only for i>=8, pubkeys alternate a.. / b..
+// actions event_stored for i<8 and special_only for i>=8, pubkeys alternate a.. / b..
 func seedAuditFilterRows(ctx context.Context, t *testing.T, st *sqlite.Store) {
 	t.Helper()
 	pkA := strings.Repeat("a", 64)
 	pkB := strings.Repeat("b", 64)
 	for i := 0; i < 10; i++ {
-		action := "event_accepted"
+		action := "event_stored"
 		if i >= 8 {
 			action = "special_only"
 		}
@@ -70,7 +70,7 @@ func seedAuditFilterRows(ctx context.Context, t *testing.T, st *sqlite.Store) {
 		}
 		kind := (i % 3) + 1
 		id := fmt.Sprintf("%064x", i+1)
-		detail := fmt.Sprintf("event_id=%s conn_id=c%d stored=true kind=%d", id, i, kind)
+		detail := fmt.Sprintf("event_id=%s conn_id=c%d kind=%d", id, i, kind)
 		if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 			CreatedAt: int64(2000 + i),
 			Action:    action,
@@ -250,7 +250,7 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 	})
 
 	t.Run("kind_filter", func(t *testing.T) {
-		// kind=2 at i=1,4,7 (all event_accepted)
+		// kind=2 at i=1,4,7 (all event_stored)
 		body, code := do("kind=2&limit=50&offset=0")
 		if code != http.StatusOK {
 			t.Fatalf("status %d", code)
@@ -302,8 +302,8 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 	})
 
 	t.Run("combined_kind_and_action", func(t *testing.T) {
-		// kind=1 at i=0,3,6; i=6 only event_accepted with kind 1 — i=0,3,6 all event_accepted => 3 rows
-		body, code := do("kind=1&action=event_accepted&limit=50&offset=0")
+		// kind=1 at i=0,3,6; i=6 only event_stored with kind 1 — i=0,3,6 all event_stored => 3 rows
+		body, code := do("kind=1&action=event_stored&limit=50&offset=0")
 		if code != http.StatusOK {
 			t.Fatalf("status %d", code)
 		}
@@ -313,8 +313,8 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 	})
 
 	t.Run("combined_kind_pubkey_since", func(t *testing.T) {
-		// pkB at odd i. kind=3 when (i%3)+1=3 => i=2,5,8. Odd => i=5,9. action event_accepted => i=5 only (i=9 is special_only).
-		body, code := do("kind=3&pubkey=" + pkB + "&action=event_accepted&since=2000&until=2008&limit=50&offset=0")
+		// pkB at odd i. kind=3 when (i%3)+1=3 => i=2,5,8. Odd => i=5,9. action event_stored => i=5 only (i=9 is special_only).
+		body, code := do("kind=3&pubkey=" + pkB + "&action=event_stored&since=2000&until=2008&limit=50&offset=0")
 		if code != http.StatusOK {
 			t.Fatalf("status %d", code)
 		}
@@ -359,10 +359,10 @@ func TestIntegrationAdminAuditAPI_KindFilterMatchesRelayDetailSuffix(t *testing.
 
 	id := strings.Repeat("c", 64)
 	// Exact shape from internal/relay/nip01.go post-hook (note space before kind=).
-	detail := fmt.Sprintf("event_id=%s conn_id=conn1 stored=true kind=7", id)
+	detail := fmt.Sprintf("event_id=%s conn_id=conn1 kind=7", id)
 	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
 		CreatedAt: 1,
-		Action:    "event_accepted",
+		Action:    "event_stored",
 		Detail:    detail,
 		Pubkey:    strings.Repeat("d", 64),
 	}); err != nil {

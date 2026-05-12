@@ -101,7 +101,7 @@ func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
 	if err := src.SaveEvent(ctx, ev); err != nil {
 		t.Fatal(err)
 	}
-	ae := storage.AuditEntry{CreatedAt: 9, Action: "event_accepted", Detail: "event_id=" + ev.ID + " stored=true", Pubkey: pk}
+	ae := storage.AuditEntry{CreatedAt: 9, Action: "event_stored", Detail: "event_id=" + ev.ID + " conn_id=m kind=1", Pubkey: pk}
 	if err := src.SaveAuditEntry(ctx, ae); err != nil {
 		t.Fatal(err)
 	}
