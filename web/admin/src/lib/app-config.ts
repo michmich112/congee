@@ -18,6 +18,7 @@ export type AppConfig = {
 		connections_per_minute_per_ip: number;
 		read_deadline_seconds: number;
 		write_deadline_seconds: number;
+		default_query_limit?: number | null;
 	};
 	websocket: {
 		compression_enabled: boolean;

@@ -15,6 +15,24 @@
 	function draft() {
 		return ctx.draft!;
 	}
+
+	function defaultQueryLimit(): number | null {
+		const v = draft().connection_limits.default_query_limit;
+		if (v === undefined || v === null) return null;
+		return Number.isFinite(Number(v)) ? Number(v) : null;
+	}
+
+	function applyDefaultQueryLimit(v: string): void {
+		if (v.trim() === '') {
+			draft().connection_limits.default_query_limit = null;
+		} else {
+			const n = parseInt(v.trim(), 10);
+			if (Number.isFinite(n)) {
+				draft().connection_limits.default_query_limit = n;
+			}
+		}
+		ctx.markDirty();
+	}
 </script>
 
 <div class="space-y-8">
@@ -42,6 +60,20 @@
 						/>
 					</div>
 				{/each}
+				<div class="space-y-2">
+					<Label for="default-query-limit">Default query limit</Label>
+					<Input
+						id="default-query-limit"
+						type="number"
+						min="0"
+						placeholder="Unlimited"
+						value={defaultQueryLimit() ?? ''}
+						oninput={(e) => applyDefaultQueryLimit(e.currentTarget.value)}
+					/>
+					{#if defaultQueryLimit() !== null && defaultQueryLimit()! > 1000}
+						<p class="text-xs text-amber-600 dark:text-amber-400">Setting this value too high could make your relay susceptible to large memory usage, slow responses and global slowness.</p>
+					{/if}
+				</div>
 			</Card.Content>
 		</Card.Root>
 	</section>

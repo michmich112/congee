@@ -25,6 +25,16 @@ If a file named **`.env`** exists in the **current working directory** when the 
 
 Most relay behavior — logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, etc. — is configured in the JSON file referenced by `CONFIG_PATH`. Listen ports and the SQLite file path can additionally be overridden at process start by the variables above (applied after JSON load, then the merged config is validated).
 
+### `connection_limits.default_query_limit`
+
+Optional integer under `connection_limits` in the JSON config. Controls the maximum number of events returned per subscription filter when no explicit `limit` is provided.
+
+- **`null`** or **`0`**: unlimited (no default cap)
+- **Positive integer** (e.g. `500`): caps responses to that many events per filter
+- Negative values are rejected at validation time
+
+Explicit `limit` fields in subscription filters always take precedence over this config default.
+
 For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md).
 
 See `config.example.json` for the full schema of JSON fields and sensible defaults.

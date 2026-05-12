@@ -22,8 +22,6 @@ import (
 	_ "github.com/uptrace/bun/driver/sqliteshim"
 )
 
-const defaultQueryLimit = 500
-
 type writeTask struct {
 	run  func(ctx context.Context, db bun.IDB) error
 	done chan<- error
@@ -321,7 +319,7 @@ func filterLimit(f *nostr.Filter, applyLimits bool) int {
 	if f.Limit != nil && *f.Limit > 0 {
 		return *f.Limit
 	}
-	return defaultQueryLimit
+	return math.MaxInt32
 }
 
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {

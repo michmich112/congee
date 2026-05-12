@@ -147,3 +147,38 @@ func TestLoadInvalidJSON(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateRejectsNegativeDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	neg := -1
+	c.ConnectionLimits.DefaultQueryLimit = &neg
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for negative default_query_limit")
+	}
+}
+
+func TestValidateAcceptsNilDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	c.ConnectionLimits.DefaultQueryLimit = nil
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected nil default_query_limit to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsZeroDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	zero := 0
+	c.ConnectionLimits.DefaultQueryLimit = &zero
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected zero default_query_limit to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsPositiveDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	v := 500
+	c.ConnectionLimits.DefaultQueryLimit = &v
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected positive default_query_limit to be valid, got: %v", err)
+	}
+}

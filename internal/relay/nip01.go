@@ -117,7 +117,11 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		}
 	}
 	t0 := time.Now()
-	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled)
+	defaultLimit := 0
+	if s.cfg.ConnectionLimits.DefaultQueryLimit != nil {
+		defaultLimit = *s.cfg.ConnectionLimits.DefaultQueryLimit
+	}
+	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled, defaultLimit)
 	if s.metrics != nil {
 		s.metrics.RecordQueryLatency(time.Since(t0))
 	}

@@ -55,12 +55,13 @@ type RateLimitsSection struct {
 }
 
 type ConnectionLimitsSection struct {
-	MaxOpen                       int `json:"max_open"`
-	MaxSubscriptionsPerConnection int `json:"max_subscriptions_per_connection"`
-	MaxFiltersPerReq              int `json:"max_filters_per_req"`
-	ConnectionsPerMinutePerIP     int `json:"connections_per_minute_per_ip"`
-	ReadDeadlineSeconds           int `json:"read_deadline_seconds"`
-	WriteDeadlineSeconds          int `json:"write_deadline_seconds"`
+	MaxOpen                       int  `json:"max_open"`
+	MaxSubscriptionsPerConnection int  `json:"max_subscriptions_per_connection"`
+	MaxFiltersPerReq              int  `json:"max_filters_per_req"`
+	ConnectionsPerMinutePerIP     int  `json:"connections_per_minute_per_ip"`
+	ReadDeadlineSeconds           int  `json:"read_deadline_seconds"`
+	WriteDeadlineSeconds          int  `json:"write_deadline_seconds"`
+	DefaultQueryLimit             *int `json:"default_query_limit,omitempty"`
 }
 
 type WebSocketSection struct {

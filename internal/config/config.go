@@ -200,6 +200,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: nip42.relay_url: %w", err)
 		}
 	}
+	if c.ConnectionLimits.DefaultQueryLimit != nil && *c.ConnectionLimits.DefaultQueryLimit < 0 {
+		return errors.New("config: connection_limits.default_query_limit must be >= 0 (0 or null = unlimited)")
+	}
 	if c.NIP42.CreatedAtSkewSeconds < 0 {
 		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")
 	}

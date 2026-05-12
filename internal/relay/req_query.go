@@ -8,10 +8,25 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 )
 
+// applyDefaultQueryLimit sets filter.Limit to the given default when it is nil.
+// A default value <= 0 means unlimited (no limit is applied).
+func applyDefaultQueryLimit(filters []nostr.Filter, defaultLimit int) {
+	if defaultLimit <= 0 {
+		return
+	}
+	for i := range filters {
+		if filters[i].Limit == nil {
+			lim := defaultLimit
+			filters[i].Limit = &lim
+		}
+	}
+}
+
 // queryInitialREQEvents loads the initial snapshot for a REQ (OR across filters).
 // Filters with NIP-50 search use SearchEvents; others use QueryEvents. When searchEnabled
 // is false, callers must reject REQ earlier if any filter HasSearch.
-func queryInitialREQEvents(ctx context.Context, store storage.Store, filters []nostr.Filter, searchEnabled bool) ([]*nostr.Event, error) {
+func queryInitialREQEvents(ctx context.Context, store storage.Store, filters []nostr.Filter, searchEnabled bool, defaultQueryLimit int) ([]*nostr.Event, error) {
+	applyDefaultQueryLimit(filters, defaultQueryLimit)
 	if len(filters) == 0 {
 		return nil, nil
 	}

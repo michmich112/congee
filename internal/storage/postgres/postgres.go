@@ -18,8 +18,6 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
-const defaultQueryLimit = 500
-
 // Store is a PostgreSQL-backed storage.Store with LISTEN/NOTIFY fan-out.
 type Store struct {
 	db       *bun.DB
@@ -239,7 +237,7 @@ func filterLimit(f *nostr.Filter, applyLimits bool) int {
 	if f.Limit != nil && *f.Limit > 0 {
 		return *f.Limit
 	}
-	return defaultQueryLimit
+	return math.MaxInt32
 }
 
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
