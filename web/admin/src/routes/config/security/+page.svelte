@@ -8,6 +8,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	const ctx = getAdminConfig();
@@ -32,6 +33,12 @@
 			}
 		}
 		ctx.markDirty();
+	}
+
+	/** True when the draft stores an explicit cap below 1 (relay treats as no default limit). */
+	function defaultQueryLimitIsNoCap(): boolean {
+		const v = defaultQueryLimit();
+		return v !== null && v < 1;
 	}
 </script>
 
@@ -61,7 +68,12 @@
 					</div>
 				{/each}
 				<div class="space-y-2">
-					<Label for="default-query-limit">Default query limit</Label>
+					<div class="flex flex-wrap items-center gap-2">
+						<Label for="default-query-limit">Default query limit</Label>
+						{#if defaultQueryLimitIsNoCap()}
+							<Badge variant="secondary" class="rounded-full">No Limit</Badge>
+						{/if}
+					</div>
 					<Input
 						id="default-query-limit"
 						type="number"
