@@ -70,8 +70,8 @@
 					</div>
 					<Input
 						id="default-query-limit"
-						type="text"
-						inputmode="numeric"
+						type="number"
+						step="1"
 						autocomplete="off"
 						spellcheck={false}
 						class="font-mono text-sm"
