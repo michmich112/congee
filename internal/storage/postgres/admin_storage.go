@@ -30,7 +30,7 @@ func (s *Store) UpsertRelayMetricBucket(ctx context.Context, b storage.RelayMetr
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO relay_metric_buckets (
   bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count, subscriptions_open
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+) VALUES (?,?,?,?,?,?,?,?)
 ON CONFLICT (bucket_start_unix) DO UPDATE SET
   events_stored = EXCLUDED.events_stored,
   events_rejected = EXCLUDED.events_rejected,
@@ -83,7 +83,7 @@ func (s *Store) QueryRelayMetricBuckets(ctx context.Context, q storage.RelayMetr
 
 // PurgeRelayMetricBucketsBefore implements storage.Store.
 func (s *Store) PurgeRelayMetricBucketsBefore(ctx context.Context, cutoffStartUnixExclusive int64) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM relay_metric_buckets WHERE bucket_start_unix < $1`, cutoffStartUnixExclusive)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM relay_metric_buckets WHERE bucket_start_unix < ?`, cutoffStartUnixExclusive)
 	if err != nil {
 		return 0, fmt.Errorf("postgres: purge relay_metric_buckets: %w", err)
 	}
