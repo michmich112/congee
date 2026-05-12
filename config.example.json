@@ -31,7 +31,8 @@
     "max_filters_per_req": 10,
     "connections_per_minute_per_ip": 60,
     "read_deadline_seconds": 120,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500
   },
   "websocket": {
     "compression_enabled": true,

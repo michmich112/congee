@@ -39,6 +39,7 @@ func DefaultConfig() *Config {
 			ConnectionsPerMinutePerIP:     60,
 			ReadDeadlineSeconds:           120,
 			WriteDeadlineSeconds:          30,
+			DefaultQueryLimit:             ptrInt(DefaultQueryLimitIfUnset),
 		},
 		WebSocket: WebSocketSection{
 			CompressionEnabled: true,
@@ -230,4 +231,8 @@ func validateRelayInstanceIDField(s string) error {
 		return errors.New("config: relay.instance_id must not contain newline or null characters")
 	}
 	return nil
+}
+
+func ptrInt(v int) *int {
+	return &v
 }

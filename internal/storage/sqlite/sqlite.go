@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -21,8 +20,6 @@ import (
 	"github.com/uptrace/bun/driver/sqliteshim"
 	_ "github.com/uptrace/bun/driver/sqliteshim"
 )
-
-const defaultQueryLimit = 500
 
 type writeTask struct {
 	run  func(ctx context.Context, db bun.IDB) error
@@ -314,16 +311,6 @@ func rowToEventWithTags(row *storage.EventRow, tags [][]string) *nostr.Event {
 	return ev
 }
 
-func filterLimit(f *nostr.Filter, applyLimits bool) int {
-	if !applyLimits {
-		return math.MaxInt32
-	}
-	if f.Limit != nil && *f.Limit > 0 {
-		return *f.Limit
-	}
-	return defaultQueryLimit
-}
-
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
 	return applyFilterQueryPrefix(q, f, "")
 }
@@ -372,9 +359,8 @@ func (s *Store) selectRows(ctx context.Context, f *nostr.Filter, applyLimits boo
 	q := s.db.NewSelect().Model(&rows)
 	q = applyFilterQuery(q, f)
 	q = q.Order("created_at DESC", "id ASC")
-	lim := filterLimit(f, applyLimits)
-	if lim < math.MaxInt32 {
-		q = q.Limit(lim)
+	if lim := storage.FilterSQLLimit(f, applyLimits); lim != nil {
+		q = q.Limit(*lim)
 	}
 	if err := q.Scan(ctx); err != nil {
 		return nil, err
@@ -493,9 +479,8 @@ WHERE event_fts MATCH ?`)
 	args := []interface{}{matchExpr}
 	sqliteAppendSearchFilter(&sb, &args, &cons)
 	sb.WriteString(` ORDER BY bm25(event_fts) ASC`)
-	lim := filterLimit(&cons, true)
-	if lim < math.MaxInt32 {
-		sb.WriteString(fmt.Sprintf(" LIMIT %d", lim))
+	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
+		sb.WriteString(fmt.Sprintf(" LIMIT %d", *lim))
 	}
 
 	rows, err := s.db.QueryContext(ctx, sb.String(), args...)

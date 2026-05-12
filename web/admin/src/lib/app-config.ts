@@ -1,3 +1,6 @@
+/** Matches `internal/config.DefaultQueryLimitIfUnset` (relay when JSON omits the field). */
+export const DEFAULT_QUERY_LIMIT_IF_UNSET = 500;
+
 /** Mirrors `internal/config/config_types.go` JSON shape (admin config file). */
 export type AppConfig = {
 	relay: { port: number; instance_id?: string };
@@ -18,6 +21,7 @@ export type AppConfig = {
 		connections_per_minute_per_ip: number;
 		read_deadline_seconds: number;
 		write_deadline_seconds: number;
+		default_query_limit?: number | null;
 	};
 	websocket: {
 		compression_enabled: boolean;

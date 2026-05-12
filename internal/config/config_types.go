@@ -55,12 +55,29 @@ type RateLimitsSection struct {
 }
 
 type ConnectionLimitsSection struct {
-	MaxOpen                       int `json:"max_open"`
-	MaxSubscriptionsPerConnection int `json:"max_subscriptions_per_connection"`
-	MaxFiltersPerReq              int `json:"max_filters_per_req"`
-	ConnectionsPerMinutePerIP     int `json:"connections_per_minute_per_ip"`
-	ReadDeadlineSeconds           int `json:"read_deadline_seconds"`
-	WriteDeadlineSeconds          int `json:"write_deadline_seconds"`
+	MaxOpen                       int  `json:"max_open"`
+	MaxSubscriptionsPerConnection int  `json:"max_subscriptions_per_connection"`
+	MaxFiltersPerReq              int  `json:"max_filters_per_req"`
+	ConnectionsPerMinutePerIP     int  `json:"connections_per_minute_per_ip"`
+	ReadDeadlineSeconds           int  `json:"read_deadline_seconds"`
+	WriteDeadlineSeconds          int  `json:"write_deadline_seconds"`
+	DefaultQueryLimit             *int `json:"default_query_limit,omitempty"`
+}
+
+// DefaultQueryLimitIfUnset caps initial REQ results per filter when default_query_limit is omitted from JSON.
+const DefaultQueryLimitIfUnset = 500
+
+// EffectiveREQDefaultQueryLimit returns the cap applied when a subscription filter omits "limit".
+// A nil config pointer uses DefaultQueryLimitIfUnset. A non-positive configured value disables that cap
+// for omitted limits (the relay treats 0 as unlimited at apply time).
+func EffectiveREQDefaultQueryLimit(p *int) int {
+	if p == nil {
+		return DefaultQueryLimitIfUnset
+	}
+	if *p <= 0 {
+		return 0
+	}
+	return *p
 }
 
 type WebSocketSection struct {

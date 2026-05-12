@@ -260,3 +260,65 @@ func TestPostgresAuditLogCountAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPostgresFilterLimit(t *testing.T) {
+	ctx := context.Background()
+	dsn := testPostgresDSN(t)
+	t.Setenv("CONGEE_INSTANCE_ID", "test-filter-limit")
+	st, err := Open(ctx, dsn, "test-filter-limit", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	sig := nostrRepeat('s', 128)
+	for i := 0; i < 6; i++ {
+		id := fmt.Sprintf("%064d", i)
+		ev := &nostr.Event{
+			ID: id, PubKey: nostrRepeat('b', 64), CreatedAt: int64(6 - i),
+			Kind: 1, Tags: nil, Content: "test", Sig: sig,
+		}
+		if err := st.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := nostr.Filter{Kinds: []int{1}}
+	out, err := st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with nil limit, got %d", len(out))
+	}
+
+	lim := 3
+	f = nostr.Filter{Kinds: []int{1}, Limit: &lim}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("want 3 with limit=3, got %d", len(out))
+	}
+
+	zero := 0
+	f = nostr.Filter{Kinds: []int{1}, Limit: &zero}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with limit=0 (unlimited), got %d", len(out))
+	}
+
+	neg := -1
+	f = nostr.Filter{Kinds: []int{1}, Limit: &neg}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with limit=-1 (unlimited), got %d", len(out))
+	}
+}

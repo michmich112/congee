@@ -48,11 +48,11 @@ func TestValidateRejectsNIP29NegativeLatePublication(t *testing.T) {
 
 func minimalValidConfig() *Config {
 	return &Config{
-		Relay:                   RelaySection{Port: 3334},
-		Admin:                   AdminSection{Port: 3335},
-		Database:                DatabaseSection{Type: "sqlite", DSN: "./x.db"},
-		Logging:                 LoggingSection{Level: "info", Format: "json"},
-		Audit:                   AuditSection{RetentionDays: 30},
+		Relay:    RelaySection{Port: 3334},
+		Admin:    AdminSection{Port: 3335},
+		Database: DatabaseSection{Type: "sqlite", DSN: "./x.db"},
+		Logging:  LoggingSection{Level: "info", Format: "json"},
+		Audit:    AuditSection{RetentionDays: 30},
 		RateLimits: RateLimitsSection{
 			EventsPerMinutePerConnection: 1,
 			BytesPerSecondPerConnection:  1,
@@ -145,5 +145,58 @@ func TestLoadInvalidJSON(t *testing.T) {
 	_, err := LoadJSON(p)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestValidateAcceptsNegativeDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	neg := -1
+	c.ConnectionLimits.DefaultQueryLimit = &neg
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected negative default_query_limit to be valid (unlimited), got: %v", err)
+	}
+}
+
+func TestValidateAcceptsNilDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	c.ConnectionLimits.DefaultQueryLimit = nil
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected nil default_query_limit to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsZeroDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	zero := 0
+	c.ConnectionLimits.DefaultQueryLimit = &zero
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected zero default_query_limit to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsPositiveDefaultQueryLimit(t *testing.T) {
+	c := minimalValidConfig()
+	v := 500
+	c.ConnectionLimits.DefaultQueryLimit = &v
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected positive default_query_limit to be valid, got: %v", err)
+	}
+}
+
+func TestEffectiveREQDefaultQueryLimit(t *testing.T) {
+	if g, w := EffectiveREQDefaultQueryLimit(nil), DefaultQueryLimitIfUnset; g != w {
+		t.Fatalf("nil: got %d want %d", g, w)
+	}
+	z := 0
+	if g := EffectiveREQDefaultQueryLimit(&z); g != 0 {
+		t.Fatalf("zero: got %d want 0", g)
+	}
+	n := -3
+	if g := EffectiveREQDefaultQueryLimit(&n); g != 0 {
+		t.Fatalf("negative: got %d want 0", g)
+	}
+	p := 42
+	if g := EffectiveREQDefaultQueryLimit(&p); g != 42 {
+		t.Fatalf("positive: got %d want 42", g)
 	}
 }

@@ -8,12 +8,26 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	const ctx = getAdminConfig();
 
 	function draft() {
 		return ctx.draft!;
+	}
+
+	/** Parsed value from the bound text field; empty or non-numeric → null. */
+	function defaultQueryLimitFieldParsed(): number | null {
+		const t = ctx.defaultQueryLimitField.trim();
+		if (t === '') return null;
+		const n = parseInt(t, 10);
+		return Number.isFinite(n) ? n : null;
+	}
+
+	function defaultQueryLimitFieldShowsNoCapPill(): boolean {
+		const n = defaultQueryLimitFieldParsed();
+		return n !== null && n < 1;
 	}
 </script>
 
@@ -42,6 +56,37 @@
 						/>
 					</div>
 				{/each}
+				<div class="space-y-2">
+					<div class="flex flex-wrap items-center gap-2">
+						<Label for="default-query-limit">Default query limit</Label>
+						{#if defaultQueryLimitFieldShowsNoCapPill()}
+							<Badge
+								variant="outline"
+								class="rounded-full border-amber-500/70 bg-amber-500/15 text-amber-900 dark:border-amber-400/60 dark:bg-amber-950/50 dark:text-amber-100"
+							>
+								No Limit
+							</Badge>
+						{/if}
+					</div>
+					<Input
+						id="default-query-limit"
+						type="number"
+						step="1"
+						autocomplete="off"
+						spellcheck={false}
+						class="font-mono text-sm"
+						value={ctx.defaultQueryLimitField}
+						oninput={(e) => ctx.setDefaultQueryLimitField(e.currentTarget.value)}
+					/>
+					{#if ctx.defaultQueryLimitFieldError}
+						<div
+							role="alert"
+							class="rounded-md border border-destructive/80 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:bg-destructive/15"
+						>
+							{ctx.defaultQueryLimitFieldError}
+						</div>
+					{/if}
+				</div>
 			</Card.Content>
 		</Card.Root>
 	</section>
