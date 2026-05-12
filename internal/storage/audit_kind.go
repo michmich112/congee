@@ -16,7 +16,7 @@ const MaxAuditKindsScanLimit = 200_000
 
 var auditDetailTrailingKind = regexp.MustCompile(` kind=(\d+)$`)
 
-// ParseAuditDetailTrailingKind extracts the trailing NIP-01 post-hook kind from a relay audit detail line.
+// ParseAuditDetailTrailingKind extracts the trailing kind from a relay audit detail line (accepted: "... kind=<n>"; rejected: "... reason=... kind=<n>").
 func ParseAuditDetailTrailingKind(detail string) (kind int, ok bool) {
 	m := auditDetailTrailingKind.FindStringSubmatch(detail)
 	if m == nil {
