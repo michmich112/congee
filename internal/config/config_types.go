@@ -64,6 +64,22 @@ type ConnectionLimitsSection struct {
 	DefaultQueryLimit             *int `json:"default_query_limit,omitempty"`
 }
 
+// DefaultQueryLimitIfUnset caps initial REQ results per filter when default_query_limit is omitted from JSON.
+const DefaultQueryLimitIfUnset = 500
+
+// EffectiveREQDefaultQueryLimit returns the cap applied when a subscription filter omits "limit".
+// A nil config pointer uses DefaultQueryLimitIfUnset. A non-positive configured value disables that cap
+// for omitted limits (the relay treats 0 as unlimited at apply time).
+func EffectiveREQDefaultQueryLimit(p *int) int {
+	if p == nil {
+		return DefaultQueryLimitIfUnset
+	}
+	if *p <= 0 {
+		return 0
+	}
+	return *p
+}
+
 type WebSocketSection struct {
 	CompressionEnabled bool `json:"compression_enabled"`
 	MaxMessageBytes    int  `json:"max_message_bytes"`

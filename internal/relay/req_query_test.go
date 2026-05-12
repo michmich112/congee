@@ -148,7 +148,7 @@ func TestApplyDefaultQueryLimit_NoMutationWhenNegative(t *testing.T) {
 func TestApplyDefaultQueryLimit_NoCopyWhenAllExplicit(t *testing.T) {
 	lim := 99
 	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &lim}}
- 	result := applyDefaultQueryLimit(orig, 500)
+	result := applyDefaultQueryLimit(orig, 500)
 	if !sameSlice(result, orig) {
 		t.Fatal("when all filters have explicit limits, must return original slice")
 	}
@@ -197,29 +197,29 @@ func TestApplyDefaultQueryLimit_NilFilters(t *testing.T) {
 	}
 }
 
-func TestApplyDefaultQueryLimit_ReplacesNegativeClientLimit(t *testing.T) {
+func TestApplyDefaultQueryLimit_LeavesNegativeClientLimitUnchanged(t *testing.T) {
 	neg := -5
 	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &neg}}
 	result := applyDefaultQueryLimit(orig, 100)
 
-	if sameSlice(result, orig) {
-		t.Fatal("expected a new slice when replacing negative client limit")
+	if !sameSlice(result, orig) {
+		t.Fatal("expected same slice when no nil limits need default")
 	}
-	if *result[0].Limit != 100 {
-		t.Fatalf("want limit 100, got %d", *result[0].Limit)
+	if result[0].Limit == nil || *result[0].Limit != -5 {
+		t.Fatalf("want client limit -5 preserved, got %v", result[0].Limit)
 	}
 }
 
-func TestApplyDefaultQueryLimit_ReplacesZeroClientLimit(t *testing.T) {
+func TestApplyDefaultQueryLimit_LeavesZeroClientLimitUnchanged(t *testing.T) {
 	zero := 0
 	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &zero}}
 	result := applyDefaultQueryLimit(orig, 100)
 
-	if sameSlice(result, orig) {
-		t.Fatal("expected a new slice when replacing zero client limit")
+	if !sameSlice(result, orig) {
+		t.Fatal("expected same slice when no nil limits need default")
 	}
-	if *result[0].Limit != 100 {
-		t.Fatalf("want limit 100, got %d", *result[0].Limit)
+	if result[0].Limit == nil || *result[0].Limit != 0 {
+		t.Fatalf("want client limit 0 preserved, got %v", result[0].Limit)
 	}
 }
 
@@ -254,6 +254,30 @@ func TestQueryInitialREQEvents_DefaultLimitApplies(t *testing.T) {
 	}
 	if len(out) != 3 {
 		t.Fatalf("want 3 events (config default limit 3), got %d", len(out))
+	}
+}
+
+func TestQueryInitialREQEvents_RespectsDefaultCap500(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := sqlite.Open(ctx, filepath.Join(dir, "q500.db"), nil, zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	createTestEvents(t, st, ctx, 505)
+
+	f := nostr.Filter{Kinds: []int{1}}
+	out, err := queryInitialREQEvents(ctx, st, []nostr.Filter{f}, false, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 500 {
+		t.Fatalf("want 500 events (default cap), got %d", len(out))
 	}
 }
 
@@ -306,7 +330,7 @@ func TestQueryInitialREQEvents_ZeroDefaultIsUnlimited(t *testing.T) {
 	}
 }
 
-func TestQueryInitialREQEvents_NegativeFilterLimitFallbackToDefault(t *testing.T) {
+func TestQueryInitialREQEvents_NegativeClientLimitIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "q6.db"), nil, zerolog.Nop())
@@ -326,12 +350,12 @@ func TestQueryInitialREQEvents_NegativeFilterLimitFallbackToDefault(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("want 3 events (negative limit falls back to config default 3), got %d", len(out))
+	if len(out) != 6 {
+		t.Fatalf("want 6 events (negative client limit = unlimited), got %d", len(out))
 	}
 }
 
-func TestQueryInitialREQEvents_ZeroFilterLimitFallbackToDefault(t *testing.T) {
+func TestQueryInitialREQEvents_ZeroClientLimitIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "q7.db"), nil, zerolog.Nop())
@@ -351,8 +375,8 @@ func TestQueryInitialREQEvents_ZeroFilterLimitFallbackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("want 3 events (explicit zero limit falls back to config default 3), got %d", len(out))
+	if len(out) != 6 {
+		t.Fatalf("want 6 events (zero client limit = unlimited), got %d", len(out))
 	}
 }
 

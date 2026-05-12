@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/michmich112/congee/internal/audit"
+	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
@@ -117,10 +118,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		}
 	}
 	t0 := time.Now()
-	defaultLimit := 0
-	if s.cfg.ConnectionLimits.DefaultQueryLimit != nil {
-		defaultLimit = *s.cfg.ConnectionLimits.DefaultQueryLimit
-	}
+	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
 	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled, defaultLimit)
 	if s.metrics != nil {
 		s.metrics.RecordQueryLatency(time.Since(t0))

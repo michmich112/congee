@@ -8,33 +8,40 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 )
 
-// applyDefaultQueryLimit returns a copy of filters with filter.Limit set to the given default
-// when it is nil or <= 0 (invalid client values). Returns the original slice unchanged when
-// defaultLimit <= 0 or no filter needs the default applied. A default value <= 0 means
-// unlimited (no limit is applied).
+// applyDefaultQueryLimit returns a copy of filters with filter.Limit set to defaultLimit only
+// when the client omitted "limit" (nil). Filters with an explicit non-positive limit are left
+// unchanged so storage treats them as unlimited. Returns the original slice unchanged when
+// defaultLimit <= 0 or no filter has a nil limit.
 func applyDefaultQueryLimit(filters []nostr.Filter, defaultLimit int) []nostr.Filter {
 	if defaultLimit <= 0 {
 		return filters
 	}
+	needsCopy := false
 	for i := range filters {
-		if filters[i].Limit == nil || *filters[i].Limit <= 0 {
-			result := make([]nostr.Filter, len(filters))
-			copy(result, filters)
-			for j := range result {
-				if result[j].Limit == nil || *result[j].Limit <= 0 {
-					lim := defaultLimit
-					result[j].Limit = &lim
-				}
-			}
-			return result
+		if filters[i].Limit == nil {
+			needsCopy = true
+			break
 		}
 	}
-	return filters
+	if !needsCopy {
+		return filters
+	}
+	result := make([]nostr.Filter, len(filters))
+	copy(result, filters)
+	for j := range result {
+		if result[j].Limit == nil {
+			lim := defaultLimit
+			result[j].Limit = &lim
+		}
+	}
+	return result
 }
 
 // queryInitialREQEvents loads the initial snapshot for a REQ (OR across filters).
 // Filters with NIP-50 search use SearchEvents; others use QueryEvents. When searchEnabled
-// is false, callers must reject REQ earlier if any filter HasSearch.
+// is false, callers must reject REQ earlier if any filter HasSearch. defaultQueryLimit is
+// the effective cap from config (see config.EffectiveREQDefaultQueryLimit); values <= 0
+// mean no default is applied to filters with a nil limit.
 func queryInitialREQEvents(ctx context.Context, store storage.Store, filters []nostr.Filter, searchEnabled bool, defaultQueryLimit int) ([]*nostr.Event, error) {
 	filters = applyDefaultQueryLimit(filters, defaultQueryLimit)
 	if len(filters) == 0 {

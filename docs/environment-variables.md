@@ -27,13 +27,13 @@ Most relay behavior — logging level, audit retention, rate limits, connection 
 
 ### `connection_limits.default_query_limit`
 
-Optional integer under `connection_limits` in the JSON config. Controls the maximum number of events returned per subscription filter when no explicit `limit` is provided.
+Optional integer under `connection_limits` in the JSON config. Controls the maximum number of events returned per subscription filter when the client **omits** the `limit` field.
 
-- **`null`** or **`0`**: unlimited (no default cap)
-- **Positive integer** (e.g. `500`): caps responses to that many events per filter
-- Negative values are rejected at validation time
+- **`null`** or **omitted**: built-in default (**500** events per filter)
+- **`0` or negative**: disables that relay default for omitted limits (no cap from config; same as unlimited for filters without a positive `limit`)
+- **Positive integer** (e.g. `1000`): caps responses to that many events per filter when `limit` is omitted
 
-Explicit `limit` fields in subscription filters always take precedence over this config default.
+In subscription filters, a **positive** `limit` is sent to storage as-is. **`limit` of `0` or negative** means no row cap for that filter (unlimited matching rows).
 
 For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md).
 

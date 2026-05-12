@@ -27,7 +27,7 @@
 			draft().connection_limits.default_query_limit = null;
 		} else {
 			const n = parseInt(v.trim(), 10);
-			if (Number.isFinite(n) && n >= 0) {
+			if (Number.isFinite(n)) {
 				draft().connection_limits.default_query_limit = n;
 			}
 		}
@@ -65,11 +65,15 @@
 					<Input
 						id="default-query-limit"
 						type="number"
-						min="0"
-						placeholder="Unlimited"
+						placeholder="500 if empty"
 						value={defaultQueryLimit() ?? ''}
 						oninput={(e) => applyDefaultQueryLimit(e.currentTarget.value)}
 					/>
+					<p class="text-xs text-muted-foreground">
+						Leave empty for built-in default (500). Positive values cap filters that omit
+						<code class="rounded bg-muted px-1 text-[0.7rem]">limit</code>. Zero or negative disables that cap.
+						Client <code class="rounded bg-muted px-1 text-[0.7rem]">limit</code> of 0 or negative means unlimited rows for that filter.
+					</p>
 					{#if defaultQueryLimit() !== null && defaultQueryLimit()! > 1000}
 						<p class="text-xs text-amber-600 dark:text-amber-400">Setting this value too high could make your relay susceptible to large memory usage, slow responses and global slowness.</p>
 					{/if}
