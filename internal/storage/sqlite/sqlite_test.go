@@ -286,3 +286,73 @@ func nostrRepeat(c string, n int) string {
 	}
 	return string(b)
 }
+
+func TestSQLiteFilterLimit_NilLimit(t *testing.T) {
+	pk := nostrRepeat("b", 64)
+	sig := nostrRepeat("s", 128)
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := Open(ctx, filepath.Join(dir, "fl.db"), nil, zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// Insert 6 events
+	for i := 0; i < 6; i++ {
+		id := fmt.Sprintf("%064d", i)
+		ev := &nostr.Event{
+			ID: id, PubKey: pk, CreatedAt: int64(6 - i),
+			Kind: 1, Tags: nil, Content: "test", Sig: sig,
+		}
+		if err := st.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No limit set — should return all events
+	f := nostr.Filter{Kinds: []int{1}}
+	out, err := st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with nil limit, got %d", len(out))
+	}
+
+	// Explicit positive limit
+	lim := 3
+	f = nostr.Filter{Kinds: []int{1}, Limit: &lim}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("want 3 with limit=3, got %d", len(out))
+	}
+
+	// Explicit zero limit — should be unlimited
+	zero := 0
+	f = nostr.Filter{Kinds: []int{1}, Limit: &zero}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with limit=0 (unlimited), got %d", len(out))
+	}
+
+	// Negative limit — should be unlimited
+	neg := -1
+	f = nostr.Filter{Kinds: []int{1}, Limit: &neg}
+	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 6 {
+		t.Fatalf("want 6 with limit=-1 (unlimited), got %d", len(out))
+	}
+}
