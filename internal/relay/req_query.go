@@ -9,18 +9,19 @@ import (
 )
 
 // applyDefaultQueryLimit returns a copy of filters with filter.Limit set to the given default
-// when it is nil. Returns the original slice unchanged when defaultLimit <= 0 or no filter
-// needs the default applied. A default value <= 0 means unlimited (no limit is applied).
+// when it is nil or <= 0 (invalid client values). Returns the original slice unchanged when
+// defaultLimit <= 0 or no filter needs the default applied. A default value <= 0 means
+// unlimited (no limit is applied).
 func applyDefaultQueryLimit(filters []nostr.Filter, defaultLimit int) []nostr.Filter {
 	if defaultLimit <= 0 {
 		return filters
 	}
 	for i := range filters {
-		if filters[i].Limit == nil {
+		if filters[i].Limit == nil || *filters[i].Limit <= 0 {
 			result := make([]nostr.Filter, len(filters))
 			copy(result, filters)
 			for j := range result {
-				if result[j].Limit == nil {
+				if result[j].Limit == nil || *result[j].Limit <= 0 {
 					lim := defaultLimit
 					result[j].Limit = &lim
 				}

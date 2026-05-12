@@ -126,14 +126,14 @@ func TestApplyDefaultQueryLimit_NoMutationWhenPositive(t *testing.T) {
 	}
 }
 
-func TestApplyDefaultQueryLimit_NoMutationWhenZero(t *testing.T) {
+func TestApplyDefaultQueryLimit_NoMutationWhenZeroDefault(t *testing.T) {
 	orig := []nostr.Filter{{Kinds: []int{1}}}
 	result := applyDefaultQueryLimit(orig, 0)
 	if !sameSlice(result, orig) {
 		t.Fatal("zero default must return the same slice")
 	}
 	if orig[0].Limit != nil {
-		t.Fatal("limit must remain nil when default is 0")
+		t.Fatal("limit must remain nil when config default is 0")
 	}
 }
 
@@ -194,6 +194,42 @@ func TestApplyDefaultQueryLimit_NilFilters(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Fatalf("expected nil/empty for nil input, got len %d", len(result))
+	}
+}
+
+func TestApplyDefaultQueryLimit_ReplacesNegativeClientLimit(t *testing.T) {
+	neg := -5
+	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &neg}}
+	result := applyDefaultQueryLimit(orig, 100)
+
+	if sameSlice(result, orig) {
+		t.Fatal("expected a new slice when replacing negative client limit")
+	}
+	if *result[0].Limit != 100 {
+		t.Fatalf("want limit 100, got %d", *result[0].Limit)
+	}
+}
+
+func TestApplyDefaultQueryLimit_ReplacesZeroClientLimit(t *testing.T) {
+	zero := 0
+	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &zero}}
+	result := applyDefaultQueryLimit(orig, 100)
+
+	if sameSlice(result, orig) {
+		t.Fatal("expected a new slice when replacing zero client limit")
+	}
+	if *result[0].Limit != 100 {
+		t.Fatalf("want limit 100, got %d", *result[0].Limit)
+	}
+}
+
+func TestApplyDefaultQueryLimit_ZeroConfigDefaultWithNegativeClientLimit(t *testing.T) {
+	neg := -3
+	orig := []nostr.Filter{{Kinds: []int{1}, Limit: &neg}}
+	result := applyDefaultQueryLimit(orig, 0)
+
+	if !sameSlice(result, orig) {
+		t.Fatal("zero config default must return original slice even with negative client limit")
 	}
 }
 
@@ -270,7 +306,7 @@ func TestQueryInitialREQEvents_ZeroDefaultIsUnlimited(t *testing.T) {
 	}
 }
 
-func TestQueryInitialREQEvents_NegativeFilterLimitIgnored(t *testing.T) {
+func TestQueryInitialREQEvents_NegativeFilterLimitFallbackToDefault(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "q6.db"), nil, zerolog.Nop())
@@ -290,12 +326,12 @@ func TestQueryInitialREQEvents_NegativeFilterLimitIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 6 {
-		t.Fatalf("want 6 events (negative limit treated as unlimited), got %d", len(out))
+	if len(out) != 3 {
+		t.Fatalf("want 3 events (negative limit falls back to config default 3), got %d", len(out))
 	}
 }
 
-func TestQueryInitialREQEvents_ZeroFilterLimitUnlimited(t *testing.T) {
+func TestQueryInitialREQEvents_ZeroFilterLimitFallbackToDefault(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "q7.db"), nil, zerolog.Nop())
@@ -315,8 +351,8 @@ func TestQueryInitialREQEvents_ZeroFilterLimitUnlimited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 6 {
-		t.Fatalf("want 6 events (explicit zero limit = unlimited), got %d", len(out))
+	if len(out) != 3 {
+		t.Fatalf("want 3 events (explicit zero limit falls back to config default 3), got %d", len(out))
 	}
 }
 
@@ -350,7 +386,7 @@ func TestQueryInitialREQEvents_DoesNotMutateOriginalFilters(t *testing.T) {
 	}
 }
 
-func TestQueryInitialREQEvents_ExplicitZeroLimitNotOverridden(t *testing.T) {
+func TestQueryInitialREQEvents_ZeroLimitWithZeroDefaultIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "q9.db"), nil, zerolog.Nop())
@@ -366,12 +402,12 @@ func TestQueryInitialREQEvents_ExplicitZeroLimitNotOverridden(t *testing.T) {
 
 	zero := 0
 	f := nostr.Filter{Kinds: []int{1}, Limit: &zero}
-	out, err := queryInitialREQEvents(ctx, st, []nostr.Filter{f}, false, 3)
+	out, err := queryInitialREQEvents(ctx, st, []nostr.Filter{f}, false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(out) != 6 {
-		t.Fatalf("want 6 events (explicit 0 limit should not be overridden by config default 3), got %d", len(out))
+		t.Fatalf("want 6 events (explicit 0 limit with 0 config default = unlimited), got %d", len(out))
 	}
 }
 
