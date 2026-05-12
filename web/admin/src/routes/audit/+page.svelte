@@ -494,18 +494,18 @@
 								<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
 									>{row.pubkey || '—'}</Table.Cell
 								>
-								<Table.Cell class="max-w-md">
-									<div class="flex items-center gap-1">
+								<Table.Cell class="max-w-[min(12rem,32vw)] whitespace-normal py-1.5 align-middle">
+									<div class="flex items-center gap-0.5 leading-none">
 										<span
-											class="min-w-0 flex-1 truncate text-sm text-muted-foreground"
+											class="min-w-0 flex-1 truncate text-xs leading-tight text-muted-foreground"
 											title={row.detail}>{row.detail || '—'}</span
 										>
 										{#if row.detail}
 											<Button
 												type="button"
 												variant="ghost"
-												size="icon"
-												class="shrink-0 text-muted-foreground hover:text-foreground"
+												size="icon-sm"
+												class="size-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
 												aria-label="View full audit detail"
 												onclick={() => openAuditDetailModal(row.detail)}
 											>
