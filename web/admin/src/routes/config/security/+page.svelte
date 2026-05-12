@@ -27,7 +27,7 @@
 			draft().connection_limits.default_query_limit = null;
 		} else {
 			const n = parseInt(v.trim(), 10);
-			if (Number.isFinite(n)) {
+			if (Number.isFinite(n) && n >= 0) {
 				draft().connection_limits.default_query_limit = n;
 			}
 		}
