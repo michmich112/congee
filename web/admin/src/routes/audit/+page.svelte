@@ -38,7 +38,9 @@
 
 	const AUDIT_ACTION_OPTIONS = [
 		{ value: '', label: 'Any action' },
-		{ value: 'event_accepted', label: 'event_accepted' }
+		{ value: 'event_stored', label: 'event_stored' },
+		{ value: 'event_ephemeral', label: 'event_ephemeral' },
+		{ value: 'event_rejected', label: 'event_rejected' }
 	] as const;
 
 	function mergeKindFilterOptions(persistedKinds: number[]): { kind: number; label: string }[] {
