@@ -3,7 +3,7 @@
 	import Code from '@lucide/svelte/icons/code';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
-	import { parseConfigJson, type AppConfig } from '$lib/app-config';
+	import { DEFAULT_QUERY_LIMIT_IF_UNSET, parseConfigJson, type AppConfig } from '$lib/app-config';
 	import {
 		ADMIN_CONFIG_CTX,
 		type AdminConfigContext,
@@ -40,6 +40,45 @@
 	let changelogExpanded = $state(false);
 	let relayIdentity = $state<{ pubkey_hex: string; npub: string } | null>(null);
 	let relayInstanceRuntime = $state<{ instance_id: string; env_locked: boolean } | null>(null);
+	let defaultQueryLimitField = $state('');
+	let defaultQueryLimitFieldError = $state<string | null>(null);
+
+	function syncDefaultQueryLimitFieldFromDraft() {
+		if (!draft?.connection_limits) return;
+		const v = draft.connection_limits.default_query_limit;
+		defaultQueryLimitField =
+			v === undefined || v === null ? String(DEFAULT_QUERY_LIMIT_IF_UNSET) : String(v);
+		defaultQueryLimitFieldError = null;
+	}
+
+	function flushDefaultQueryLimitFieldToDraft() {
+		if (!draft?.connection_limits) return;
+		const t = defaultQueryLimitField.trim();
+		if (t === '') {
+			draft.connection_limits.default_query_limit = null;
+			return;
+		}
+		const n = parseInt(t, 10);
+		if (Number.isFinite(n)) {
+			draft.connection_limits.default_query_limit = n;
+		}
+	}
+
+	function updateDefaultQueryLimitFieldFromInput(v: string) {
+		defaultQueryLimitField = v;
+		defaultQueryLimitFieldError = null;
+		if (!draft?.connection_limits) return;
+		const t = v.trim();
+		if (t === '') {
+			draft.connection_limits.default_query_limit = null;
+		} else {
+			const n = parseInt(t, 10);
+			if (Number.isFinite(n)) {
+				draft.connection_limits.default_query_limit = n;
+			}
+		}
+		markDirty();
+	}
 
 	function markDirty() {
 		dirty = true;
@@ -121,6 +160,7 @@
 			}
 			const text = await cfgRes.text();
 			draft = parseConfigJson(text);
+			syncDefaultQueryLimitFieldFromDraft();
 			syncNip11PubkeyFromIdentity();
 			dirty = false;
 			await loadNipCatalog();
@@ -156,6 +196,7 @@
 	function openRawEditor() {
 		if (!draft) return;
 		rawErr = null;
+		flushDefaultQueryLimitFieldToDraft();
 		rawText = JSON.stringify(draft, null, 2);
 		rawOpen = true;
 	}
@@ -165,6 +206,7 @@
 		try {
 			const next = parseConfigJson(rawText);
 			draft = next;
+			syncDefaultQueryLimitFieldFromDraft();
 			syncNip11PubkeyFromIdentity();
 			markDirty();
 			rawOpen = false;
@@ -178,6 +220,28 @@
 		saveErr = null;
 		saveOk = false;
 		saveMessage = null;
+		defaultQueryLimitFieldError = null;
+
+		const dqlTrim = defaultQueryLimitField.trim();
+		if (dqlTrim === '') {
+			defaultQueryLimitFieldError =
+				'Default query limit cannot be empty. Enter a whole number (for example 500). Use 0 or a negative value for no relay default cap.';
+			queueMicrotask(() =>
+				document.getElementById('default-query-limit')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+			);
+			return;
+		}
+		if (!/^-?\d+$/.test(dqlTrim)) {
+			defaultQueryLimitFieldError =
+				'Default query limit must be a whole number (optional leading minus, then digits only).';
+			queueMicrotask(() =>
+				document.getElementById('default-query-limit')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+			);
+			return;
+		}
+		const dqlNum = parseInt(dqlTrim, 10);
+		draft.connection_limits.default_query_limit = dqlNum;
+
 		saving = true;
 		try {
 			const body = JSON.stringify(draft, null, 2);
@@ -272,7 +336,16 @@
 		},
 		markDirty,
 		setNipEnabled,
-		selectClass
+		selectClass,
+		get defaultQueryLimitField() {
+			return defaultQueryLimitField;
+		},
+		setDefaultQueryLimitField(v: string) {
+			updateDefaultQueryLimitFieldFromInput(v);
+		},
+		get defaultQueryLimitFieldError() {
+			return defaultQueryLimitFieldError;
+		}
 	};
 
 	setContext(ADMIN_CONFIG_CTX, ctx);

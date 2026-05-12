@@ -107,17 +107,6 @@ export function ensureNip29Draft(cfg: AppConfig): void {
 	cfg.nip29 ??= defaultNip29();
 }
 
-/** Normalizes default_query_limit so the admin form matches relay defaults (omitted/null → 500). */
-export function ensureConnectionLimitsDraft(cfg: AppConfig): void {
-	if (!cfg.connection_limits) {
-		return;
-	}
-	const lim = cfg.connection_limits.default_query_limit;
-	if (lim === undefined || lim === null) {
-		cfg.connection_limits.default_query_limit = DEFAULT_QUERY_LIMIT_IF_UNSET;
-	}
-}
-
 export function parseConfigJson(text: string): AppConfig {
 	const v = JSON.parse(text) as Record<string, unknown>;
 	if (typeof v !== 'object' || v === null) throw new Error('config root must be an object');
@@ -131,7 +120,6 @@ export function parseConfigJson(text: string): AppConfig {
 	ensureNip29Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
-	ensureConnectionLimitsDraft(cfg);
 	return cfg;
 }
 

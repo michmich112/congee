@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Shield from '@lucide/svelte/icons/shield';
-	import { DEFAULT_QUERY_LIMIT_IF_UNSET, parseIntSafe } from '$lib/app-config';
+	import { parseIntSafe } from '$lib/app-config';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
@@ -17,28 +17,17 @@
 		return ctx.draft!;
 	}
 
-	function defaultQueryLimit(): number | null {
-		const v = draft().connection_limits.default_query_limit;
-		if (v === undefined || v === null) return null;
-		return Number.isFinite(Number(v)) ? Number(v) : null;
+	/** Parsed value from the bound text field; empty or non-numeric → null. */
+	function defaultQueryLimitFieldParsed(): number | null {
+		const t = ctx.defaultQueryLimitField.trim();
+		if (t === '') return null;
+		const n = parseInt(t, 10);
+		return Number.isFinite(n) ? n : null;
 	}
 
-	function applyDefaultQueryLimit(v: string): void {
-		if (v.trim() === '') {
-			draft().connection_limits.default_query_limit = DEFAULT_QUERY_LIMIT_IF_UNSET;
-		} else {
-			const n = parseInt(v.trim(), 10);
-			if (Number.isFinite(n)) {
-				draft().connection_limits.default_query_limit = n;
-			}
-		}
-		ctx.markDirty();
-	}
-
-	/** True when the draft stores an explicit cap below 1 (relay treats as no default limit). */
-	function defaultQueryLimitIsNoCap(): boolean {
-		const v = defaultQueryLimit();
-		return v !== null && v < 1;
+	function defaultQueryLimitFieldShowsNoCapPill(): boolean {
+		const n = defaultQueryLimitFieldParsed();
+		return n !== null && n < 1;
 	}
 </script>
 
@@ -70,7 +59,7 @@
 				<div class="space-y-2">
 					<div class="flex flex-wrap items-center gap-2">
 						<Label for="default-query-limit">Default query limit</Label>
-						{#if defaultQueryLimitIsNoCap()}
+						{#if defaultQueryLimitFieldShowsNoCapPill()}
 							<Badge
 								variant="outline"
 								class="rounded-full border-amber-500/70 bg-amber-500/15 text-amber-900 dark:border-amber-400/60 dark:bg-amber-950/50 dark:text-amber-100"
@@ -81,10 +70,22 @@
 					</div>
 					<Input
 						id="default-query-limit"
-						type="number"
-						value={defaultQueryLimit() ?? ''}
-						oninput={(e) => applyDefaultQueryLimit(e.currentTarget.value)}
+						type="text"
+						inputmode="numeric"
+						autocomplete="off"
+						spellcheck={false}
+						class="font-mono text-sm"
+						value={ctx.defaultQueryLimitField}
+						oninput={(e) => ctx.setDefaultQueryLimitField(e.currentTarget.value)}
 					/>
+					{#if ctx.defaultQueryLimitFieldError}
+						<div
+							role="alert"
+							class="rounded-md border border-destructive/80 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:bg-destructive/15"
+						>
+							{ctx.defaultQueryLimitFieldError}
+						</div>
+					{/if}
 				</div>
 			</Card.Content>
 		</Card.Root>

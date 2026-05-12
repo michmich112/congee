@@ -40,6 +40,10 @@ export type AdminConfigContext = {
 	markDirty: () => void;
 	setNipEnabled: (list: number[], nip: number, on: boolean, row: NipRow) => number[];
 	selectClass: string;
+	/** Bound Security "default query limit" text; synced from draft on load/reload. */
+	get defaultQueryLimitField(): string;
+	setDefaultQueryLimitField(v: string): void;
+	get defaultQueryLimitFieldError(): string | null;
 };
 
 export function getAdminConfig(): AdminConfigContext {
