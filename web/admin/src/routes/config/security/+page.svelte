@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Shield from '@lucide/svelte/icons/shield';
-	import { parseIntSafe } from '$lib/app-config';
+	import { DEFAULT_QUERY_LIMIT_IF_UNSET, parseIntSafe } from '$lib/app-config';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
@@ -25,7 +25,7 @@
 
 	function applyDefaultQueryLimit(v: string): void {
 		if (v.trim() === '') {
-			draft().connection_limits.default_query_limit = null;
+			draft().connection_limits.default_query_limit = DEFAULT_QUERY_LIMIT_IF_UNSET;
 		} else {
 			const n = parseInt(v.trim(), 10);
 			if (Number.isFinite(n)) {
@@ -71,7 +71,12 @@
 					<div class="flex flex-wrap items-center gap-2">
 						<Label for="default-query-limit">Default query limit</Label>
 						{#if defaultQueryLimitIsNoCap()}
-							<Badge variant="secondary" class="rounded-full">No Limit</Badge>
+							<Badge
+								variant="outline"
+								class="rounded-full border-amber-500/70 bg-amber-500/15 text-amber-900 dark:border-amber-400/60 dark:bg-amber-950/50 dark:text-amber-100"
+							>
+								No Limit
+							</Badge>
 						{/if}
 					</div>
 					<Input
