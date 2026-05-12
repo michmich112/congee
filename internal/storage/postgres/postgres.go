@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
@@ -230,16 +229,6 @@ func rowToEventWithTags(row *storage.EventRow, tags [][]string) *nostr.Event {
 	return ev
 }
 
-func filterLimit(f *nostr.Filter, applyLimits bool) int {
-	if !applyLimits {
-		return math.MaxInt32
-	}
-	if f.Limit != nil && *f.Limit > 0 {
-		return *f.Limit
-	}
-	return math.MaxInt32
-}
-
 func applyFilterQuery(q *bun.SelectQuery, f *nostr.Filter) *bun.SelectQuery {
 	return applyFilterQueryPrefix(q, f, "")
 }
@@ -286,9 +275,8 @@ func (s *Store) selectRows(ctx context.Context, f *nostr.Filter, applyLimits boo
 	q := s.db.NewSelect().Model(&rows)
 	q = applyFilterQuery(q, f)
 	q = q.Order("created_at DESC", "id ASC")
-	lim := filterLimit(f, applyLimits)
-	if lim < math.MaxInt32 {
-		q = q.Limit(lim)
+	if lim := storage.FilterSQLLimit(f, applyLimits); lim != nil {
+		q = q.Limit(*lim)
 	}
 	if err := q.Scan(ctx); err != nil {
 		return nil, err
@@ -398,9 +386,8 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	sel = sel.Where("search_vector @@ websearch_to_tsquery('english', ?)", q)
 	sel = sel.OrderExpr("ts_rank_cd(search_vector, websearch_to_tsquery('english', ?)) DESC", q)
 	sel = applyFilterQueryPrefix(sel, &cons, "")
-	lim := filterLimit(&cons, true)
-	if lim < math.MaxInt32 {
-		sel = sel.Limit(lim)
+	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
+		sel = sel.Limit(*lim)
 	}
 	if err := sel.Scan(ctx); err != nil {
 		return nil, err
