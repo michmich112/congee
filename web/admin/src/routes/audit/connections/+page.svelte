@@ -7,9 +7,8 @@
 		writeAdminConnRefreshSecToStorage,
 		type AdminConnRefreshSec
 	} from '$lib/admin-conn-poll-preference';
-	import type { ChartPoint } from '$lib/dashboard-metrics';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
-	import DashboardLineSeriesChart from '$lib/components/DashboardLineSeriesChart.svelte';
+	import ConnectionReqEventDeltaChart from '$lib/components/ConnectionReqEventDeltaChart.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
@@ -101,18 +100,6 @@
 	}
 
 	let detailPts = $derived(detail ? parseSeries(detail.series) : []);
-
-	function deltasFromCumulative(pts: SeriesPoint[], field: 'req' | 'ev'): ChartPoint[] {
-		const out: ChartPoint[] = [];
-		for (let i = 0; i < pts.length; i++) {
-			const prev = i > 0 ? pts[i - 1] : { t: pts[i].t, req: 0, ev: 0 };
-			const cur = pts[i];
-			const v =
-				field === 'req' ? Math.max(0, cur.req - prev.req) : Math.max(0, cur.ev - prev.ev);
-			out.push({ date: new Date(cur.t * 1000), value: v });
-		}
-		return out;
-	}
 
 	async function loadList() {
 		listErr = null;
@@ -278,7 +265,7 @@
 								<Table.Head>IP</Table.Head>
 								<Table.Head class="text-right">Subs</Table.Head>
 								<Table.Head>Duration</Table.Head>
-								<Table.Head class="min-w-[200px]">REQ / EVENT</Table.Head>
+								<Table.Head class="w-[7.5rem] min-w-[7.5rem] max-w-[9rem]">REQ / EVENT</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -294,21 +281,8 @@
 									<Table.Cell class="text-xs text-muted-foreground"
 										>{fmtDuration(row.started_unix)}</Table.Cell
 									>
-									<Table.Cell class="py-1">
-										<div class="grid h-20 grid-cols-2 gap-1">
-											<DashboardLineSeriesChart
-												data={deltasFromCumulative(pts, 'req')}
-												seriesLabel="REQ Δ"
-												seriesKey="req"
-												color="var(--chart-1)"
-											/>
-											<DashboardLineSeriesChart
-												data={deltasFromCumulative(pts, 'ev')}
-												seriesLabel="EVENT Δ"
-												seriesKey="ev"
-												color="var(--chart-2)"
-											/>
-										</div>
+									<Table.Cell class="py-0.5 align-middle">
+										<ConnectionReqEventDeltaChart {pts} compact />
 									</Table.Cell>
 								</Table.Row>
 							{/each}
@@ -338,7 +312,7 @@
 								<Table.Head>IP</Table.Head>
 								<Table.Head class="text-right">Subs*</Table.Head>
 								<Table.Head>Duration</Table.Head>
-								<Table.Head class="min-w-[200px]">REQ / EVENT</Table.Head>
+								<Table.Head class="w-[7.5rem] min-w-[7.5rem] max-w-[9rem]">REQ / EVENT</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -354,21 +328,8 @@
 									<Table.Cell class="text-xs text-muted-foreground"
 										>{fmtDuration(row.started_unix, row.ended_unix)}</Table.Cell
 									>
-									<Table.Cell class="py-1">
-										<div class="grid h-20 grid-cols-2 gap-1">
-											<DashboardLineSeriesChart
-												data={deltasFromCumulative(pts, 'req')}
-												seriesLabel="REQ Δ"
-												seriesKey="req"
-												color="var(--chart-1)"
-											/>
-											<DashboardLineSeriesChart
-												data={deltasFromCumulative(pts, 'ev')}
-												seriesLabel="EVENT Δ"
-												seriesKey="ev"
-												color="var(--chart-2)"
-											/>
-										</div>
+									<Table.Cell class="py-0.5 align-middle">
+										<ConnectionReqEventDeltaChart {pts} compact />
 									</Table.Cell>
 								</Table.Row>
 							{/each}
@@ -410,20 +371,7 @@
 					</dl>
 					<div class="mt-4 space-y-2">
 						<p class="text-sm font-medium">Series (per bucket Δ)</p>
-						<div class="grid gap-2 md:grid-cols-2">
-							<DashboardLineSeriesChart
-								data={deltasFromCumulative(detailPts, 'req')}
-								seriesLabel="REQ Δ"
-								seriesKey="req"
-								color="var(--chart-1)"
-							/>
-							<DashboardLineSeriesChart
-								data={deltasFromCumulative(detailPts, 'ev')}
-								seriesLabel="EVENT Δ"
-								seriesKey="ev"
-								color="var(--chart-2)"
-							/>
-						</div>
+						<ConnectionReqEventDeltaChart pts={detailPts} />
 					</div>
 					<div class="mt-6">
 						<p class="text-sm font-medium">Subscriptions</p>
