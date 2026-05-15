@@ -13,6 +13,7 @@
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import Expand from '@lucide/svelte/icons/expand';
 	import { cn } from '$lib/utils';
 	import TableTimestampModeSelect from '$lib/components/TableTimestampModeSelect.svelte';
 	import TimestampCell from '$lib/components/TimestampCell.svelte';
@@ -38,7 +39,9 @@
 
 	const AUDIT_ACTION_OPTIONS = [
 		{ value: '', label: 'Any action' },
-		{ value: 'event_accepted', label: 'event_accepted' }
+		{ value: 'event_stored', label: 'event_stored' },
+		{ value: 'event_ephemeral', label: 'event_ephemeral' },
+		{ value: 'event_rejected', label: 'event_rejected' }
 	] as const;
 
 	function mergeKindFilterOptions(persistedKinds: number[]): { kind: number; label: string }[] {
@@ -99,6 +102,9 @@
 	let eventBody = $state<string | null>(null);
 	let eventLoadErr = $state<string | null>(null);
 	let eventLoading = $state(false);
+
+	let auditDetailDialogOpen = $state(false);
+	let auditDetailFull = $state('');
 
 	function localDayStartUnix(isoDate: string): number {
 		const [y, m, d] = isoDate.split('-').map((x) => Number.parseInt(x, 10));
@@ -231,6 +237,11 @@
 		void load();
 	}
 
+	function openAuditDetailModal(detail: string) {
+		auditDetailFull = detail;
+		auditDetailDialogOpen = true;
+	}
+
 	async function openEventModal(eventId: string) {
 		selectedEventId = eventId;
 		eventBody = null;
@@ -264,6 +275,12 @@
 			eventBody = null;
 			eventLoadErr = null;
 			eventLoading = false;
+		}
+	});
+
+	$effect(() => {
+		if (!auditDetailDialogOpen) {
+			auditDetailFull = '';
 		}
 	});
 
@@ -408,6 +425,21 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
+	<Dialog.Root bind:open={auditDetailDialogOpen}>
+		<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+			<Dialog.Header>
+				<Dialog.Title>Audit detail</Dialog.Title>
+				<Dialog.Description>Full text from the audit log row.</Dialog.Description>
+			</Dialog.Header>
+			{#if auditDetailFull}
+				<pre
+					class="max-h-[65vh] overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all"
+					>{auditDetailFull}</pre
+				>
+			{/if}
+		</Dialog.Content>
+	</Dialog.Root>
+
 	{#if loading}
 		<p class="text-sm text-muted-foreground">Loading…</p>
 	{:else}
@@ -462,9 +494,26 @@
 								<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
 									>{row.pubkey || '—'}</Table.Cell
 								>
-								<Table.Cell class="max-w-md truncate text-sm text-muted-foreground" title={row.detail}
-									>{row.detail || '—'}</Table.Cell
-								>
+								<Table.Cell class="max-w-[min(12rem,32vw)] whitespace-normal py-1.5 align-middle">
+									<div class="flex items-center gap-0.5 leading-none">
+										<span
+											class="min-w-0 flex-1 truncate text-xs leading-tight text-muted-foreground"
+											title={row.detail}>{row.detail || '—'}</span
+										>
+										{#if row.detail}
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												class="size-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:size-3.5"
+												aria-label="View full audit detail"
+												onclick={() => openAuditDetailModal(row.detail)}
+											>
+												<Expand />
+											</Button>
+										{/if}
+									</div>
+								</Table.Cell>
 							</Table.Row>
 						{:else}
 							<Table.Row>

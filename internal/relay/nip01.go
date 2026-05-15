@@ -18,8 +18,12 @@ import (
 func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 	s.AppendValidator(EventValidatorFunc(nip01ValidateSig))
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
-		detail := fmt.Sprintf("event_id=%s conn_id=%s stored=%v kind=%d", env.Event.ID, env.Conn.ID, env.Stored, env.Event.Kind)
-		return audit.Log(ctx, store, "event_accepted", detail, env.Event.PubKey)
+		action := audit.ActionEventEphemeral
+		if env.Stored {
+			action = audit.ActionEventStored
+		}
+		detail := fmt.Sprintf("event_id=%s conn_id=%s kind=%d", env.Event.ID, env.Conn.ID, env.Event.Kind)
+		return audit.Log(ctx, store, action, detail, env.Event.PubKey)
 	})
 	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
 		_ = ctx
@@ -46,6 +50,14 @@ func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
 	return ev.VerifySig()
 }
 
+func logEventRejected(ctx context.Context, store storage.Store, log zerolog.Logger, c *Conn, ev *nostr.Event, reason string) {
+	detail := fmt.Sprintf("event_id=%s conn_id=%s reason=%s kind=%d",
+		ev.ID, c.ID, audit.SanitizeAuditDetailFragment(reason), ev.Kind)
+	if err := audit.Log(ctx, store, audit.ActionEventRejected, detail, ev.PubKey); err != nil {
+		log.Error().Err(err).Str("conn_id", c.ID).Msg("audit save failed for event_rejected")
+	}
+}
+
 func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage, log zerolog.Logger) error {
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
@@ -53,11 +65,12 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		if s.metrics != nil {
 			s.metrics.IncEventsRejected()
 		}
-		msg := err.Error()
-		if strings.HasPrefix(msg, "auth-required:") {
+		reason := err.Error()
+		logEventRejected(ctx, store, log, c, ev, reason)
+		if strings.HasPrefix(reason, "auth-required:") {
 			_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		}
-		return c.sendOK(ev.ID, false, msg)
+		return c.sendOK(ev.ID, false, reason)
 	}
 	if nostr.IsEphemeral(ev.Kind) {
 		if err := c.sendOK(ev.ID, true, ""); err != nil {
@@ -76,7 +89,9 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		if s.metrics != nil {
 			s.metrics.IncEventsRejected()
 		}
-		return c.sendOK(ev.ID, false, err.Error())
+		reason := err.Error()
+		logEventRejected(ctx, store, log, c, ev, reason)
+		return c.sendOK(ev.ID, false, reason)
 	}
 	if s.metrics != nil {
 		s.metrics.IncEventsStoredOK()

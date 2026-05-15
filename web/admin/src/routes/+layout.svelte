@@ -2,7 +2,11 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import Menu from '@lucide/svelte/icons/menu';
+	import { browser } from '$app/environment';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import LogOut from '@lucide/svelte/icons/log-out';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import Settings from '@lucide/svelte/icons/settings';
@@ -43,6 +47,21 @@
 	let relayVersion = $state<string | null>(null);
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
+	let sidebarCollapsed = $state(false);
+
+	const SIDEBAR_COLLAPSED_KEY = 'congee-admin-sidebar-collapsed';
+
+	function readSidebarCollapsedFromStorage(): boolean {
+		if (!browser) return false;
+		return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+	}
+
+	function toggleSidebarCollapsed() {
+		sidebarCollapsed = !sidebarCollapsed;
+		if (browser) {
+			localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
+		}
+	}
 
 	type IconComponent = Component<{ class?: string }>;
 
@@ -67,21 +86,23 @@
 			: path === href || path.startsWith(href + '/');
 	}
 
-	function navLinkClass(href: string) {
+	function navLinkClass(href: string, collapsed: boolean) {
 		const active = navLinkActive(href);
 		return cn(
-			'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+			'flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors',
+			collapsed ? 'justify-center px-0' : 'px-2',
 			active
 				? 'bg-muted font-medium text-foreground'
 				: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
 		);
 	}
 
-	function configChildClass(href: string) {
+	function configChildClass(href: string, collapsed: boolean) {
 		const path = page.url.pathname;
 		const active = path === href || path.startsWith(href + '/');
 		return cn(
-			'flex items-center gap-2 rounded-md py-1.5 pl-3 pr-2 text-sm transition-colors',
+			'flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors',
+			collapsed ? 'justify-center px-0' : 'pl-3 pr-2',
 			active
 				? 'bg-muted font-medium text-foreground'
 				: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -100,6 +121,7 @@
 	});
 
 	onMount(() => {
+		sidebarCollapsed = readSidebarCollapsedFromStorage();
 		initTimestampDisplayFromStorage();
 		const t = getAdminToken();
 		if (t) {
@@ -198,57 +220,122 @@
 		<div class="flex min-h-dvh">
 			<!-- Desktop sidebar -->
 			<aside
-				class="border-border bg-muted/15 hidden w-56 shrink-0 flex-col border-r md:flex"
+				class={cn(
+					'border-border bg-muted/15 hidden shrink-0 flex-col border-r transition-[width] duration-200 ease-out md:flex',
+					sidebarCollapsed ? 'w-14' : 'w-56'
+				)}
 				aria-label="Main navigation"
 			>
-				<div class="flex flex-1 flex-col gap-6 p-4">
-					<div>
-						<p class="text-xs font-medium tracking-tight text-muted-foreground">Congee</p>
-						<p class="text-sm font-semibold">Relay admin</p>
+				<div
+					class={cn(
+						'flex flex-1 flex-col',
+						sidebarCollapsed ? 'items-center gap-3 px-1.5 py-3' : 'gap-6 p-4'
+					)}
+				>
+					<div
+						class={cn(
+							'flex w-full items-center',
+							sidebarCollapsed ? 'flex-col gap-2' : 'justify-between gap-2'
+						)}
+					>
+						{#if !sidebarCollapsed}
+							<div class="min-w-0 flex-1">
+								<p class="text-xs font-medium tracking-tight text-muted-foreground">Congee</p>
+								<p class="text-sm font-semibold">Relay admin</p>
+							</div>
+						{/if}
+						<Button
+							variant="ghost"
+							size="icon"
+							type="button"
+							class="shrink-0"
+							aria-label={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+							onclick={toggleSidebarCollapsed}
+						>
+							{#if sidebarCollapsed}
+								<ChevronRight class="size-4" />
+							{:else}
+								<ChevronLeft class="size-4" />
+							{/if}
+						</Button>
 					</div>
-					<nav class="flex flex-col gap-1">
+					<nav class={cn('flex w-full flex-col', sidebarCollapsed ? 'gap-1' : 'gap-1')}>
 						{#each mainNav as item}
 							<a
 								href={item.href}
-								class={navLinkClass(item.href)}
+								class={navLinkClass(item.href, sidebarCollapsed)}
 								aria-current={navLinkActive(item.href) ? 'page' : undefined}
+								title={item.label}
 							>
 								<item.Icon class="size-4 shrink-0 opacity-80" />
-								{item.label}
+								{#if !sidebarCollapsed}
+									<span>{item.label}</span>
+								{/if}
 							</a>
 						{/each}
-						<Collapsible.Root bind:open={configNavOpen} class="space-y-1">
-							<Collapsible.Trigger
-								class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-							>
-								<Settings class="size-4 shrink-0 opacity-80" />
-								<span class="flex-1 font-medium">Config</span>
-								<ChevronDown
-									class={cn(
-										'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
-										configNavOpen ? 'rotate-180' : ''
-									)}
-								/>
-							</Collapsible.Trigger>
-							<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
-								{#each configNav as item}
-									<a
-										href={item.href}
-										class={configChildClass(item.href)}
-										aria-current={configChildActive(item.href) ? 'page' : undefined}
-									>
-										<item.Icon class="size-3.5 shrink-0 opacity-75" />
-										{item.label}
-									</a>
-								{/each}
-							</Collapsible.Content>
-						</Collapsible.Root>
+						{#if !sidebarCollapsed}
+							<Collapsible.Root bind:open={configNavOpen} class="space-y-1">
+								<Collapsible.Trigger
+									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+								>
+									<Settings class="size-4 shrink-0 opacity-80" />
+									<span class="flex-1 font-medium">Config</span>
+									<ChevronDown
+										class={cn(
+											'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+											configNavOpen ? 'rotate-180' : ''
+										)}
+									/>
+								</Collapsible.Trigger>
+								<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
+									{#each configNav as item}
+										<a
+											href={item.href}
+											class={configChildClass(item.href, false)}
+											aria-current={configChildActive(item.href) ? 'page' : undefined}
+										>
+											<item.Icon class="size-3.5 shrink-0 opacity-75" />
+											{item.label}
+										</a>
+									{/each}
+								</Collapsible.Content>
+							</Collapsible.Root>
+						{:else}
+							<div class="mx-auto my-0.5 h-px w-6 shrink-0 bg-border" aria-hidden="true"></div>
+							{#each configNav as item}
+								<a
+									href={item.href}
+									class={configChildClass(item.href, true)}
+									aria-current={configChildActive(item.href) ? 'page' : undefined}
+									title={item.label}
+								>
+									<item.Icon class="size-4 shrink-0 opacity-75" />
+								</a>
+							{/each}
+						{/if}
 					</nav>
-					<div class="mt-auto flex flex-col gap-3 border-border border-t pt-4">
-						<Button variant="outline" size="sm" type="button" class="w-full justify-center" onclick={logout}>
-							Sign out
+					<div
+						class={cn(
+							'mt-auto flex w-full flex-col',
+							sidebarCollapsed ? 'items-center gap-2 border-0 pt-1' : 'gap-3 border-border border-t pt-4'
+						)}
+					>
+						<Button
+							variant="outline"
+							size={sidebarCollapsed ? 'icon' : 'sm'}
+							type="button"
+							class={cn(sidebarCollapsed ? 'size-8 shrink-0' : 'w-full justify-center')}
+							title="Sign out"
+							aria-label="Sign out"
+							onclick={logout}
+						>
+							{#if sidebarCollapsed}
+								<LogOut class="size-4" />
+							{:else}
+								Sign out
+							{/if}
 						</Button>
-						{#if relayVersion}
+						{#if relayVersion && !sidebarCollapsed}
 							<p class="text-[0.65rem] leading-snug text-muted-foreground">
 								Relay <span class="font-mono tabular-nums">{relayVersion}</span>
 								<span class="text-muted-foreground/80"> (NIP-11)</span>
@@ -257,7 +344,6 @@
 					</div>
 				</div>
 			</aside>
-
 			<div class="flex min-w-0 flex-1 flex-col">
 				<header class="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
 					<Sheet.Root bind:open={mobileNavOpen}>
@@ -277,7 +363,7 @@
 									{#each mainNav as item}
 										<a
 											href={item.href}
-											class={navLinkClass(item.href)}
+											class={navLinkClass(item.href, false)}
 											aria-current={navLinkActive(item.href) ? 'page' : undefined}
 											onclick={() => (mobileNavOpen = false)}
 										>
@@ -294,7 +380,7 @@
 									{#each configNav as item}
 										<a
 											href={item.href}
-											class={configChildClass(item.href)}
+											class={configChildClass(item.href, false)}
 											aria-current={configChildActive(item.href) ? 'page' : undefined}
 											onclick={() => (mobileNavOpen = false)}
 										>
