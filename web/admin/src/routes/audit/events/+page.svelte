@@ -292,8 +292,8 @@
 
 <div class="space-y-6">
 	<AdminPageHeading
-		title="Audit"
-		subtitle="Search and inspect persisted relay audit entries."
+		title="Audit · Events"
+		subtitle="Search and inspect persisted relay audit log entries."
 		Icon={ClipboardList}
 	/>
 
