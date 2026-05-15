@@ -7,6 +7,8 @@
 //	GET    /api/config/changelog — recent config changes (?limit=)
 //	GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey,&kind); JSON {entries,total}
 //	GET    /api/audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); JSON {kinds:[]int}
+//	GET    /api/audit/connections — live + closed WebSocket sessions (?limit,&offset,&include_live=); JSON {retention_days,live,closed}
+//	GET    /api/audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
@@ -47,6 +49,8 @@ import (
 //	GET      /config/changelog — recent config change records (?limit=)
 //	GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey,&kind); body {entries,total}
 //	GET      /audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); body {kinds:[]int}
+//	GET      /audit/connections — live + closed WebSocket sessions (?limit,&offset,&include_live=); body {retention_days,live,closed}
+//	GET      /audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
@@ -117,6 +121,8 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/config/changelog — recent config change rows (?limit=)
 	//   GET      /api/audit            — audit log (?limit=&offset=&since=&until=&action=&pubkey=&kind=); {entries,total}
 	//   GET      /api/audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); {kinds:[]}
+	//   GET      /api/audit/connections — ws session audit list
+	//   GET      /api/audit/connections/{ref} — ws session audit detail (live: or session: ref)
 	//   GET      /api/events/{id}      — one event from storage by id
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
@@ -128,6 +134,8 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart, relayID).ServeHTTP)
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
 	api.HandleFunc("GET /audit/kinds", HandleAuditKinds(store).ServeHTTP)
+	api.HandleFunc("GET /audit/connections/{ref}", HandleAuditConnectionsDetail(cfg, relaySrv, store))
+	api.HandleFunc("GET /audit/connections", HandleAuditConnectionsList(cfg, relaySrv, store))
 	api.HandleFunc("GET /audit", HandleAudit(store).ServeHTTP)
 	api.HandleFunc("GET /events/{id}", handleGetEvent(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
