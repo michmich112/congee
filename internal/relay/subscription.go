@@ -3,8 +3,10 @@ package relay
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
@@ -23,6 +25,13 @@ var (
 type subEntry struct {
 	filters []nostr.Filter
 	closed  atomic.Bool
+
+	openedUnix       int64
+	initialSent      atomic.Uint64
+	initialDropped   atomic.Uint64
+	broadcastOk      atomic.Uint64
+	broadcastDrop    atomic.Uint64
+	eoseSent         atomic.Uint32
 }
 
 // SubscriptionManager tracks REQ subscriptions per connection and broadcasts events.
@@ -91,7 +100,10 @@ func (m *SubscriptionManager) Add(connID, subID string, filters []nostr.Filter) 
 	if _, exists := cmap[subID]; !exists && len(cmap) >= m.maxSubsPerConn {
 		return ErrTooManySubscriptions
 	}
-	cmap[subID] = &subEntry{filters: filters}
+	cmap[subID] = &subEntry{
+		filters:    filters,
+		openedUnix: time.Now().Unix(),
+	}
 	return nil
 }
 
@@ -163,7 +175,12 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 			if err != nil {
 				continue
 			}
-			send(b)
+			ok := send(b)
+			if ok {
+				entry.broadcastOk.Add(1)
+			} else {
+				entry.broadcastDrop.Add(1)
+			}
 		}
 	}
 }
@@ -173,4 +190,88 @@ func (m *SubscriptionManager) SubCount(connID string) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.subs[connID])
+}
+
+// NoteSubInitialDelivery records one initial REQ query EVENT delivery attempt for admin audit.
+func (m *SubscriptionManager) NoteSubInitialDelivery(connID, subID string, ok bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return
+	}
+	e := cmap[subID]
+	if e == nil {
+		return
+	}
+	if ok {
+		e.initialSent.Add(1)
+	} else {
+		e.initialDropped.Add(1)
+	}
+}
+
+// NoteSubEOSE records one EOSE sent for a subscription (admin audit).
+func (m *SubscriptionManager) NoteSubEOSE(connID, subID string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return
+	}
+	e := cmap[subID]
+	if e == nil {
+		return
+	}
+	e.eoseSent.Add(1)
+}
+
+// AuditSubscriptionsForConn returns a snapshot of open subscriptions for admin (connID must be live).
+func (m *SubscriptionManager) AuditSubscriptionsForConn(connID string) []SubConnAudit {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return nil
+	}
+	out := make([]SubConnAudit, 0, len(cmap))
+	for sid, e := range cmap {
+		out = append(out, e.toAudit(sid))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].SubID < out[j].SubID })
+	return out
+}
+
+func kindHintsFromFilters(filters []nostr.Filter) []int {
+	seen := make(map[int]struct{})
+	var out []int
+	for _, f := range filters {
+		for _, k := range f.Kinds {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			out = append(out, k)
+			if len(out) >= 16 {
+				sort.Ints(out)
+				return out
+			}
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+func (e *subEntry) toAudit(subID string) SubConnAudit {
+	return SubConnAudit{
+		SubID:             subID,
+		OpenedUnix:        e.openedUnix,
+		FilterCount:       len(e.filters),
+		Kinds:             kindHintsFromFilters(e.filters),
+		InitialSent:       e.initialSent.Load(),
+		InitialDropped:    e.initialDropped.Load(),
+		BroadcastEnqueued: e.broadcastOk.Load(),
+		BroadcastDropped:  e.broadcastDrop.Load(),
+		EOSESent:          e.eoseSent.Load(),
+	}
 }

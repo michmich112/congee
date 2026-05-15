@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -45,6 +46,11 @@ type Conn struct {
 
 	limiter *ConnLimiter
 	log     zerolog.Logger
+
+	startedUnix      int64
+	reqTotal         atomic.Uint64
+	clientEventTotal atomic.Uint64
+	connAudit        connAuditRing
 
 	authMu         sync.RWMutex
 	nip42Challenge string
@@ -254,6 +260,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		_ = c.sendNotice("invalid message")
 		return
 	}
+	c.noteInboundAfterParse(msg)
 	switch msg.(type) {
 	case *nostr.EventMessage:
 		if !c.limiter.AllowEvent() {
