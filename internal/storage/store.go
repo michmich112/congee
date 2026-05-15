@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/michmich112/congee/internal/nostr"
 )
@@ -34,6 +35,26 @@ type AuditQuery struct {
 	Kinds []int
 }
 
+// WSConnectionSession is one closed WebSocket client session (admin audit UI).
+type WSConnectionSession struct {
+	ID               int64           `json:"id"`
+	ConnID           string          `json:"conn_id"`
+	PeerIP           string          `json:"peer_ip"`
+	RemoteAddr       string          `json:"remote_addr"`
+	StartedUnix      int64           `json:"started_unix"`
+	EndedUnix        int64           `json:"ended_unix"`
+	TotalReq         int64           `json:"total_req"`
+	TotalClientEvent int64           `json:"total_client_event"`
+	SeriesJSON       json.RawMessage `json:"series_json"`
+	SubsJSON         json.RawMessage `json:"subs_json"`
+}
+
+// WSConnectionSessionQuery lists closed sessions newest-first.
+type WSConnectionSessionQuery struct {
+	Limit  int
+	Offset int
+}
+
 // Store is the relay persistence API (SQLite, PostgreSQL, etc.).
 type Store interface {
 	SaveEvent(ctx context.Context, ev *nostr.Event) error
@@ -61,6 +82,14 @@ type Store interface {
 	// ListDistinctAuditKinds returns sorted unique trailing kinds from the newest scanLimit audit rows.
 	ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]int, error)
 	PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error)
+
+	// SaveWSConnectionSession inserts one closed WebSocket session row; returns the new row id.
+	SaveWSConnectionSession(ctx context.Context, s WSConnectionSession) (int64, error)
+	QueryWSConnectionSessions(ctx context.Context, q WSConnectionSessionQuery) ([]WSConnectionSession, error)
+	// GetWSConnectionSessionByID returns one closed session by primary key, or nil when not found.
+	GetWSConnectionSessionByID(ctx context.Context, id int64) (*WSConnectionSession, error)
+	// PurgeWSConnectionSessionsBefore deletes rows with ended_unix < olderThanUnix (exclusive).
+	PurgeWSConnectionSessionsBefore(ctx context.Context, olderThanUnix int64) (int64, error)
 
 	SaveConfigChange(ctx context.Context, c ConfigChange) error
 	QueryConfigChangelog(ctx context.Context, limit int) ([]ConfigChange, error)

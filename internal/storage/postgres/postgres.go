@@ -622,6 +622,70 @@ func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, 
 	return n, err
 }
 
+// SaveWSConnectionSession implements storage.Store.
+func (s *Store) SaveWSConnectionSession(ctx context.Context, e storage.WSConnectionSession) (int64, error) {
+	row := storage.WSConnectionSessionToRow(e)
+	_, err := s.db.NewInsert().Model(&row).Returning("id").Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
+// QueryWSConnectionSessions implements storage.Store.
+func (s *Store) QueryWSConnectionSessions(ctx context.Context, q storage.WSConnectionSessionQuery) ([]storage.WSConnectionSession, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := q.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	var rows []storage.WSConnectionSessionRow
+	err := s.db.NewSelect().Model(&rows).
+		Order("ended_unix DESC", "id DESC").
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]storage.WSConnectionSession, len(rows))
+	for i := range rows {
+		out[i] = storage.WSConnectionSessionFromRow(rows[i])
+	}
+	return out, nil
+}
+
+// GetWSConnectionSessionByID implements storage.Store.
+func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*storage.WSConnectionSession, error) {
+	var row storage.WSConnectionSessionRow
+	err := s.db.NewSelect().Model(&row).Where("id = ?", id).Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	e := storage.WSConnectionSessionFromRow(row)
+	return &e, nil
+}
+
+// PurgeWSConnectionSessionsBefore implements storage.Store.
+func (s *Store) PurgeWSConnectionSessionsBefore(ctx context.Context, olderThanUnix int64) (int64, error) {
+	res, err := s.db.NewDelete().Model((*storage.WSConnectionSessionRow)(nil)).
+		Where("ended_unix < ?", olderThanUnix).
+		Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) SaveConfigChange(ctx context.Context, c storage.ConfigChange) error {
 	row := storage.ConfigChangelogRow{
 		CreatedAt: c.CreatedAt,

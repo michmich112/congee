@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var evExists bool
@@ -74,6 +74,14 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		log.Debug().Msg("schema: v4 to v5 complete")
 		return nil
 	}
+	if version == 5 {
+		log.Debug().Msg("schema: migrating v5 to v6")
+		if err := migrateV5ToV6(ctx, db, log); err != nil {
+			return err
+		}
+		log.Debug().Msg("schema: v5 to v6 complete")
+		return nil
+	}
 	return fmt.Errorf("postgres: unsupported schema version %d", version)
 }
 
@@ -136,6 +144,19 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			subscriptions_open BIGINT NOT NULL DEFAULT 0
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
+		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
+			id BIGSERIAL PRIMARY KEY,
+			conn_id TEXT NOT NULL,
+			peer_ip TEXT NOT NULL,
+			remote_addr TEXT NOT NULL,
+			started_unix BIGINT NOT NULL,
+			ended_unix BIGINT NOT NULL,
+			total_req BIGINT NOT NULL DEFAULT 0,
+			total_client_event BIGINT NOT NULL DEFAULT 0,
+			series_json TEXT NOT NULL DEFAULT '[]',
+			subs_json TEXT NOT NULL DEFAULT '[]'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ws_sessions_ended ON ws_connection_sessions (ended_unix DESC)`,
 	}
 
 	for i, s := range stmts {
@@ -208,7 +229,8 @@ func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN IF NOT EXISTS subscriptions_open BIGINT NOT NULL DEFAULT 0`); err != nil {
 		return fmt.Errorf("postgres: migrate v3->v4: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, schemaVersion); err != nil {
+	log.Debug().Msg("schema v3->v4: bump schema version to 4")
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, 4); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
 	}
 	return nil
@@ -228,6 +250,35 @@ func migrateV4ToV5(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		}
 	}
 	log.Debug().Msg("schema v4->v5: bump schema version to 5")
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, 5); err != nil {
+		return fmt.Errorf("postgres: bump schema version: %w", err)
+	}
+	return nil
+}
+
+func migrateV5ToV6(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
+			id BIGSERIAL PRIMARY KEY,
+			conn_id TEXT NOT NULL,
+			peer_ip TEXT NOT NULL,
+			remote_addr TEXT NOT NULL,
+			started_unix BIGINT NOT NULL,
+			ended_unix BIGINT NOT NULL,
+			total_req BIGINT NOT NULL DEFAULT 0,
+			total_client_event BIGINT NOT NULL DEFAULT 0,
+			series_json TEXT NOT NULL DEFAULT '[]',
+			subs_json TEXT NOT NULL DEFAULT '[]'
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ws_sessions_ended ON ws_connection_sessions (ended_unix DESC)`,
+	}
+	for i := range stmts {
+		log.Debug().Int("ddl_step", i).Msg("schema v5->v6: ws_connection_sessions")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
+			return fmt.Errorf("postgres: migrate v5->v6: %w", err)
+		}
+	}
+	log.Debug().Msg("schema v5->v6: bump schema version to 6")
 	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, schemaVersion); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
 	}
