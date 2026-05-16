@@ -20,6 +20,8 @@ type auditConnListResponse struct {
 	RetentionDays int                          `json:"retention_days"`
 	Live          []relay.ConnAuditLiveSummary `json:"live"`
 	Closed        []auditConnClosedRow         `json:"closed"`
+	// ClosedTotal is set only when closed rows are included (include_closed != 0).
+	ClosedTotal *int64 `json:"closed_total,omitempty"`
 }
 
 type auditConnClosedRow struct {
@@ -59,16 +61,24 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 			return
 		}
 		includeLive := r.URL.Query().Get("include_live") != "0"
+		includeClosed := r.URL.Query().Get("include_closed") != "0"
 		limit := atoiDefault(r.URL.Query().Get("limit"), 100, 1, 500)
 		offset := atoiDefault(r.URL.Query().Get("offset"), 0, 0, 1_000_000)
 
 		dbCtx, cancel := context.WithTimeout(r.Context(), auditConnDBTimeout)
 		defer cancel()
 
-		var closed []storage.WSConnectionSession
-		var err error
-		if store != nil {
-			closed, err = store.QueryWSConnectionSessions(dbCtx, storage.WSConnectionSessionQuery{
+		closedOut := make([]auditConnClosedRow, 0)
+		var closedTotal *int64
+		if includeClosed && store != nil {
+			n, err := store.CountWSConnectionSessions(dbCtx)
+			if err != nil {
+				http.Error(w, "database error", http.StatusInternalServerError)
+				return
+			}
+			t := n
+			closedTotal = &t
+			closed, err := store.QueryWSConnectionSessions(dbCtx, storage.WSConnectionSessionQuery{
 				Limit:  limit,
 				Offset: offset,
 			})
@@ -76,23 +86,22 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 				http.Error(w, "database error", http.StatusInternalServerError)
 				return
 			}
-		}
-
-		closedOut := make([]auditConnClosedRow, 0, len(closed))
-		for i := range closed {
-			c := closed[i]
-			closedOut = append(closedOut, auditConnClosedRow{
-				Ref:              "session:" + strconv.FormatInt(c.ID, 10),
-				ID:               c.ID,
-				ConnID:           c.ConnID,
-				PeerIP:           c.PeerIP,
-				RemoteAddr:       c.RemoteAddr,
-				StartedUnix:      c.StartedUnix,
-				EndedUnix:        c.EndedUnix,
-				TotalReq:         c.TotalReq,
-				TotalClientEvent: c.TotalClientEvent,
-				Series:           json.RawMessage(c.SeriesJSON),
-			})
+			closedOut = make([]auditConnClosedRow, 0, len(closed))
+			for i := range closed {
+				c := closed[i]
+				closedOut = append(closedOut, auditConnClosedRow{
+					Ref:              "session:" + strconv.FormatInt(c.ID, 10),
+					ID:               c.ID,
+					ConnID:           c.ConnID,
+					PeerIP:           c.PeerIP,
+					RemoteAddr:       c.RemoteAddr,
+					StartedUnix:      c.StartedUnix,
+					EndedUnix:        c.EndedUnix,
+					TotalReq:         c.TotalReq,
+					TotalClientEvent: c.TotalClientEvent,
+					Series:           json.RawMessage(c.SeriesJSON),
+				})
+			}
 		}
 
 		var live []relay.ConnAuditLiveSummary
@@ -105,6 +114,7 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 			RetentionDays: cfg.Audit.RetentionDays,
 			Live:          live,
 			Closed:        closedOut,
+			ClosedTotal:   closedTotal,
 		})
 	}
 }

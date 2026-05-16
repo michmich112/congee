@@ -86,6 +86,8 @@ type Store interface {
 	// SaveWSConnectionSession inserts one closed WebSocket session row; returns the new row id.
 	SaveWSConnectionSession(ctx context.Context, s WSConnectionSession) (int64, error)
 	QueryWSConnectionSessions(ctx context.Context, q WSConnectionSessionQuery) ([]WSConnectionSession, error)
+	// CountWSConnectionSessions returns the number of persisted closed WebSocket sessions (all rows).
+	CountWSConnectionSessions(ctx context.Context) (int64, error)
 	// GetWSConnectionSessionByID returns one closed session by primary key, or nil when not found.
 	GetWSConnectionSessionByID(ctx context.Context, id int64) (*WSConnectionSession, error)
 	// PurgeWSConnectionSessionsBefore deletes rows with ended_unix < olderThanUnix (exclusive).

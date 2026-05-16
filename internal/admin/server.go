@@ -7,7 +7,7 @@
 //	GET    /api/config/changelog — recent config changes (?limit=)
 //	GET    /api/audit            — audit rows (?limit,&offset,&since,&until,&action,&pubkey,&kind); JSON {entries,total}
 //	GET    /api/audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); JSON {kinds:[]int}
-//	GET    /api/audit/connections — live + closed WebSocket sessions (?limit,&offset,&include_live=); JSON {retention_days,live,closed}
+//	GET    /api/audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); JSON {retention_days,live,closed,closed_total?}
 //	GET    /api/audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
@@ -49,7 +49,7 @@ import (
 //	GET      /config/changelog — recent config change records (?limit=)
 //	GET      /audit            — audit log (?limit,&offset,&since,&until,&action,&pubkey,&kind); body {entries,total}
 //	GET      /audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); body {kinds:[]int}
-//	GET      /audit/connections — live + closed WebSocket sessions (?limit,&offset,&include_live=); body {retention_days,live,closed}
+//	GET      /audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); body {retention_days,live,closed,closed_total?}
 //	GET      /audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config

@@ -59,6 +59,7 @@ func TestAuditConnectionsList_HTTP(t *testing.T) {
 			Ref    string `json:"ref"`
 			ConnID string `json:"conn_id"`
 		} `json:"closed"`
+		ClosedTotal *int64 `json:"closed_total"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -66,7 +67,60 @@ func TestAuditConnectionsList_HTTP(t *testing.T) {
 	if body.RetentionDays != 14 {
 		t.Fatalf("retention_days: got %d", body.RetentionDays)
 	}
+	if body.ClosedTotal == nil || *body.ClosedTotal != 1 {
+		t.Fatalf("closed_total: %+v", body.ClosedTotal)
+	}
 	if len(body.Closed) != 1 || body.Closed[0].ConnID != "deadbeef" {
+		t.Fatalf("closed: %+v", body.Closed)
+	}
+}
+
+func TestAuditConnectionsList_omitClosed(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := sqlite.Open(ctx, filepath.Join(dir, "conn-audit-omit.db"), nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+
+	if _, err := st.SaveWSConnectionSession(ctx, storage.WSConnectionSession{
+		ConnID:           "x",
+		PeerIP:           "1.1.1.1",
+		RemoteAddr:       "1.1.1.1:1",
+		StartedUnix:      1,
+		EndedUnix:        2,
+		TotalReq:         0,
+		TotalClientEvent: 0,
+		SeriesJSON:       []byte(`[]`),
+		SubsJSON:         []byte(`[]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	api := http.NewServeMux()
+	api.HandleFunc("GET /audit/connections", HandleAuditConnectionsList(cfg, nil, st))
+	h := RequireAdminAuth(auditHTTPTestPassword, http.StripPrefix("/api", api))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/audit/connections?include_closed=0", nil)
+	req.Header.Set("Authorization", "Bearer "+auditHTTPTestPassword)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Closed      []struct{} `json:"closed"`
+		ClosedTotal *int64     `json:"closed_total"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ClosedTotal != nil {
+		t.Fatalf("expected closed_total omitted, got %v", body.ClosedTotal)
+	}
+	if len(body.Closed) != 0 {
 		t.Fatalf("closed: %+v", body.Closed)
 	}
 }

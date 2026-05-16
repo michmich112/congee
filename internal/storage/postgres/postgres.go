@@ -661,6 +661,12 @@ func (s *Store) QueryWSConnectionSessions(ctx context.Context, q storage.WSConne
 	return out, nil
 }
 
+// CountWSConnectionSessions implements storage.Store.
+func (s *Store) CountWSConnectionSessions(ctx context.Context) (int64, error) {
+	n, err := s.db.NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).Count(ctx)
+	return int64(n), err
+}
+
 // GetWSConnectionSessionByID implements storage.Store.
 func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*storage.WSConnectionSession, error) {
 	var row storage.WSConnectionSessionRow
