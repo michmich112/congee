@@ -5,12 +5,13 @@ import (
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/rs/zerolog"
 )
 
 func TestSubscriptionManagerTotalSubscriptions(t *testing.T) {
 	t.Parallel()
 	cfg := config.DefaultConfig()
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 	if n := m.TotalSubscriptions(); n != 0 {
 		t.Fatalf("empty want 0 got %d", n)
 	}

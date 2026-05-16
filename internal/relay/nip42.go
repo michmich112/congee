@@ -11,7 +11,6 @@ import (
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/rs/zerolog"
 )
 
 const nip42AuthEventKind = 22242
@@ -149,9 +148,9 @@ func nip42EnqueueAuthChallenge(c *Conn, cfg *config.Config) error {
 }
 
 // RegisterNIP42 registers AUTH handling and publish policy validation (NIP-42).
-func RegisterNIP42(s *Server, _ storage.Store, log zerolog.Logger) {
+func RegisterNIP42(s *Server, _ storage.Store) {
 	s.RegisterMessageHandler("AUTH", func(ctx context.Context, c *Conn, msg any) error {
-		return handleNIP42AUTH(ctx, s, c, msg.(*nostr.AuthMessage), log)
+		return handleNIP42AUTH(ctx, s, c, msg.(*nostr.AuthMessage))
 	})
 	s.AppendValidator(EventValidatorFunc(func(ctx context.Context, conn *Conn, ev *nostr.Event) error {
 		_ = ctx
@@ -159,8 +158,8 @@ func RegisterNIP42(s *Server, _ storage.Store, log zerolog.Logger) {
 	}))
 }
 
-func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMessage, log zerolog.Logger) error {
-	_ = ctx
+func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMessage) error {
+	log := relayLogger(c, ctx)
 	ev := &msg.Event
 	if !relayNIP42Enabled(s.cfg) {
 		return c.sendNotice("NIP-42 is not enabled")
@@ -170,11 +169,11 @@ func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMes
 		return c.sendOK(ev.ID, false, "auth-required: no challenge was issued for this connection")
 	}
 	if err := verifyNIP42AuthEvent(s.cfg, ev, ch, time.Now()); err != nil {
-		log.Debug().Err(err).Str("conn_id", c.ID).Str("pubkey", ev.PubKey).Msg("nip42 auth rejected")
+		log.Warn().Err(err).Str("pubkey", ev.PubKey).Msg("nip42 auth rejected")
 		return c.sendOK(ev.ID, false, "auth-required: "+err.Error())
 	}
 	c.nip42AddPubkey(ev.PubKey)
-	log.Info().Str("conn_id", c.ID).Str("pubkey", ev.PubKey).Msg("nip42 authenticated")
+	log.Info().Str("pubkey", ev.PubKey).Msg("nip42 authenticated")
 	return c.sendOK(ev.ID, true, "")
 }
 

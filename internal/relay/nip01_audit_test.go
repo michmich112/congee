@@ -113,7 +113,7 @@ func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterNIP01(srv, st, zerolog.Nop())
+	RegisterNIP01(srv, st)
 	c := testConn(srv)
 	defer c.cancel()
 
@@ -126,7 +126,7 @@ func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 		Sig:       strings.Repeat("d", 128),
 	}
 	msg := &nostr.EventMessage{Event: *ev}
-	if err := handleEVENT(ctx, srv, st, c, msg, zerolog.Nop()); err != nil {
+	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
 	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
@@ -154,7 +154,7 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterNIP01(srv, st, zerolog.Nop())
+	RegisterNIP01(srv, st)
 	c := testConn(srv)
 	defer c.cancel()
 
@@ -164,7 +164,7 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 	}
 	ev := signedTestEvent(t, priv, 1)
 	msg := &nostr.EventMessage{Event: *ev}
-	if err := handleEVENT(ctx, srv, st, c, msg, zerolog.Nop()); err != nil {
+	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
 	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
@@ -185,7 +185,7 @@ func TestHandleEVENT_AuditStored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterNIP01(srv, st, zerolog.Nop())
+	RegisterNIP01(srv, st)
 	c := testConn(srv)
 	defer c.cancel()
 
@@ -195,7 +195,7 @@ func TestHandleEVENT_AuditStored(t *testing.T) {
 	}
 	ev := signedTestEvent(t, priv, 1)
 	msg := &nostr.EventMessage{Event: *ev}
-	if err := handleEVENT(ctx, srv, st, c, msg, zerolog.Nop()); err != nil {
+	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
 	row := latestAuditAction(ctx, t, st, audit.ActionEventStored)
@@ -220,7 +220,7 @@ func TestHandleEVENT_AuditEphemeral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterNIP01(srv, st, zerolog.Nop())
+	RegisterNIP01(srv, st)
 	c := testConn(srv)
 	defer c.cancel()
 
@@ -230,7 +230,7 @@ func TestHandleEVENT_AuditEphemeral(t *testing.T) {
 	}
 	ev := signedTestEvent(t, priv, 20000)
 	msg := &nostr.EventMessage{Event: *ev}
-	if err := handleEVENT(ctx, srv, st, c, msg, zerolog.Nop()); err != nil {
+	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
 	row := latestAuditAction(ctx, t, st, audit.ActionEventEphemeral)

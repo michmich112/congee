@@ -64,7 +64,7 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		registry:      NewRegistry(),
 		validators:    &ValidatorChain{},
 		hooks:         &HookChain{},
-		subs:          NewSubscriptionManager(cfg),
+		subs:          NewSubscriptionManager(cfg, log),
 		limiter:       NewLimiterHub(cfg),
 		metrics:       newRelayMetrics(),
 		metricsCtx:    mctx,
@@ -92,9 +92,14 @@ func (s *Server) AppendValidator(v EventValidator) {
 	s.validators.Append(v)
 }
 
-// AppendPostHook adds a post-accept hook.
-func (s *Server) AppendPostHook(h PostStoreHook) {
-	s.hooks.Append(h)
+// AppendPostHook adds a post-accept hook with a stable name (logged on hook failure).
+func (s *Server) AppendPostHook(name string, h PostStoreHook) {
+	s.hooks.Append(name, h)
+}
+
+// PrependPostHook adds a hook that runs before hooks registered with AppendPostHook.
+func (s *Server) PrependPostHook(name string, h PostStoreHook) {
+	s.hooks.Prepend(name, h)
 }
 
 // Subscriptions exposes the subscription manager (e.g. for tests).
@@ -247,7 +252,7 @@ func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	nc, useFlate, err := s.upgradeConn(w, r)
 	if err != nil {
-		s.log.Debug().Err(err).Str("remote", r.RemoteAddr).Msg("websocket upgrade failed")
+		s.log.Warn().Err(err).Str("remote", r.RemoteAddr).Str("peer_ip", peer).Msg("websocket upgrade failed")
 		return
 	}
 
@@ -311,6 +316,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		log:         log,
 		startedUnix: time.Now().Unix(),
 	}
+	c.log.Info().Str("peer_ip", resolvedPeerIP).Str("ws_transport", wsTransport).Msg("ws client connected")
 	defer cancel()
 
 	s.conns.Store(id, c)
@@ -337,6 +343,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		c.readLoopPlain()
 	}
 
+	c.log.Info().Msg("ws client disconnected")
 	s.persistConnAuditSession(c)
 
 	ids := s.subs.UnregisterSender(id)

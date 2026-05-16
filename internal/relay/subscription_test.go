@@ -9,13 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
 )
 
 func TestSubscriptionManagerSubIDLength(t *testing.T) {
 	cfg := minimalRelayCfg()
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 	long := make([]byte, cfg.MaxSubscriptionIDLength+1)
 	for i := range long {
 		long[i] = 'a'
@@ -35,7 +37,7 @@ func TestSubscriptionManagerSubIDLength(t *testing.T) {
 func TestSubscriptionManagerMaxSubs(t *testing.T) {
 	cfg := minimalRelayCfg()
 	cfg.ConnectionLimits.MaxSubscriptionsPerConnection = 1
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 	m.RegisterSender("c1", func([]byte) bool { return true })
 	if err := m.Add("c1", "a", nil); err != nil {
 		t.Fatal(err)
@@ -65,7 +67,7 @@ func TestFiltersMatchOR(t *testing.T) {
 
 func TestBroadcastRespectsClose(t *testing.T) {
 	cfg := minimalRelayCfg()
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 
 	var sent atomic.Int64
 	m.RegisterSender("c1", func(b []byte) bool {
@@ -107,7 +109,7 @@ func TestBroadcastRespectsClose(t *testing.T) {
 
 func TestConcurrentBroadcastRemove(t *testing.T) {
 	cfg := minimalRelayCfg()
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 
 	var sent atomic.Int64
 	m.RegisterSender("c1", func(b []byte) bool {
@@ -149,7 +151,7 @@ func TestConcurrentBroadcastRemove(t *testing.T) {
 
 func TestCloseThenBroadcastNeverSends(t *testing.T) {
 	cfg := minimalRelayCfg()
-	m := NewSubscriptionManager(cfg)
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
 
 	var sent atomic.Int64
 	m.RegisterSender("c1", func(b []byte) bool {
