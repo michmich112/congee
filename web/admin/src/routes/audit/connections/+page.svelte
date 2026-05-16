@@ -253,6 +253,19 @@
 		return `${h}h${m % 60}m`;
 	}
 
+	/** Human-readable time since `endedUnix` (disconnect). */
+	function fmtClosedAgo(endedUnix: number): string {
+		const now = Math.floor(Date.now() / 1000);
+		const sec = Math.max(0, now - endedUnix);
+		if (sec < 60) return `${sec}s ago`;
+		const m = Math.floor(sec / 60);
+		if (m < 60) return `${m}m ago`;
+		const h = Math.floor(m / 60);
+		if (h < 24) return `${h}h ago`;
+		const d = Math.floor(h / 24);
+		return `${d}d ago`;
+	}
+
 	function closedGoPrev() {
 		if (closedPage <= 1) return;
 		closedPage -= 1;
@@ -431,6 +444,9 @@
 									<Table.Head>IP</Table.Head>
 									<Table.Head class="text-right">Subs*</Table.Head>
 									<Table.Head>Duration</Table.Head>
+									<Table.Head class="whitespace-nowrap" title="Time since the connection closed"
+										>Closed</Table.Head
+									>
 									<Table.Head class="w-[7.5rem] min-w-[7.5rem] max-w-[9rem]">REQ / EVENT</Table.Head>
 								</Table.Row>
 							</Table.Header>
@@ -447,6 +463,12 @@
 										<Table.Cell class="text-xs text-muted-foreground"
 											>{fmtDuration(row.started_unix, row.ended_unix)}</Table.Cell
 										>
+										<Table.Cell
+											class="text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+											title={new Date(row.ended_unix * 1000).toISOString()}
+										>
+											{fmtClosedAgo(row.ended_unix)}
+										</Table.Cell>
 										<Table.Cell class="py-0.5 align-middle">
 											<ConnectionReqEventDeltaChart {pts} compact />
 										</Table.Cell>
