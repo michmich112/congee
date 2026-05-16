@@ -10,6 +10,7 @@ import (
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -26,12 +27,12 @@ type subEntry struct {
 	filters []nostr.Filter
 	closed  atomic.Bool
 
-	openedUnix       int64
-	initialSent      atomic.Uint64
-	initialDropped   atomic.Uint64
-	broadcastOk      atomic.Uint64
-	broadcastDrop    atomic.Uint64
-	eoseSent         atomic.Uint32
+	openedUnix     int64
+	initialSent    atomic.Uint64
+	initialDropped atomic.Uint64
+	broadcastOk    atomic.Uint64
+	broadcastDrop  atomic.Uint64
+	eoseSent       atomic.Uint32
 }
 
 // SubscriptionManager tracks REQ subscriptions per connection and broadcasts events.
@@ -45,16 +46,19 @@ type SubscriptionManager struct {
 	maxSubsPerConn int
 	maxSubIDLen    int
 	maxFilters     int
+
+	relayLog zerolog.Logger
 }
 
 // NewSubscriptionManager builds a manager from relay config slices.
-func NewSubscriptionManager(cfg *config.Config) *SubscriptionManager {
+func NewSubscriptionManager(cfg *config.Config, relayLog zerolog.Logger) *SubscriptionManager {
 	return &SubscriptionManager{
-		subs:            make(map[string]map[string]*subEntry),
-		senders:         make(map[string]func([]byte) bool),
-		maxSubsPerConn:  cfg.ConnectionLimits.MaxSubscriptionsPerConnection,
-		maxSubIDLen:     cfg.MaxSubscriptionIDLength,
-		maxFilters:      cfg.ConnectionLimits.MaxFiltersPerReq,
+		subs:           make(map[string]map[string]*subEntry),
+		senders:        make(map[string]func([]byte) bool),
+		maxSubsPerConn: cfg.ConnectionLimits.MaxSubscriptionsPerConnection,
+		maxSubIDLen:    cfg.MaxSubscriptionIDLength,
+		maxFilters:     cfg.ConnectionLimits.MaxFiltersPerReq,
+		relayLog:       relayLog,
 	}
 }
 
@@ -173,6 +177,8 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 			}
 			b, err := nostr.MarshalRelayEvent(subID, ev)
 			if err != nil {
+				m.relayLog.Error().Err(err).Str("conn_id", connID).Str("sub_id", subID).
+					Str("event_id", ev.ID).Int("kind", ev.Kind).Msg("broadcast marshal relay event failed")
 				continue
 			}
 			ok := send(b)
@@ -180,6 +186,8 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 				entry.broadcastOk.Add(1)
 			} else {
 				entry.broadcastDrop.Add(1)
+				m.relayLog.Debug().Str("conn_id", connID).Str("sub_id", subID).
+					Str("event_id", ev.ID).Msg("broadcast send queue full or closed")
 			}
 		}
 	}

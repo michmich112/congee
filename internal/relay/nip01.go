@@ -15,9 +15,9 @@ import (
 )
 
 // RegisterNIP01 wires NIP-01 validation, hooks, and message handlers.
-func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
+func RegisterNIP01(s *Server, store storage.Store) {
 	s.AppendValidator(EventValidatorFunc(nip01ValidateSig))
-	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
+	s.AppendPostHook("nip01_audit_event", func(ctx context.Context, env HookEnv) error {
 		action := audit.ActionEventEphemeral
 		if env.Stored {
 			action = audit.ActionEventStored
@@ -25,7 +25,7 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 		detail := fmt.Sprintf("event_id=%s conn_id=%s kind=%d", env.Event.ID, env.Conn.ID, env.Event.Kind)
 		return audit.Log(ctx, store, action, detail, env.Event.PubKey)
 	})
-	s.AppendPostHook(func(ctx context.Context, env HookEnv) error {
+	s.AppendPostHook("nip01_broadcast_event", func(ctx context.Context, env HookEnv) error {
 		_ = ctx
 		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
 			return nil
@@ -34,13 +34,13 @@ func RegisterNIP01(s *Server, store storage.Store, log zerolog.Logger) {
 		return nil
 	})
 	s.RegisterMessageHandler("EVENT", func(ctx context.Context, c *Conn, msg any) error {
-		return handleEVENT(ctx, s, store, c, msg.(*nostr.EventMessage), log)
+		return handleEVENT(ctx, s, store, c, msg.(*nostr.EventMessage))
 	})
 	s.RegisterMessageHandler("REQ", func(ctx context.Context, c *Conn, msg any) error {
-		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage), log, false)
+		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage), false)
 	})
 	s.RegisterMessageHandler("CLOSE", func(ctx context.Context, c *Conn, msg any) error {
-		handleCLOSE(ctx, s, c, msg.(*nostr.CloseMessage), log)
+		handleCLOSE(ctx, s, c, msg.(*nostr.CloseMessage))
 		return nil
 	})
 }
@@ -50,23 +50,28 @@ func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
 	return ev.VerifySig()
 }
 
-func logEventRejected(ctx context.Context, store storage.Store, log zerolog.Logger, c *Conn, ev *nostr.Event, reason string) {
+func logEventRejected(ctx context.Context, store storage.Store, c *Conn, ev *nostr.Event, reason string) {
+	log := relayLogger(c, ctx)
 	detail := fmt.Sprintf("event_id=%s conn_id=%s reason=%s kind=%d",
 		ev.ID, c.ID, audit.SanitizeAuditDetailFragment(reason), ev.Kind)
 	if err := audit.Log(ctx, store, audit.ActionEventRejected, detail, ev.PubKey); err != nil {
-		log.Error().Err(err).Str("conn_id", c.ID).Msg("audit save failed for event_rejected")
+		log.Error().Err(err).Msg("audit save failed for event_rejected")
 	}
 }
 
-func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage, log zerolog.Logger) error {
+func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage) error {
+	log := relayLogger(c, ctx)
 	ev := &msg.Event
-	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Str("conn_id", c.ID).Msg("event received")
+	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Msg("event received")
 	if err := s.validators.Validate(ctx, c, ev); err != nil {
 		if s.metrics != nil {
 			s.metrics.IncEventsRejected()
 		}
 		reason := err.Error()
-		logEventRejected(ctx, store, log, c, ev, reason)
+		san := audit.SanitizeAuditDetailFragment(reason)
+		log.Warn().Str("audit_action", "event_rejected").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
+			Int("kind", ev.Kind).Str("reason", san).Msg("event rejected")
+		logEventRejected(ctx, store, c, ev, reason)
 		if strings.HasPrefix(reason, "auth-required:") {
 			_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		}
@@ -81,7 +86,7 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		}
 		env := HookEnv{Conn: c, Event: ev, Stored: false}
 		if err := s.hooks.Run(ctx, env); err != nil {
-			log.Error().Err(err).Str("pubkey", ev.PubKey).Str("conn_id", c.ID).Msg("post-hook error")
+			log.Error().Err(err).Str("pubkey", ev.PubKey).Msg("post-hook error")
 		}
 		return nil
 	}
@@ -90,7 +95,9 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 			s.metrics.IncEventsRejected()
 		}
 		reason := err.Error()
-		logEventRejected(ctx, store, log, c, ev, reason)
+		log.Warn().Err(err).Str("audit_action", "event_rejected").Str("operation", "SaveEvent").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
+			Int("kind", ev.Kind).Str("reason", audit.SanitizeAuditDetailFragment(reason)).Msg("event rejected: store save failed")
+		logEventRejected(ctx, store, c, ev, reason)
 		return c.sendOK(ev.ID, false, reason)
 	}
 	if s.metrics != nil {
@@ -98,7 +105,7 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	}
 	env := HookEnv{Conn: c, Event: ev, Stored: true}
 	if err := s.hooks.Run(ctx, env); err != nil {
-		log.Error().Err(err).Str("pubkey", ev.PubKey).Str("conn_id", c.ID).Msg("post-hook error")
+		log.Error().Err(err).Str("pubkey", ev.PubKey).Msg("post-hook error")
 	}
 	if err := c.sendOK(ev.ID, true, ""); err != nil {
 		return err
@@ -106,7 +113,8 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 	return nil
 }
 
-func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, log zerolog.Logger, searchEnabled bool) error {
+func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, searchEnabled bool) error {
+	log := relayLogger(c, ctx)
 	if s.metrics != nil {
 		s.metrics.IncReq()
 	}
@@ -128,18 +136,29 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		case errors.Is(err, ErrTooManySubscriptions):
 			return c.sendClosed(msg.SubID, "too many subscriptions")
 		default:
-			log.Debug().Err(err).Str("conn_id", c.ID).Msg("req rejected")
+			log.Warn().Err(err).Str("sub_id", msg.SubID).Msg("req subscription add rejected")
 			return c.sendClosed(msg.SubID, err.Error())
 		}
 	}
 	t0 := time.Now()
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
 	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled, defaultLimit)
+	durationMs := time.Since(t0).Milliseconds()
 	if s.metrics != nil {
 		s.metrics.RecordQueryLatency(time.Since(t0))
 	}
 	if err != nil {
-		log.Error().Err(err).Str("conn_id", c.ID).Msg("query failed")
+		hasSearch := false
+		for i := range msg.Filters {
+			if msg.Filters[i].HasSearch() {
+				hasSearch = true
+				break
+			}
+		}
+		LogStoreErr(log, zerolog.ErrorLevel, "REQ.QueryInitial", err, "req query failed", func(e *zerolog.Event) {
+			e.Str("sub_id", msg.SubID).Int("filter_count", len(msg.Filters)).Bool("search_enabled", searchEnabled).
+				Bool("filter_has_search", hasSearch).Int64("duration_ms", durationMs)
+		})
 		return c.sendClosed(msg.SubID, "internal error")
 	}
 	for _, ev := range events {
@@ -148,7 +167,11 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		}
 		err := c.sendEvent(msg.SubID, ev)
 		if err != nil {
-			log.Debug().Err(err).Str("conn_id", c.ID).Msg("send event skipped")
+			if errors.Is(err, ErrSlowConsumer) {
+				log.Warn().Err(err).Str("sub_id", msg.SubID).Str("event_id", ev.ID).Msg("send buffer full: initial event skipped")
+			} else {
+				log.Debug().Err(err).Str("sub_id", msg.SubID).Str("event_id", ev.ID).Msg("send event skipped")
+			}
 		}
 		s.subs.NoteSubInitialDelivery(c.ID, msg.SubID, err == nil)
 	}
@@ -159,12 +182,13 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 	return nil
 }
 
-func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessage, log zerolog.Logger) {
+func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessage) {
 	_ = ctx
 	c.sendClosed(msg.SubID, "")
 	s.subs.Remove(c.ID, msg.SubID)
 	if s.metrics != nil {
 		s.metrics.IncClose()
 	}
-	log.Debug().Str("conn_id", c.ID).Str("sub_id", msg.SubID).Msg("subscription closed")
+	cl := relayLogger(c, ctx)
+	cl.Debug().Str("sub_id", msg.SubID).Msg("subscription closed")
 }

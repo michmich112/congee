@@ -69,9 +69,13 @@ func (c *Conn) writeLoop() {
 	wd := time.Duration(c.server.cfg.ConnectionLimits.WriteDeadlineSeconds) * time.Second
 	for b := range c.send {
 		if err := c.nc.SetWriteDeadline(time.Now().Add(wd)); err != nil {
+			c.log.Warn().Err(err).Msg("websocket set write deadline failed")
 			return
 		}
 		if err := wsutil.WriteServerMessage(c.nc, ws.OpText, b); err != nil {
+			if !isBenignClose(err) {
+				c.log.Warn().Err(err).Msg("websocket write failed")
+			}
 			return
 		}
 	}
@@ -238,6 +242,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		if c.server.metrics != nil {
 			c.server.metrics.IncRateLimitMessages()
 		}
+		c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: too many messages from this IP")
 		_ = c.sendNotice("rate limited: too many messages from this IP")
 		return
 	}
@@ -245,6 +250,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		if c.server.metrics != nil {
 			c.server.metrics.IncRateLimitBandwidth()
 		}
+		c.log.Warn().Str("peer_ip", c.peerIP).Int("payload_bytes", len(payload)).Msg("rate limited: bandwidth")
 		_ = c.sendNotice("rate limited: bandwidth")
 		return
 	}
@@ -267,6 +273,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			if c.server.metrics != nil {
 				c.server.metrics.IncRateLimitEvents()
 			}
+			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: events")
 			_ = c.sendNotice("rate limited: events")
 			return
 		}
@@ -275,6 +282,7 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			if c.server.metrics != nil {
 				c.server.metrics.IncRateLimitReqs()
 			}
+			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: subscription requests")
 			_ = c.sendNotice("rate limited: subscription requests")
 			return
 		}
@@ -283,12 +291,15 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			if c.server.metrics != nil {
 				c.server.metrics.IncRateLimitReqs()
 			}
+			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: subscription requests (auth)")
 			_ = c.sendNotice("rate limited: subscription requests")
 			return
 		}
 	}
-	if err := c.server.registry.Dispatch(c.ctx, c, msg); err != nil {
-		c.log.Debug().Err(err).
+	dispatchCtx := WithMsgID(c.ctx, newMsgID())
+	if err := c.server.registry.Dispatch(dispatchCtx, c, msg); err != nil {
+		dl := relayLogger(c, dispatchCtx)
+		dl.Warn().Err(err).
 			Str("remote_addr", c.remoteAddr).
 			Str("ws_transport", c.wsTransport).
 			Msg("dispatch error")

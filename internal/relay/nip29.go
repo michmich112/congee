@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -28,7 +29,7 @@ func nip29MaxPastSec(cfg *config.Config) int64 {
 // relay-signed 9001, private read gating).
 // Remaining optional gaps: closed-group invite codes (9009 + code tag), publishing/updating 39003 roles,
 // keeping 39001 in sync on every moderation action.
-func RegisterNIP29(s *Server, store storage.Store, log zerolog.Logger) {
+func RegisterNIP29(s *Server, store storage.Store) {
 	if !nip29Enabled(s.cfg) {
 		return
 	}
@@ -47,8 +48,8 @@ func RegisterNIP29(s *Server, store storage.Store, log zerolog.Logger) {
 	s.AppendValidator(EventValidatorFunc(func(ctx context.Context, conn *Conn, ev *nostr.Event) error {
 		return nip29ValidateModerationAndJoinLeave(ctx, store, s, conn, ev)
 	}))
-	s.hooks.Prepend(func(ctx context.Context, env HookEnv) error {
-		return nip29PostStoreHook(ctx, s, store, env, log)
+	s.PrependPostHook("nip29_post_store", func(ctx context.Context, env HookEnv) error {
+		return nip29PostStoreHook(ctx, s, store, env)
 	})
 }
 
@@ -193,25 +194,32 @@ func nip29ValidateModerationAndJoinLeave(ctx context.Context, store storage.Stor
 	}
 }
 
-func nip29PostStoreHook(ctx context.Context, s *Server, store storage.Store, env HookEnv, log zerolog.Logger) error {
+func nip29PostStoreHook(ctx context.Context, s *Server, store storage.Store, env HookEnv) error {
 	if !nip29Enabled(s.cfg) || !env.Stored || env.Event == nil || s.relayID == nil {
 		return nil
 	}
 	ev := env.Event
 	gid := nostr.NIP29GroupHTag(ev)
+	log := relayLogger(env.Conn, ctx)
 	if gid != "" {
 		if err := nip29EnsureGroupMetadata(ctx, s, store, gid); err != nil {
-			log.Debug().Err(err).Str("group_id", gid).Msg("nip29 ensure group metadata failed")
+			LogStoreErr(log, zerolog.WarnLevel, "nip29EnsureGroupMetadata", err, "nip29 ensure group metadata failed", func(e *zerolog.Event) {
+				e.Str("group_id", gid).Str("event_id", ev.ID)
+			})
 		}
 	}
 	if ev.Kind == nostr.NIP29KindJoinRequest {
 		if err := nip29RelayPutUser(ctx, s, store, ev); err != nil {
-			log.Debug().Err(err).Str("group_id", gid).Msg("nip29 relay put-user after join failed")
+			LogStoreErr(log, zerolog.WarnLevel, "nip29RelayPutUser", err, "nip29 relay put-user after join failed", func(e *zerolog.Event) {
+				e.Str("group_id", gid).Str("event_id", ev.ID)
+			})
 		}
 	}
 	if ev.Kind == nostr.NIP29KindLeaveReq {
 		if err := nip29RelayRemoveUser(ctx, s, store, ev); err != nil {
-			log.Debug().Err(err).Str("group_id", gid).Msg("nip29 relay remove-user failed")
+			LogStoreErr(log, zerolog.WarnLevel, "nip29RelayRemoveUser", err, "nip29 relay remove-user failed", func(e *zerolog.Event) {
+				e.Str("group_id", gid).Str("event_id", ev.ID)
+			})
 		}
 	}
 	return nil
@@ -296,6 +304,14 @@ func (s *Server) subscriptionEventVisible(connID string, ev *nostr.Event) bool {
 	return s.EventVisibleToSubscription(connID, ev)
 }
 
+// nip29VisibilityLog prefers the live connection logger (conn_id); falls back to server log.
+func nip29VisibilityLog(s *Server, connID string) zerolog.Logger {
+	if v, ok := s.conns.Load(connID); ok {
+		return v.(*Conn).log
+	}
+	return s.log
+}
+
 // EventVisibleToSubscription applies NIP-29 private-group read rules using NIP-42 authenticated pubkeys on the connection.
 func (s *Server) EventVisibleToSubscription(connID string, ev *nostr.Event) bool {
 	if !nip29Enabled(s.cfg) || s.relayID == nil || ev == nil {
@@ -308,7 +324,17 @@ func (s *Server) EventVisibleToSubscription(connID string, ev *nostr.Event) bool
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	md, err := s.store.GetLatestGroupMetadata39000(ctx, s.relayID.PubKeyHex(), h)
-	if err != nil || md == nil || !nostr.NIP29MetadataIsPrivate(md) {
+	if err != nil {
+		// Privacy over availability: if we cannot read group metadata, withhold the event.
+		// Store implementations map sql.ErrNoRows to (nil, nil), not to err — real errors include DB failures and context deadline.
+		log := nip29VisibilityLog(s, connID)
+		LogStoreErr(log, zerolog.WarnLevel, "GetLatestGroupMetadata39000", err, "nip29 visibility metadata fetch failed; withholding event", func(e *zerolog.Event) {
+			e.Str("conn_id", connID).Str("group_id", h).Str("event_id", ev.ID).Int("kind", ev.Kind).
+				Bool("context_deadline_exceeded", errors.Is(err, context.DeadlineExceeded))
+		})
+		return false
+	}
+	if md == nil || !nostr.NIP29MetadataIsPrivate(md) {
 		return true
 	}
 	v, ok := s.conns.Load(connID)
@@ -323,7 +349,13 @@ func (s *Server) EventVisibleToSubscription(connID string, ev *nostr.Event) bool
 	rpk := s.relayID.PubKeyHex()
 	for _, pk := range pks {
 		member, err := s.store.IsGroupMember(ctx, rpk, h, pk)
-		if err == nil && member {
+		if err != nil {
+			vl := relayLogger(c, context.Background())
+			vl.Debug().Err(err).Str("operation", "IsGroupMember").
+				Str("group_id", h).Str("pubkey", pk).Str("event_id", ev.ID).Msg("nip29 visibility member check failed")
+			continue
+		}
+		if member {
 			return true
 		}
 	}
