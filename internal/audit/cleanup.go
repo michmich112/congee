@@ -25,10 +25,14 @@ func StartRetentionLoop(ctx context.Context, store storage.Store, retentionDays 
 				n, err := store.PurgeAuditLog(context.Background(), cutoff)
 				if err != nil {
 					log.Error().Err(err).Msg("audit purge failed")
-					continue
-				}
-				if n > 0 {
+				} else if n > 0 {
 					log.Info().Int64("rows", n).Msg("audit purge completed")
+				}
+				wsn, err := store.PurgeWSConnectionSessionsBefore(context.Background(), cutoff)
+				if err != nil {
+					log.Error().Err(err).Msg("ws connection session purge failed")
+				} else if wsn > 0 {
+					log.Info().Int64("rows", wsn).Msg("ws connection session purge completed")
 				}
 			}
 		}

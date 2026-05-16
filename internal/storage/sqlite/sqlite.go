@@ -162,12 +162,16 @@ func (s *Store) runWrite(ctx context.Context, run func(ctx context.Context, db b
 	case <-s.baseCtx.Done():
 		return s.closedErr
 	}
+	// Always wait for the writer to finish once the task is queued. The closure may
+	// capture caller-stack values that the writer mutates during the query (e.g. bun
+	// RETURNING scans into a row struct). Returning early on ctx.Done() would race
+	// with those writes.
 	select {
 	case err := <-done:
 		return err
-	case <-ctx.Done():
-		return ctx.Err()
 	case <-s.baseCtx.Done():
+		err := <-done
+		_ = err
 		return s.closedErr
 	}
 }
@@ -796,6 +800,86 @@ func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, 
 	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
 		res, err := db.NewDelete().Model((*storage.AuditLogRow)(nil)).
 			Where("created_at < ?", olderThanUnix).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+		v, err := res.RowsAffected()
+		n = v
+		return err
+	})
+	return n, err
+}
+
+func (s *Store) SaveWSConnectionSession(ctx context.Context, e storage.WSConnectionSession) (int64, error) {
+	var insertedID int64
+	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+		row := storage.WSConnectionSessionToRow(e)
+		_, err := db.NewInsert().Model(&row).Returning("id").Exec(ctx)
+		if err != nil {
+			return err
+		}
+		insertedID = row.ID
+		return nil
+	})
+	return insertedID, err
+}
+
+// QueryWSConnectionSessions implements storage.Store (newest ended first).
+func (s *Store) QueryWSConnectionSessions(ctx context.Context, q storage.WSConnectionSessionQuery) ([]storage.WSConnectionSession, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := q.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	var rows []storage.WSConnectionSessionRow
+	err := s.db.NewSelect().Model(&rows).
+		Order("ended_unix DESC", "id DESC").
+		Limit(limit).
+		Offset(offset).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]storage.WSConnectionSession, len(rows))
+	for i := range rows {
+		out[i] = storage.WSConnectionSessionFromRow(rows[i])
+	}
+	return out, nil
+}
+
+// CountWSConnectionSessions implements storage.Store.
+func (s *Store) CountWSConnectionSessions(ctx context.Context) (int64, error) {
+	n, err := s.db.NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).Count(ctx)
+	return int64(n), err
+}
+
+// GetWSConnectionSessionByID implements storage.Store.
+func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*storage.WSConnectionSession, error) {
+	var row storage.WSConnectionSessionRow
+	err := s.db.NewSelect().Model(&row).Where("id = ?", id).Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	e := storage.WSConnectionSessionFromRow(row)
+	return &e, nil
+}
+
+// PurgeWSConnectionSessionsBefore implements storage.Store.
+func (s *Store) PurgeWSConnectionSessionsBefore(ctx context.Context, olderThanUnix int64) (int64, error) {
+	var n int64
+	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+		res, err := db.NewDelete().Model((*storage.WSConnectionSessionRow)(nil)).
+			Where("ended_unix < ?", olderThanUnix).
 			Exec(ctx)
 		if err != nil {
 			return err

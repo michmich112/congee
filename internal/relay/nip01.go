@@ -146,11 +146,17 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, l
 		if !s.EventVisibleToSubscription(c.ID, ev) {
 			continue
 		}
-		if err := c.sendEvent(msg.SubID, ev); err != nil {
+		err := c.sendEvent(msg.SubID, ev)
+		if err != nil {
 			log.Debug().Err(err).Str("conn_id", c.ID).Msg("send event skipped")
 		}
+		s.subs.NoteSubInitialDelivery(c.ID, msg.SubID, err == nil)
 	}
-	return c.sendEOSE(msg.SubID)
+	if err := c.sendEOSE(msg.SubID); err != nil {
+		return err
+	}
+	s.subs.NoteSubEOSE(c.ID, msg.SubID)
+	return nil
 }
 
 func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessage, log zerolog.Logger) {

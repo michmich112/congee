@@ -135,6 +135,7 @@ func (s *Server) Serve(ln net.Listener) error {
 				return s.subs.TotalSubscriptions()
 			})
 		}
+		go s.connAuditSampler()
 	})
 	s.http.Addr = ln.Addr().String()
 	return s.http.Serve(ln)
@@ -308,6 +309,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		cancel:      cancel,
 		limiter:     s.limiter.NewConnLimiter(),
 		log:         log,
+		startedUnix: time.Now().Unix(),
 	}
 	defer cancel()
 
@@ -334,6 +336,8 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	} else {
 		c.readLoopPlain()
 	}
+
+	s.persistConnAuditSession(c)
 
 	ids := s.subs.UnregisterSender(id)
 	for _, sid := range ids {

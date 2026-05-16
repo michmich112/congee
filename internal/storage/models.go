@@ -66,3 +66,19 @@ type RelayMetricBucketRow struct {
 	QueryMsCount        int64 `bun:"query_ms_count,notnull"`
 	SubscriptionsOpen   int64 `bun:"subscriptions_open,notnull"`
 }
+
+// WSConnectionSessionRow is one closed WebSocket relay session (admin connections audit).
+type WSConnectionSessionRow struct {
+	bun.BaseModel `bun:"table:ws_connection_sessions"`
+
+	ID               int64  `bun:"id,pk,autoincrement"`
+	ConnID           string `bun:"conn_id,notnull"`
+	PeerIP           string `bun:"peer_ip,notnull"`
+	RemoteAddr       string `bun:"remote_addr,notnull"`
+	StartedUnix      int64  `bun:"started_unix,notnull"`
+	EndedUnix        int64  `bun:"ended_unix,notnull"`
+	TotalReq         int64  `bun:"total_req,notnull"`
+	TotalClientEvent int64  `bun:"total_client_event,notnull"`
+	SeriesJSON       string `bun:"series_json,notnull"`
+	SubsJSON         string `bun:"subs_json,notnull"`
+}

@@ -9,6 +9,7 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
+	import Activity from '@lucide/svelte/icons/activity';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Network from '@lucide/svelte/icons/network';
 	import Database from '@lucide/svelte/icons/database';
@@ -47,6 +48,7 @@
 	let relayVersion = $state<string | null>(null);
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
+	let auditNavOpen = $state(true);
 	let sidebarCollapsed = $state(false);
 
 	const SIDEBAR_COLLAPSED_KEY = 'congee-admin-sidebar-collapsed';
@@ -66,8 +68,12 @@
 	type IconComponent = Component<{ class?: string }>;
 
 	const mainNav: { href: string; label: string; Icon: IconComponent }[] = [
-		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard },
-		{ href: '/audit', label: 'Audit', Icon: ClipboardList }
+		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard }
+	];
+
+	const auditNav: { href: string; label: string; Icon: IconComponent }[] = [
+		{ href: '/audit/events', label: 'Events', Icon: ClipboardList },
+		{ href: '/audit/connections', label: 'Connections', Icon: Activity }
 	];
 
 	const configNav: { href: string; label: string; Icon: IconComponent }[] = [
@@ -117,6 +123,9 @@
 	$effect(() => {
 		if (page.url.pathname.startsWith('/config')) {
 			configNavOpen = true;
+		}
+		if (page.url.pathname.startsWith('/audit')) {
+			auditNavOpen = true;
 		}
 	});
 
@@ -274,6 +283,32 @@
 							</a>
 						{/each}
 						{#if !sidebarCollapsed}
+							<Collapsible.Root bind:open={auditNavOpen} class="space-y-1">
+								<Collapsible.Trigger
+									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+								>
+									<ClipboardList class="size-4 shrink-0 opacity-80" />
+									<span class="flex-1 font-medium">Audit</span>
+									<ChevronDown
+										class={cn(
+											'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+											auditNavOpen ? 'rotate-180' : ''
+										)}
+									/>
+								</Collapsible.Trigger>
+								<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
+									{#each auditNav as item}
+										<a
+											href={item.href}
+											class={configChildClass(item.href, false)}
+											aria-current={configChildActive(item.href) ? 'page' : undefined}
+										>
+											<item.Icon class="size-3.5 shrink-0 opacity-75" />
+											{item.label}
+										</a>
+									{/each}
+								</Collapsible.Content>
+							</Collapsible.Root>
 							<Collapsible.Root bind:open={configNavOpen} class="space-y-1">
 								<Collapsible.Trigger
 									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -301,6 +336,17 @@
 								</Collapsible.Content>
 							</Collapsible.Root>
 						{:else}
+							<div class="mx-auto my-0.5 h-px w-6 shrink-0 bg-border" aria-hidden="true"></div>
+							{#each auditNav as item}
+								<a
+									href={item.href}
+									class={configChildClass(item.href, true)}
+									aria-current={configChildActive(item.href) ? 'page' : undefined}
+									title={item.label}
+								>
+									<item.Icon class="size-4 shrink-0 opacity-75" />
+								</a>
+							{/each}
 							<div class="mx-auto my-0.5 h-px w-6 shrink-0 bg-border" aria-hidden="true"></div>
 							{#each configNav as item}
 								<a
@@ -368,6 +414,23 @@
 											onclick={() => (mobileNavOpen = false)}
 										>
 											<item.Icon class="size-4 shrink-0 opacity-80" />
+											{item.label}
+										</a>
+									{/each}
+									<p
+										class="text-muted-foreground flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-medium tracking-wide uppercase"
+									>
+										<ClipboardList class="size-3.5 shrink-0 opacity-70" />
+										Audit
+									</p>
+									{#each auditNav as item}
+										<a
+											href={item.href}
+											class={configChildClass(item.href, false)}
+											aria-current={configChildActive(item.href) ? 'page' : undefined}
+											onclick={() => (mobileNavOpen = false)}
+										>
+											<item.Icon class="size-3.5 shrink-0 opacity-75" />
 											{item.label}
 										</a>
 									{/each}

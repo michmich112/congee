@@ -72,7 +72,8 @@
 			<Card.Header>
 				<Card.Title class="text-base">Stored audit log</Card.Title>
 				<Card.Description>
-					How long relay audit rows are kept in the database (see also the Audit page for live entries).
+					How long relay audit rows are kept in the database (see also Audit → Events for search and Audit →
+					Connections for WebSocket session history).
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="pt-0">
