@@ -1,7 +1,7 @@
-/** Polling interval (seconds) for Audit → Connections detail view. */
+/** Polling interval (seconds) for Audit → Connections; 0 means off. */
 export const LS_ADMIN_CONN_REFRESH_SEC = 'congee-admin-conn-refresh-sec';
 
-export const ADMIN_CONN_REFRESH_ALLOWED = [3, 5, 10, 30, 60] as const;
+export const ADMIN_CONN_REFRESH_ALLOWED = [0, 3, 5, 10, 30, 60] as const;
 export type AdminConnRefreshSec = (typeof ADMIN_CONN_REFRESH_ALLOWED)[number];
 
 export function isAdminConnRefreshSec(n: number): n is AdminConnRefreshSec {
