@@ -162,12 +162,16 @@ func (s *Store) runWrite(ctx context.Context, run func(ctx context.Context, db b
 	case <-s.baseCtx.Done():
 		return s.closedErr
 	}
+	// Always wait for the writer to finish once the task is queued. The closure may
+	// capture caller-stack values that the writer mutates during the query (e.g. bun
+	// RETURNING scans into a row struct). Returning early on ctx.Done() would race
+	// with those writes.
 	select {
 	case err := <-done:
 		return err
-	case <-ctx.Done():
-		return ctx.Err()
 	case <-s.baseCtx.Done():
+		err := <-done
+		_ = err
 		return s.closedErr
 	}
 }
@@ -808,12 +812,17 @@ func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, 
 }
 
 func (s *Store) SaveWSConnectionSession(ctx context.Context, e storage.WSConnectionSession) (int64, error) {
-	row := storage.WSConnectionSessionToRow(e)
+	var insertedID int64
 	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+		row := storage.WSConnectionSessionToRow(e)
 		_, err := db.NewInsert().Model(&row).Returning("id").Exec(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		insertedID = row.ID
+		return nil
 	})
-	return row.ID, err
+	return insertedID, err
 }
 
 // QueryWSConnectionSessions implements storage.Store (newest ended first).
