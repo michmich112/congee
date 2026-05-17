@@ -120,22 +120,3 @@ func nip17GiftWrapVisibleToSubscription(s *Server, connID string, ev *nostr.Even
 	}
 	return false
 }
-
-// nip17SubscribeAuthRequiresAuth reports whether REQ filters may load kind 1059 and therefore need NIP-42 first.
-func nip17SubscribeAuthRequiresAuth(cfg *config.Config, filters []nostr.Filter) bool {
-	if !nip17Enabled(cfg) {
-		return false
-	}
-	for i := range filters {
-		f := &filters[i]
-		if len(f.Kinds) == 0 {
-			return true
-		}
-		for _, k := range f.Kinds {
-			if k == nip17KindGiftWrap {
-				return true
-			}
-		}
-	}
-	return false
-}

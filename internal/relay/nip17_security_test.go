@@ -66,41 +66,43 @@ func signedGiftWrapEvent(t *testing.T, wrapPriv *btcec.PrivateKey, recipientPubH
 	return ev
 }
 
+func signedKind1Note(t *testing.T, priv *btcec.PrivateKey) *nostr.Event {
+	t.Helper()
+	pub := priv.PubKey()
+	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
+	ev := &nostr.Event{
+		PubKey:    pubHex,
+		CreatedAt: 1700001000,
+		Kind:      1,
+		Content:   "hello public",
+		Tags:      [][]string{},
+	}
+	if _, err := ev.ComputeID(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ev.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+	return ev
+}
+
+func assertOutboundHasNoAuthLeak(t *testing.T, types []string) {
+	t.Helper()
+	for _, typ := range types {
+		if typ == "CLOSED" {
+			t.Fatal("unexpected CLOSED in NIP-17 query-first snapshot path")
+		}
+		if typ == "AUTH" {
+			t.Fatal("unexpected AUTH in NIP-17 query-first snapshot path")
+		}
+	}
+}
+
 func registerTestConnLargeSend(t *testing.T, srv *Server, id string) *Conn {
 	t.Helper()
 	c := registerTestConn(t, srv, id)
 	c.send = make(chan []byte, 64)
 	return c
-}
-
-func drainAuthThenReadClosed(t *testing.T, c *Conn) (closedMsg string) {
-	t.Helper()
-	for {
-		var arr []any
-		select {
-		case b := <-c.send:
-			if err := json.Unmarshal(b, &arr); err != nil {
-				t.Fatalf("outbound json: %v", err)
-			}
-			if len(arr) == 0 {
-				t.Fatal("empty outbound frame")
-			}
-			typ, _ := arr[0].(string)
-			switch typ {
-			case "AUTH":
-				continue
-			case "CLOSED":
-				if len(arr) > 2 {
-					closedMsg, _ = arr[2].(string)
-				}
-				return closedMsg
-			default:
-				t.Fatalf("unexpected frame type %q, want AUTH or CLOSED", typ)
-			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("timeout waiting for CLOSED")
-		}
-	}
 }
 
 func drainOutboundChan(t *testing.T, c *Conn, max int) []string {
@@ -135,7 +137,7 @@ func registerNIP01NIP42NIP17(srv *Server, st storage.Store) {
 	RegisterNIP17(srv, st)
 }
 
-func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuthClosed(t *testing.T) {
+func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuth_EmptySnapshotNoLeak(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("a", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -158,13 +160,14 @@ func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuthClosed(t *testing.T) {
 	if err := handleREQ(ctx, srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	msg := drainAuthThenReadClosed(t, c)
-	if !strings.Contains(msg, "auth-required") {
-		t.Fatalf("CLOSED message should mention auth-required, got %q", msg)
+	types := drainOutboundChan(t, c, 8)
+	assertOutboundHasNoAuthLeak(t, types)
+	if len(types) != 1 || types[0] != "EOSE" {
+		t.Fatalf("want only EOSE (gift wrap withheld without AUTH), got %#v", types)
 	}
 }
 
-func TestHandleREQ_NIP17_Kinds1059WithoutAuthClosed(t *testing.T) {
+func TestHandleREQ_NIP17_Kinds1059WithoutAuth_EmptySnapshotNoLeak(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("b", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -186,9 +189,10 @@ func TestHandleREQ_NIP17_Kinds1059WithoutAuthClosed(t *testing.T) {
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	msg := drainAuthThenReadClosed(t, c)
-	if !strings.Contains(msg, "auth-required") {
-		t.Fatalf("CLOSED message should mention auth-required, got %q", msg)
+	types := drainOutboundChan(t, c, 8)
+	assertOutboundHasNoAuthLeak(t, types)
+	if len(types) != 1 || types[0] != "EOSE" {
+		t.Fatalf("want only EOSE without AUTH, got %#v", types)
 	}
 }
 
@@ -270,8 +274,7 @@ func TestHandleREQ_NIP17_Kinds1AndIDGiftWrap_NoAuth_NoLeak(t *testing.T) {
 	}
 	registerNIP01NIP42NIP17(srv, st)
 	c := registerTestConnLargeSend(t, srv, "req-narrow-noauth")
-	// Contradictory filter: kind 1 AND this id — cannot match a 1059; must not require NIP-17 AUTH
-	// but also must never surface the wrap.
+	// kind 1 AND this id cannot match a 1059; DB returns nothing; empty snapshot without leaking the wrap.
 	req := &nostr.ReqMessage{
 		SubID: "sub1",
 		Filters: []nostr.Filter{{
@@ -293,7 +296,7 @@ func TestHandleREQ_NIP17_Kinds1AndIDGiftWrap_NoAuth_NoLeak(t *testing.T) {
 	}
 }
 
-func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyRequiresAuth(t *testing.T) {
+func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyWithoutAuth_Withholds1059(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("1", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -318,26 +321,67 @@ func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyRequiresAuth(t *testing.T) {
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	msg := drainAuthThenReadClosed(t, c)
-	if !strings.Contains(msg, "auth-required") {
-		t.Fatalf("CLOSED message should mention auth-required, got %q", msg)
+	types := drainOutboundChan(t, c, 8)
+	assertOutboundHasNoAuthLeak(t, types)
+	if len(types) != 1 || types[0] != "EOSE" {
+		t.Fatalf("want only EOSE (1059 from OR branch withheld), got %#v", types)
 	}
 }
 
-func TestNIP17SubscribeAuthRequiresAuth_MultiFilterAnyWildcardKinds(t *testing.T) {
+func TestHandleREQ_NIP17_IDsOnlyUnknownId_EmptyStore(t *testing.T) {
 	t.Parallel()
-	cfg := nip17SecurityTestCfg()
-	if !nip17SubscribeAuthRequiresAuth(cfg, []nostr.Filter{
-		{Kinds: []int{1}},
-		{IDs: []string{strings.Repeat("a", 64)}},
-	}) {
-		t.Fatal("expected auth when one filter has wildcard kinds (ids-only)")
+	alice := strings.Repeat("a", 64)
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if nip17SubscribeAuthRequiresAuth(cfg, []nostr.Filter{
-		{Kinds: []int{1}},
-		{Kinds: []int{2}},
-	}) {
-		t.Fatal("kinds [1] and [2] only should not require NIP-17 auth")
+	wrap := signedGiftWrapEvent(t, priv, alice)
+	st := &nip17FilterStore{pool: []*nostr.Event{wrap}}
+	srv, err := NewServer(nip17SecurityTestCfg(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerNIP01NIP42NIP17(srv, st)
+	c := registerTestConnLargeSend(t, srv, "req-unknown-id")
+	req := &nostr.ReqMessage{
+		SubID:   "sub1",
+		Filters: []nostr.Filter{{IDs: []string{strings.Repeat("9", 64)}}},
+	}
+	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
+		t.Fatal(err)
+	}
+	types := drainOutboundChan(t, c, 8)
+	assertOutboundHasNoAuthLeak(t, types)
+	if len(types) != 1 || types[0] != "EOSE" {
+		t.Fatalf("want only EOSE for unknown id, got %#v", types)
+	}
+}
+
+func TestHandleREQ_NIP17_IDsOnlyKind1WithoutAuth_Delivers(t *testing.T) {
+	t.Parallel()
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := signedKind1Note(t, priv)
+	st := &nip17FilterStore{pool: []*nostr.Event{note}}
+	srv, err := NewServer(nip17SecurityTestCfg(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerNIP01NIP42NIP17(srv, st)
+	c := registerTestConnLargeSend(t, srv, "req-kind1-noauth")
+	req := &nostr.ReqMessage{
+		SubID:   "sub1",
+		Filters: []nostr.Filter{{IDs: []string{note.ID}}},
+	}
+	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
+		t.Fatal(err)
+	}
+	types := drainOutboundChan(t, c, 8)
+	assertOutboundHasNoAuthLeak(t, types)
+	if len(types) < 2 || types[0] != "EVENT" || types[len(types)-1] != "EOSE" {
+		t.Fatalf("want EVENT then EOSE for kind 1 without AUTH, got %#v", types)
 	}
 }
 

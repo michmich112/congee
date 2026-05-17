@@ -4,32 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/rs/zerolog"
 )
-
-func TestNIP17SubscribeAuthRequiresAuth(t *testing.T) {
-	t.Parallel()
-	cfg17 := &config.Config{
-		NIPs: config.NIPsSection{Enabled: []int{1, 11, 17, 42}},
-	}
-	if nip17SubscribeAuthRequiresAuth(cfg17, []nostr.Filter{{Kinds: []int{1}}}) {
-		t.Fatal("kind 1 only should not require auth for NIP-17")
-	}
-	if !nip17SubscribeAuthRequiresAuth(cfg17, []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}}}) {
-		t.Fatal("kind 1059 filter should require auth")
-	}
-	if !nip17SubscribeAuthRequiresAuth(cfg17, []nostr.Filter{{}}) {
-		t.Fatal("wildcard kinds should require auth when NIP-17 enabled")
-	}
-	cfgNo17 := &config.Config{
-		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
-	}
-	if nip17SubscribeAuthRequiresAuth(cfgNo17, []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}}}) {
-		t.Fatal("1059 filter without NIP-17 should not trigger NIP-17 auth rule")
-	}
-}
 
 func TestEventVisibleToSubscriptionGiftWrapRecipientMatch(t *testing.T) {
 	t.Parallel()

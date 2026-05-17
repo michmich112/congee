@@ -123,7 +123,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
 		}
 	}
-	if (subscribeAuthRequired(s.cfg, msg.Filters) || nip17SubscribeAuthRequiresAuth(s.cfg, msg.Filters)) && !c.nip42HasAnyAuth() {
+	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
 	}
@@ -161,6 +161,8 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 		})
 		return c.sendClosed(msg.SubID, "internal error")
 	}
+	// NIP-17: REQ is not rejected upfront for filters that might return kind 1059; we query first.
+	// Gift wraps are withheld per connection via EventVisibleToSubscription unless NIP-42 AUTH matches a p tag.
 	for _, ev := range events {
 		if !s.EventVisibleToSubscription(c.ID, ev) {
 			continue
