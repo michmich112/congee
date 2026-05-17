@@ -35,6 +35,59 @@ type migrationStartRequest struct {
 	MakeTargetPrimary bool              `json:"make_target_primary"`
 }
 
+type migrationTargetPreflightRequest struct {
+	Target migrationEndpoint `json:"target"`
+}
+
+func handleMigrationTargetPreflight(log zerolog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req migrationTargetPreflightRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Warn().Err(err).Str("handler", "migration_target_preflight").Msg("invalid json body")
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Target.Type) == "" {
+			log.Warn().Str("handler", "migration_target_preflight").Msg("target.type missing")
+			http.Error(w, "target.type is required", http.StatusBadRequest)
+			return
+		}
+
+		l := log.With().Str("handler", "migration_target_preflight").Logger()
+		ctx := r.Context()
+		migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("migration target preflight")
+
+		var out storage.MigrationTargetPreflight
+		switch migrationCanonicalDBType(req.Target.Type) {
+		case "postgres":
+			out = postgres.PreflightMigrationTarget(ctx, req.Target.DSN, l)
+		case "sqlite":
+			out = sqlite.PreflightMigrationTarget(ctx, req.Target.DSN, l)
+		default:
+			out = storage.MigrationTargetPreflight{
+				Status:          storage.MigrationPreflightUnreadable,
+				ExpectedVersion: postgres.CurrentSchemaVersion(),
+				Detail:          fmt.Sprintf("unsupported target type %q (use sqlite or postgres)", req.Target.Type),
+			}
+		}
+		if out.Status == "" {
+			out.Status = storage.MigrationPreflightUnreadable
+			if out.Detail == "" {
+				out.Detail = "preflight returned empty status"
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(out); err != nil {
+			log.Warn().Err(err).Str("handler", "migration_target_preflight").Msg("encode response failed")
+		}
+	}
+}
+
 // migrationLogConn adds non-secret fields so operators can correlate failures with DSN shape.
 // Call on a *zerolog.Event before .Msg(...).
 func migrationLogConn(ev *zerolog.Event, role string, typ, dsn string) *zerolog.Event {
