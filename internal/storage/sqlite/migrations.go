@@ -10,70 +10,62 @@ import (
 
 const schemaVersion = 6
 
-func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
-	var version int
-	row := db.QueryRowContext(ctx, "PRAGMA user_version")
-	if err := row.Scan(&version); err != nil {
-		return fmt.Errorf("sqlite: read user_version: %w", err)
-	}
-	log.Debug().Int("user_version", version).Msg("schema: read user_version")
-	if version > schemaVersion {
-		return fmt.Errorf("sqlite: unsupported schema version %d (need <= %d)", version, schemaVersion)
-	}
-	if version == schemaVersion {
-		log.Debug().Msg("schema: already at current version")
-		return nil
-	}
+// CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
+func CurrentSchemaVersion() int { return schemaVersion }
 
-	if version == 0 {
-		log.Debug().Msg("schema: user_version 0; applying fresh schema")
-		if err := migrateFresh(ctx, db, log); err != nil {
-			return err
+func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	for {
+		var version int
+		row := db.QueryRowContext(ctx, "PRAGMA user_version")
+		if err := row.Scan(&version); err != nil {
+			return fmt.Errorf("sqlite: read user_version: %w", err)
 		}
-		log.Debug().Msg("schema: fresh schema applied")
-		return nil
-	}
-	if version == 1 {
-		log.Debug().Msg("schema: migrating v1 to v2")
-		if err := migrateV1ToV2(ctx, db, log); err != nil {
-			return err
+		log.Debug().Int("user_version", version).Msg("schema: read user_version")
+		if version > schemaVersion {
+			return fmt.Errorf("sqlite: unsupported schema version %d (need <= %d)", version, schemaVersion)
 		}
-		log.Debug().Msg("schema: v1 to v2 complete")
-		return nil
-	}
-	if version == 2 {
-		log.Debug().Msg("schema: migrating v2 to v3")
-		if err := migrateV2ToV3(ctx, db, log); err != nil {
-			return err
+		if version == schemaVersion {
+			log.Debug().Msg("schema: already at current version")
+			return nil
 		}
-		log.Debug().Msg("schema: v2 to v3 complete")
-		return nil
-	}
-	if version == 3 {
-		log.Debug().Msg("schema: migrating v3 to v4")
-		if err := migrateV3ToV4(ctx, db, log); err != nil {
-			return err
+		if version == 0 {
+			log.Debug().Msg("schema: user_version 0; applying fresh schema")
+			if err := migrateFresh(ctx, db, log); err != nil {
+				return err
+			}
+			log.Debug().Msg("schema: fresh schema applied")
+			return nil
 		}
-		log.Debug().Msg("schema: v3 to v4 complete")
-		return nil
-	}
-	if version == 4 {
-		log.Debug().Msg("schema: migrating v4 to v5")
-		if err := migrateV4ToV5(ctx, db, log); err != nil {
-			return err
+		switch version {
+		case 1:
+			log.Debug().Msg("schema: migrating v1 to v2")
+			if err := migrateV1ToV2(ctx, db, log); err != nil {
+				return err
+			}
+		case 2:
+			log.Debug().Msg("schema: migrating v2 to v3")
+			if err := migrateV2ToV3(ctx, db, log); err != nil {
+				return err
+			}
+		case 3:
+			log.Debug().Msg("schema: migrating v3 to v4")
+			if err := migrateV3ToV4(ctx, db, log); err != nil {
+				return err
+			}
+		case 4:
+			log.Debug().Msg("schema: migrating v4 to v5")
+			if err := migrateV4ToV5(ctx, db, log); err != nil {
+				return err
+			}
+		case 5:
+			log.Debug().Msg("schema: migrating v5 to v6")
+			if err := migrateV5ToV6(ctx, db, log); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("sqlite: unsupported schema version %d", version)
 		}
-		log.Debug().Msg("schema: v4 to v5 complete")
-		return nil
 	}
-	if version == 5 {
-		log.Debug().Msg("schema: migrating v5 to v6")
-		if err := migrateV5ToV6(ctx, db, log); err != nil {
-			return err
-		}
-		log.Debug().Msg("schema: v5 to v6 complete")
-		return nil
-	}
-	return fmt.Errorf("sqlite: unsupported schema version %d", version)
 }
 
 func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
@@ -198,9 +190,19 @@ func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 }
 
 func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
-	log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
-	if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN subscriptions_open INTEGER NOT NULL DEFAULT 0`); err != nil {
+	var colCount int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('relay_metric_buckets') WHERE name = 'subscriptions_open'`,
+	).Scan(&colCount); err != nil {
 		return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
+	}
+	if colCount == 0 {
+		log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
+		if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN subscriptions_open INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
+		}
+	} else {
+		log.Debug().Msg("schema v3->v4: subscriptions_open already present; skipping alter")
 	}
 	log.Debug().Msg("schema v3->v4: set user_version 4")
 	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 4`); err != nil {

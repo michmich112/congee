@@ -10,6 +10,9 @@ import (
 
 const schemaVersion = 6
 
+// CurrentSchemaVersion is the congee_schema_version / app-expected value for this binary.
+func CurrentSchemaVersion() int { return schemaVersion }
+
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	var evExists bool
 	q := `SELECT EXISTS (
@@ -29,60 +32,50 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		return nil
 	}
 
-	var version int
-	err := db.QueryRowContext(ctx, `SELECT version FROM congee_schema_version WHERE id = 1`).Scan(&version)
-	if err != nil {
-		return fmt.Errorf("postgres: read schema version: %w", err)
-	}
-	log.Debug().Int("schema_version", version).Msg("schema: read version row")
-	if version > schemaVersion {
-		return fmt.Errorf("postgres: unsupported schema version %d (need <= %d)", version, schemaVersion)
-	}
-	if version == schemaVersion {
-		log.Debug().Msg("schema: already at current version")
-		return nil
-	}
-	if version == 1 {
-		log.Debug().Msg("schema: migrating v1 to v2")
-		if err := migrateV1ToV2(ctx, db, log); err != nil {
-			return err
+	for {
+		var version int
+		err := db.QueryRowContext(ctx, `SELECT version FROM congee_schema_version WHERE id = 1`).Scan(&version)
+		if err != nil {
+			return fmt.Errorf("postgres: read schema version: %w", err)
 		}
-		log.Debug().Msg("schema: v1 to v2 complete")
-		return nil
-	}
-	if version == 2 {
-		log.Debug().Msg("schema: migrating v2 to v3")
-		if err := migrateV2ToV3(ctx, db, log); err != nil {
-			return err
+		log.Debug().Int("schema_version", version).Msg("schema: read version row")
+		if version > schemaVersion {
+			return fmt.Errorf("postgres: unsupported schema version %d (need <= %d)", version, schemaVersion)
 		}
-		log.Debug().Msg("schema: v2 to v3 complete")
-		return nil
-	}
-	if version == 3 {
-		log.Debug().Msg("schema: migrating v3 to v4")
-		if err := migrateV3ToV4(ctx, db, log); err != nil {
-			return err
+		if version == schemaVersion {
+			log.Debug().Msg("schema: already at current version")
+			return nil
 		}
-		log.Debug().Msg("schema: v3 to v4 complete")
-		return nil
-	}
-	if version == 4 {
-		log.Debug().Msg("schema: migrating v4 to v5")
-		if err := migrateV4ToV5(ctx, db, log); err != nil {
-			return err
+		switch version {
+		case 1:
+			log.Debug().Msg("schema: migrating v1 to v2")
+			if err := migrateV1ToV2(ctx, db, log); err != nil {
+				return err
+			}
+		case 2:
+			log.Debug().Msg("schema: migrating v2 to v3")
+			if err := migrateV2ToV3(ctx, db, log); err != nil {
+				return err
+			}
+		case 3:
+			log.Debug().Msg("schema: migrating v3 to v4")
+			if err := migrateV3ToV4(ctx, db, log); err != nil {
+				return err
+			}
+		case 4:
+			log.Debug().Msg("schema: migrating v4 to v5")
+			if err := migrateV4ToV5(ctx, db, log); err != nil {
+				return err
+			}
+		case 5:
+			log.Debug().Msg("schema: migrating v5 to v6")
+			if err := migrateV5ToV6(ctx, db, log); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("postgres: unsupported schema version %d", version)
 		}
-		log.Debug().Msg("schema: v4 to v5 complete")
-		return nil
 	}
-	if version == 5 {
-		log.Debug().Msg("schema: migrating v5 to v6")
-		if err := migrateV5ToV6(ctx, db, log); err != nil {
-			return err
-		}
-		log.Debug().Msg("schema: v5 to v6 complete")
-		return nil
-	}
-	return fmt.Errorf("postgres: unsupported schema version %d", version)
 }
 
 func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {

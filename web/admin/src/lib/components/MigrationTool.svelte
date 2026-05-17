@@ -7,6 +7,7 @@
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { ButtonGroup } from '$lib/components/ui/button-group';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -55,6 +56,15 @@
 		  }
 		| { ok: false; message: string };
 
+	type TargetPreflight = {
+		status: string;
+		expected_version: number;
+		reported_version?: number;
+		has_events_table: boolean;
+		has_version_table: boolean;
+		detail: string;
+	};
+
 	let source = $state<Endpoint>({ type: '', dsn: '' });
 	let target = $state<Endpoint>({ type: 'postgres', dsn: '' });
 	let sourceHydrated = $state(false);
@@ -63,6 +73,9 @@
 	let progressPct = $state(0);
 	let progressMsg = $state('');
 	let outcome = $state<MigrationOutcome | null>(null);
+	let schemaMismatchOpen = $state(false);
+	let schemaMismatchBody = $state('');
+	let pendingMakeTargetPrimary = $state(false);
 
 	function canonicalDbType(t: string): 'sqlite' | 'postgres' {
 		const x = (t || '').trim().toLowerCase();
@@ -111,7 +124,95 @@
 		outcome = { ok: false, message };
 	}
 
-	async function startMigration(makeTargetPrimary: boolean) {
+	async function runMigrationSSE(makeTargetPrimary: boolean) {
+		const res = await adminFetch('/api/migration/start', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				source: { type: source.type, dsn: source.dsn.trim() },
+				target: { type: target.type, dsn: target.dsn.trim() },
+				make_target_primary: makeTargetPrimary
+			})
+		});
+		if (res.status === 409) {
+			setFailed('Another migration is already running.');
+			return;
+		}
+		if (!res.ok || !res.body) {
+			let errText = '';
+			try {
+				errText = (await res.text()).trim();
+			} catch {
+				/* ignore */
+			}
+			setFailed(errText ? `HTTP ${res.status}: ${errText}` : `HTTP ${res.status}`);
+			return;
+		}
+		const reader = res.body.getReader();
+		const dec = new TextDecoder();
+		let buf = '';
+		while (true) {
+			const { value, done: ended } = await reader.read();
+			if (value) buf += dec.decode(value, { stream: true });
+			const { events, rest } = parseSSEChunk(buf);
+			buf = rest;
+			for (const e of events) {
+				if (e.event === 'progress') {
+					try {
+						const j = JSON.parse(e.data) as { percent?: number; message?: string };
+						if (typeof j.percent === 'number') progressPct = Math.min(100, Math.max(0, j.percent));
+						if (typeof j.message === 'string') progressMsg = j.message;
+					} catch {
+						/* ignore */
+					}
+				}
+				if (e.event === 'error') {
+					try {
+						const j = JSON.parse(e.data) as { message?: string };
+						setFailed(j.message ?? e.data);
+					} catch {
+						setFailed(e.data);
+					}
+				}
+				if (e.event === 'done') {
+					progressPct = 100;
+					try {
+						const j = JSON.parse(e.data) as {
+							summary?: MigrationSummary;
+							make_target_primary?: boolean;
+							config_updated?: boolean;
+							restart_required?: boolean;
+							restarting?: boolean;
+							config_error?: string;
+							target_type?: string;
+							target_dsn_nonsecret?: string;
+						};
+						if (j.summary) {
+							outcome = {
+								ok: true,
+								summary: j.summary,
+								make_target_primary: j.make_target_primary === true,
+								config_updated: j.config_updated === true,
+								restart_required: j.restart_required === true,
+								restarting: j.restarting === true,
+								config_error: typeof j.config_error === 'string' ? j.config_error : undefined,
+								target_type: typeof j.target_type === 'string' ? j.target_type : target.type,
+								target_hint:
+									typeof j.target_dsn_nonsecret === 'string' ? j.target_dsn_nonsecret : ''
+							};
+						} else {
+							setFailed('Migration finished but response had no summary.');
+						}
+					} catch {
+						setFailed('Could not parse migration result.');
+					}
+				}
+			}
+			if (ended) break;
+		}
+	}
+
+	async function requestMigrationStart(makeTargetPrimary: boolean) {
 		progressPct = 0;
 		progressMsg = '';
 		outcome = null;
@@ -127,92 +228,83 @@
 			setFailed('Target DSN or path is required.');
 			return;
 		}
+
 		busy = true;
 		try {
-			const res = await adminFetch('/api/migration/start', {
+			const pfRes = await adminFetch('/api/migration/target-preflight', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					source: { type: source.type, dsn: source.dsn.trim() },
-					target: { type: target.type, dsn: target.dsn.trim() },
-					make_target_primary: makeTargetPrimary
+					target: { type: target.type, dsn: target.dsn.trim() }
 				})
 			});
-			if (res.status === 409) {
-				setFailed('Another migration is already running.');
-				return;
-			}
-			if (!res.ok || !res.body) {
-				setFailed(`HTTP ${res.status}`);
-				return;
-			}
-			const reader = res.body.getReader();
-			const dec = new TextDecoder();
-			let buf = '';
-			while (true) {
-				const { value, done: ended } = await reader.read();
-				if (value) buf += dec.decode(value, { stream: true });
-				const { events, rest } = parseSSEChunk(buf);
-				buf = rest;
-				for (const e of events) {
-					if (e.event === 'progress') {
-						try {
-							const j = JSON.parse(e.data) as { percent?: number; message?: string };
-							if (typeof j.percent === 'number') progressPct = Math.min(100, Math.max(0, j.percent));
-							if (typeof j.message === 'string') progressMsg = j.message;
-						} catch {
-							/* ignore */
-						}
-					}
-					if (e.event === 'error') {
-						try {
-							const j = JSON.parse(e.data) as { message?: string };
-							setFailed(j.message ?? e.data);
-						} catch {
-							setFailed(e.data);
-						}
-					}
-					if (e.event === 'done') {
-						progressPct = 100;
-						try {
-							const j = JSON.parse(e.data) as {
-								summary?: MigrationSummary;
-								make_target_primary?: boolean;
-								config_updated?: boolean;
-								restart_required?: boolean;
-								restarting?: boolean;
-								config_error?: string;
-								target_type?: string;
-								target_dsn_nonsecret?: string;
-							};
-							if (j.summary) {
-								outcome = {
-									ok: true,
-									summary: j.summary,
-									make_target_primary: j.make_target_primary === true,
-									config_updated: j.config_updated === true,
-									restart_required: j.restart_required === true,
-									restarting: j.restarting === true,
-									config_error: typeof j.config_error === 'string' ? j.config_error : undefined,
-									target_type: typeof j.target_type === 'string' ? j.target_type : target.type,
-									target_hint:
-										typeof j.target_dsn_nonsecret === 'string' ? j.target_dsn_nonsecret : ''
-								};
-							} else {
-								setFailed('Migration finished but response had no summary.');
-							}
-						} catch {
-							setFailed('Could not parse migration result.');
-						}
-					}
+			if (!pfRes.ok) {
+				let errText = '';
+				try {
+					errText = (await pfRes.text()).trim();
+				} catch {
+					/* ignore */
 				}
-				if (ended) break;
+				setFailed(errText ? `Preflight HTTP ${pfRes.status}: ${errText}` : `Preflight HTTP ${pfRes.status}`);
+				return;
 			}
+			let pf: TargetPreflight;
+			try {
+				pf = (await pfRes.json()) as TargetPreflight;
+			} catch {
+				setFailed('Could not parse preflight response.');
+				return;
+			}
+
+			if (pf.status === 'ahead') {
+				setFailed(pf.detail || 'Target schema is newer than this relay binary.');
+				return;
+			}
+			if (pf.status === 'unreadable') {
+				setFailed(pf.detail || 'Could not read target schema.');
+				return;
+			}
+			if (pf.status === 'behind') {
+				const rep =
+					typeof pf.reported_version === 'number' ? String(pf.reported_version) : 'unknown';
+				const exp = String(pf.expected_version ?? '?');
+				schemaMismatchBody =
+					(pf.detail ? pf.detail + '\n\n' : '') +
+					`Reported schema version: ${rep}. This binary expects: ${exp}.\n\n` +
+					'Continuing will apply database schema migrations (DDL) on the target, then copy data.';
+				pendingMakeTargetPrimary = makeTargetPrimary;
+				schemaMismatchOpen = true;
+				return;
+			}
+
+			await runMigrationSSE(makeTargetPrimary);
 		} catch (e) {
 			setFailed(e instanceof Error ? e.message : 'request failed');
 		} finally {
 			busy = false;
 		}
+	}
+
+	function onSchemaMismatchContinue() {
+		schemaMismatchOpen = false;
+		const makePrimary = pendingMakeTargetPrimary;
+		progressPct = 0;
+		progressMsg = '';
+		outcome = null;
+		busy = true;
+		void (async () => {
+			try {
+				await runMigrationSSE(makePrimary);
+			} catch (e) {
+				setFailed(e instanceof Error ? e.message : 'request failed');
+			} finally {
+				busy = false;
+			}
+		})();
+	}
+
+	async function startMigration(makeTargetPrimary: boolean) {
+		await requestMigrationStart(makeTargetPrimary);
 	}
 
 	function fmtCounts(c: MigrationCounts): string {
@@ -277,6 +369,15 @@
 					<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
 					<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
 				</div>
+				{#if canonicalDbType(target.type) === 'postgres'}
+					<Alert.Root class="border-amber-500/40 bg-amber-500/5">
+						<Alert.Title>Postgres target</Alert.Title>
+						<Alert.Description>
+							Ensure no other Congee instance (or app using the same DSN) writes to this database until
+							the migration completes. Concurrent writers can corrupt the copy.
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
 			</div>
 		</div>
 
@@ -388,3 +489,16 @@
 		</ButtonGroup>
 	</Card.Content>
 </Card.Root>
+
+<Dialog.Root bind:open={schemaMismatchOpen}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>Schema mismatch</Dialog.Title>
+			<Dialog.Description class="whitespace-pre-wrap text-left">{schemaMismatchBody}</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer class="gap-2 sm:justify-end">
+			<Button type="button" variant="outline" onclick={() => (schemaMismatchOpen = false)}>Cancel</Button>
+			<Button type="button" onclick={onSchemaMismatchContinue}>Continue</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

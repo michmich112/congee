@@ -15,6 +15,7 @@
 //	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage snapshot, series.buckets (UTC minutes), recent_query_latency; ports + relay_version
 //	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
 //	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
+//	POST   /api/migration/target-preflight  — read-only target schema inspection (JSON)
 //
 // Non-API GET requests: CONGEE_ENV dev|development|local reverse-proxies to http://127.0.0.1:5173;
 // if Vite is unreachable, falls back to web/admin/build when index.html exists (e.g. after make ui-build).
@@ -57,6 +58,7 @@ import (
 //	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{bytes,events,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
 //	GET      /relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 //	POST     /migration/start  — data migration (SSE); body may set make_target_primary to update config
+//	POST     /migration/target-preflight  — JSON { target }; schema status for migration UI
 //
 // Non-API routes: CONGEE_ENV dev|development|local → reverse proxy to Vite :5173 (GET/HEAD only);
 // otherwise static files from web/admin/build with SPA fallback to index.html.
@@ -129,6 +131,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/stats            — dashboard metrics (connections, subscriptions, uptime, counters, storage, series, recent_query_latency)
 	//   GET      /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 	//   POST     /api/migration/start  — sqlite/postgres copy; SSE progress events
+	//   POST     /api/migration/target-preflight  — JSON target schema check (no DDL)
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
 	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart, relayID).ServeHTTP)
@@ -143,6 +146,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
+	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
 
