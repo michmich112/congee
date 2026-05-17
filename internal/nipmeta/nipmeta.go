@@ -46,6 +46,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/29.md",
 		Mandatory: false,
 	},
+	17: {
+		Number:    17,
+		Title:     "Private Direct Messages",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/17.md",
+		Mandatory: false,
+	},
 }
 
 // IsKnown reports whether n is present in the registry.

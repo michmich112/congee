@@ -46,6 +46,20 @@ func TestValidateRejectsNIP29NegativeLatePublication(t *testing.T) {
 	}
 }
 
+func TestValidateNIP17RequiresNIP42(t *testing.T) {
+	c := minimalValidConfig()
+	c.NIPs.Enabled = []int{1, 11, 17}
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error when NIP 17 is enabled without NIP 42")
+	}
+	c2 := minimalValidConfig()
+	c2.NIPs.Enabled = []int{1, 11, 17, 42}
+	c2.NIP42.RelayURL = "wss://relay.example/"
+	if err := c2.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func minimalValidConfig() *Config {
 	return &Config{
 		Relay:    RelaySection{Port: 3334},
