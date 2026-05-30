@@ -3,6 +3,7 @@
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { parseIntSafe } from '$lib/app-config';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
+	import StatInfoIcon from '$lib/components/StatInfoIcon.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
@@ -14,19 +15,24 @@
 
 	const ctx = getAdminConfig();
 
+	let nip17Open = $state(false);
 	let nip29Open = $state(false);
+
+	const NIP17_REJECT_GIFT_WRAP_INFO =
+		'When NIP-17 is off, clients may still publish kind 1059 gift wraps to this relay. With this enabled, those events are rejected before storage and are never relayed to subscribers, so they are not kept without NIP-17 recipient-scoped delivery. Disable only if you intentionally accept gift wraps without NIP-17 privacy rules.';
 
 	function draft() {
 		return ctx.draft!;
 	}
 
+	const nip17Enabled = $derived(draft().nips.enabled.includes(17));
 	const nip29Enabled = $derived(draft().nips.enabled.includes(29));
 </script>
 
 <div class="space-y-6">
 	<AdminPageHeading
 		title="Functionalities"
-		subtitle="Optional NIPs and per-NIP options such as NIP-29 relay groups."
+		subtitle="Optional NIPs and per-NIP options such as NIP-17 private DMs and NIP-29 relay groups."
 		Icon={Puzzle}
 	/>
 	<section id="section-nips" class="space-y-4 scroll-mt-8">
@@ -40,7 +46,114 @@
 		<Card.Content class="p-0">
 			<ul class="divide-y divide-border">
 				{#each ctx.nipCatalog as nip (nip.number)}
-					{#if nip.number === 29}
+					{#if nip.number === 17}
+						<li class="block">
+							<Collapsible.Root bind:open={nip17Open} class="block">
+								<div
+									class="flex flex-wrap items-center justify-between gap-4 px-4 py-3"
+								>
+									<div class="min-w-0 flex-1 space-y-1">
+										<div class="flex flex-wrap items-center gap-2">
+											{#if nip.github_url}
+												<a
+													href={nip.github_url}
+													class="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+													target="_blank"
+													rel="noreferrer">NIP-{nip.number}</a
+												>
+											{:else}
+												<span class="font-mono text-sm font-medium">NIP-{nip.number}</span>
+											{/if}
+											{#if nip.mandatory}
+												<Badge variant="secondary">mandatory</Badge>
+											{:else if draft().nips.enabled.includes(nip.number)}
+												<Badge>enabled</Badge>
+											{:else}
+												<Badge variant="outline">disabled</Badge>
+											{/if}
+										</div>
+										<p class="text-sm text-muted-foreground">{nip.title}</p>
+									</div>
+									<div class="flex items-center gap-2">
+										<Collapsible.Trigger
+											class="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-sm font-medium hover:bg-muted/60"
+										>
+											<ChevronDown
+												class={cn(
+													'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+													nip17Open ? 'rotate-180' : ''
+												)}
+											/>
+											NIP-17 settings
+										</Collapsible.Trigger>
+										{#if nip.mandatory}
+											<span class="text-sm text-muted-foreground">Always on</span>
+										{:else}
+											<Switch
+												id="nip-{nip.number}"
+												checked={draft().nips.enabled.includes(nip.number)}
+												disabled={nip.mandatory ||
+													(!nip.implemented && !draft().nips.enabled.includes(nip.number))}
+												aria-label={nip.mandatory
+													? `NIP-${nip.number}, mandatory (always enabled)`
+													: `Enable NIP-${nip.number} in configuration`}
+												onCheckedChange={(on) => {
+													draft().nips.enabled = ctx.setNipEnabled(draft().nips.enabled, nip.number, on, nip);
+													ctx.markDirty();
+												}}
+											/>
+										{/if}
+									</div>
+								</div>
+								<Collapsible.Content>
+									<div class="space-y-4 border-t border-border bg-muted/15 px-4 py-4">
+										<div>
+											<p class="text-sm font-medium">NIP-17 private direct messages</p>
+											<p class="mt-1 text-xs text-muted-foreground">
+												When NIP-17 is enabled, gift wraps (kind 1059) are stored and only delivered to
+												NIP-42-authenticated recipients tagged in <code
+													class="rounded bg-muted px-1 text-[0.7rem]">p</code
+												>. NIP-42 must also be enabled in configuration.
+											</p>
+										</div>
+										{#if nip17Enabled}
+											<p class="text-sm text-muted-foreground">
+												Reject-when-disabled does not apply while NIP-17 is enabled.
+											</p>
+										{/if}
+										<div
+											class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+										>
+											<div class="space-y-1">
+												<div class="flex flex-wrap items-center gap-1.5">
+													<Label
+														for="nip17-reject-gw"
+														class="text-sm font-medium {nip17Enabled ? 'opacity-50' : ''}"
+													>
+														Reject kind 1059 (encrypted DMs) when disabled
+													</Label>
+													<StatInfoIcon info={NIP17_REJECT_GIFT_WRAP_INFO} />
+												</div>
+												<p class="text-xs text-muted-foreground">
+													Applies only while NIP-17 is off. Default: on.
+												</p>
+											</div>
+											<Switch
+												id="nip17-reject-gw"
+												disabled={nip17Enabled}
+												checked={draft().nip17.reject_gift_wrap_when_disabled}
+												aria-label="Reject kind 1059 gift wraps when NIP-17 is disabled"
+												onCheckedChange={(on) => {
+													draft().nip17.reject_gift_wrap_when_disabled = on;
+													ctx.markDirty();
+												}}
+											/>
+										</div>
+									</div>
+								</Collapsible.Content>
+							</Collapsible.Root>
+						</li>
+					{:else if nip.number === 29}
 						<li class="block">
 							<Collapsible.Root bind:open={nip29Open} class="block">
 								<div

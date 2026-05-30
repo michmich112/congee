@@ -55,6 +55,9 @@ func DefaultConfig() *Config {
 			CORSAllowAnyOrigin: false,
 		},
 		NIPs: NIPsSection{Enabled: []int{1, 11}},
+		NIP17: NIP17Section{
+			RejectGiftWrapWhenDisabled: ptrBool(true),
+		},
 	}
 }
 
@@ -237,5 +240,9 @@ func validateRelayInstanceIDField(s string) error {
 }
 
 func ptrInt(v int) *int {
+	return &v
+}
+
+func ptrBool(v bool) *bool {
 	return &v
 }

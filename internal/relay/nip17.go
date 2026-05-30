@@ -21,8 +21,13 @@ func nip17Enabled(cfg *config.Config) bool {
 	return cfg != nil && slices.Contains(cfg.NIPs.Enabled, 17)
 }
 
-// RegisterNIP17 registers NIP-17 gift-wrap read gating (with NIP-42) and publish validators for kinds 1059 and 13.
+// RegisterNIP17 registers NIP-17 policy (always) and full gift-wrap handling when NIP-17 is in nips.enabled.
 func RegisterNIP17(s *Server, _ storage.Store) {
+	s.AppendValidator(EventValidatorFunc(func(ctx context.Context, conn *Conn, ev *nostr.Event) error {
+		_ = ctx
+		_ = conn
+		return nip17ValidateRejectGiftWrapWhenDisabled(s.cfg, ev)
+	}))
 	if !nip17Enabled(s.cfg) {
 		return
 	}
@@ -31,6 +36,16 @@ func RegisterNIP17(s *Server, _ storage.Store) {
 		_ = conn
 		return nip17ValidatePublishedEvent(ev)
 	}))
+}
+
+func nip17ValidateRejectGiftWrapWhenDisabled(cfg *config.Config, ev *nostr.Event) error {
+	if ev == nil || ev.Kind != nip17KindGiftWrap {
+		return nil
+	}
+	if !config.NIP17RejectGiftWrapWhenDisabled(cfg) {
+		return nil
+	}
+	return fmt.Errorf("reject: kind %d not accepted (enable NIP-17 for private direct messages)", nip17KindGiftWrap)
 }
 
 func nip17ValidatePublishedEvent(ev *nostr.Event) error {

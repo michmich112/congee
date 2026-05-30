@@ -87,6 +87,7 @@ func minimalValidConfig() *Config {
 		NIPs:                    NIPsSection{Enabled: []int{1, 11}},
 		NIP42:                   NIP42Section{},
 		NIP29:                   NIP29Section{},
+		NIP17:                   NIP17Section{},
 	}
 }
 

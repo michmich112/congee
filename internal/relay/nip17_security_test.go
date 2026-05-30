@@ -420,6 +420,74 @@ func TestBroadcast_NIP17GiftWrapNotSentToWrongAuthedSubscriber(t *testing.T) {
 	}
 }
 
+func TestHandleEVENT_NIP17_RejectGiftWrapWhenDisabledAndNIPEnabledOff(t *testing.T) {
+	t.Parallel()
+	alice := strings.Repeat("8", 64)
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrap := signedGiftWrapEvent(t, priv, alice)
+	cfg := testRelayConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 42}
+	cfg.NIP42.RelayURL = "wss://relay.example/"
+	st := &visibilityStoreStub{}
+	srv, err := NewServer(cfg, st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterNIP01(srv, st)
+	RegisterNIP17(srv, st)
+	c := registerTestConnLargeSend(t, srv, "ev-reject-gw")
+	msg := &nostr.EventMessage{Event: *wrap}
+	if err := handleEVENT(context.Background(), srv, st, c, msg); err != nil {
+		t.Fatal(err)
+	}
+	var okArr []any
+	if err := json.Unmarshal(<-c.send, &okArr); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ := okArr[2].(bool)
+	if ok {
+		t.Fatal("kind 1059 must be rejected when NIP-17 is disabled and reject_gift_wrap_when_disabled is true")
+	}
+}
+
+func TestHandleEVENT_NIP17_AllowGiftWrapWhenRejectPolicyOff(t *testing.T) {
+	t.Parallel()
+	alice := strings.Repeat("9", 64)
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrap := signedGiftWrapEvent(t, priv, alice)
+	cfg := testRelayConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 42}
+	cfg.NIP42.RelayURL = "wss://relay.example/"
+	rejectOff := false
+	cfg.NIP17.RejectGiftWrapWhenDisabled = &rejectOff
+	st := &visibilityStoreStub{}
+	srv, err := NewServer(cfg, st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterNIP01(srv, st)
+	RegisterNIP17(srv, st)
+	c := registerTestConnLargeSend(t, srv, "ev-allow-gw")
+	msg := &nostr.EventMessage{Event: *wrap}
+	if err := handleEVENT(context.Background(), srv, st, c, msg); err != nil {
+		t.Fatal(err)
+	}
+	var okArr []any
+	if err := json.Unmarshal(<-c.send, &okArr); err != nil {
+		t.Fatal(err)
+	}
+	ok, _ := okArr[2].(bool)
+	if !ok {
+		t.Fatal("kind 1059 should be accepted when reject_gift_wrap_when_disabled is false")
+	}
+}
+
 func TestHandleEVENT_NIP17_GiftWrapInvalidSigRejected(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("4", 64)
