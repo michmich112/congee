@@ -1,21 +1,32 @@
 package config
 
+import "encoding/json"
+
+// ConfigVersionCurrent is written to config_version after migration to the nips map model.
+const ConfigVersionCurrent = 1
+
 // Config matches the root object in config.example.json.
 type Config struct {
-	Relay                   RelaySection            `json:"relay"`
-	Admin                   AdminSection            `json:"admin"`
-	Database                DatabaseSection         `json:"database"`
-	Logging                 LoggingSection          `json:"logging"`
-	Audit                   AuditSection            `json:"audit"`
-	Metrics                 MetricsSection          `json:"metrics"`
-	RateLimits              RateLimitsSection       `json:"rate_limits"`
-	ConnectionLimits        ConnectionLimitsSection `json:"connection_limits"`
-	WebSocket               WebSocketSection        `json:"websocket"`
-	MaxSubscriptionIDLength int                     `json:"max_subscription_id_length"`
-	NIP11                   NIP11Section            `json:"nip11"`
-	NIP42                   NIP42Section            `json:"nip42"`
-	NIP29                   NIP29Section            `json:"nip29"`
-	NIPs                    NIPsSection             `json:"nips"`
+	ConfigVersion           int                       `json:"config_version"`
+	Relay                   RelaySection              `json:"relay"`
+	Admin                   AdminSection              `json:"admin"`
+	Database                DatabaseSection           `json:"database"`
+	Logging                 LoggingSection            `json:"logging"`
+	Audit                   AuditSection              `json:"audit"`
+	Metrics                 MetricsSection            `json:"metrics"`
+	RateLimits              RateLimitsSection         `json:"rate_limits"`
+	ConnectionLimits        ConnectionLimitsSection   `json:"connection_limits"`
+	WebSocket               WebSocketSection          `json:"websocket"`
+	MaxSubscriptionIDLength int                       `json:"max_subscription_id_length"`
+	NIP11                   NIP11Section              `json:"nip11"`
+	NIP42                   NIP42Section              `json:"nip42"`
+	NIPs                    map[string]NipPluginEntry `json:"nips"`
+}
+
+// NipPluginEntry holds enablement and plugin-owned settings for an optional NIP plugin.
+type NipPluginEntry struct {
+	Enabled  bool            `json:"enabled"`
+	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
 type RelaySection struct {
@@ -94,12 +105,9 @@ type NIP11Section struct {
 	CORSAllowAnyOrigin bool   `json:"cors_allow_any_origin"`
 }
 
-type NIPsSection struct {
-	Enabled []int `json:"enabled"`
-}
-
-// NIP42Section configures NIP-42 client authentication (optional NIP).
+// NIP42Section configures NIP-42 client authentication (optional core NIP).
 type NIP42Section struct {
+	Enabled                bool   `json:"enabled"`
 	RelayURL               string `json:"relay_url"`
 	SendChallengeOnConnect bool   `json:"send_challenge_on_connect"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
@@ -108,12 +116,4 @@ type NIP42Section struct {
 	RequireAuthSubscribeKinds []int    `json:"require_auth_subscribe_kinds"`
 	RequireAuthPublishKinds   []int    `json:"require_auth_publish_kinds"`
 	AllowlistedPubkeys        []string `json:"allowlisted_pubkeys"`
-}
-
-// NIP29Section configures NIP-29 relay-based groups (optional NIP).
-type NIP29Section struct {
-	// LatePublicationMaxPastSeconds rejects events whose created_at is more than this many seconds in the past vs relay time. Zero means use the built-in default (86400).
-	LatePublicationMaxPastSeconds int `json:"late_publication_max_past_seconds"`
-	// StrictPreviousSameH requires each "previous" id prefix to resolve to an event whose "h" tag matches the publishing event's group id.
-	StrictPreviousSameH bool `json:"strict_previous_same_h"`
 }

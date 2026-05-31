@@ -1,0 +1,3 @@
+["OK","\u003cEVENT_ID\u003e",true,""]
+["EVENT","sub-golden",{"content":"golden note","created_at":"\u003cCREATED_AT\u003e","id":"\u003cEVENT_ID\u003e","kind":1,"pubkey":"79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798","sig":"\u003cSIG\u003e","tags":[]}]
+["EOSE","sub-golden"]

@@ -10,8 +10,8 @@
 //	GET    /api/audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); JSON {retention_days,live,closed,closed_total?}
 //	GET    /api/audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
-//	GET    /api/nips             — known NIPs + enabled flags
-//	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
+//	GET    /api/nips             — plugin catalog (manifest, schema, values, capabilities)
+//	PATCH  /api/nips/{id}        — update optional plugin enabled/settings; restart_required
 //	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage snapshot, series.buckets (UTC minutes), recent_query_latency; ports + relay_version
 //	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
 //	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
@@ -53,8 +53,8 @@ import (
 //	GET      /audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); body {retention_days,live,closed,closed_total?}
 //	GET      /audit/connections/{ref} — session detail; ref is live:{conn_id} or session:{numeric_id}
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
-//	GET      /nips             — known NIPs + enabled flags from config
-//	PATCH    /nips             — toggle optional NIP; restart_required in response
+//	GET      /nips             — plugin catalog from registry + config
+//	PATCH    /nips/{id}       — update optional plugin enabled/settings
 //	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{bytes,events,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
 //	GET      /relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 //	POST     /migration/start  — data migration (SSE); body may set make_target_primary to update config
@@ -126,8 +126,8 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/audit/connections — ws session audit list
 	//   GET      /api/audit/connections/{ref} — ws session audit detail (live: or session: ref)
 	//   GET      /api/events/{id}      — one event from storage by id
-	//   GET      /api/nips             — known NIPs + enabled flags
-	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
+	//   GET      /api/nips             — plugin catalog (manifest, schema, values, capabilities)
+	//   PATCH    /api/nips/{id}        — update optional plugin enabled/settings; restart_required
 	//   GET      /api/stats            — dashboard metrics (connections, subscriptions, uptime, counters, storage, series, recent_query_latency)
 	//   GET      /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 	//   POST     /api/migration/start  — sqlite/postgres copy; SSE progress events
@@ -142,7 +142,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /audit", HandleAudit(store).ServeHTTP)
 	api.HandleFunc("GET /events/{id}", handleGetEvent(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
-	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
+	api.HandleFunc("PATCH /nips/{id}", handleNIPPluginPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))

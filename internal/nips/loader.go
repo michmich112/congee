@@ -1,9 +1,8 @@
 package nips
 
 import (
-	"fmt"
-
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/nips/registry"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
@@ -11,30 +10,7 @@ import (
 
 // LoadEnabled registers pipeline components for each enabled NIP in config.
 func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log zerolog.Logger) error {
-	relay.RegisterNIP01(s, store)
-	seen := map[int]struct{}{1: {}}
-	for _, n := range cfg.NIPs.Enabled {
-		if _, ok := seen[n]; ok {
-			continue
-		}
-		seen[n] = struct{}{}
-		switch n {
-		case 2:
-			// NIP-02 (follow lists): kind 3 replaceable events are already handled by NIP-01.
-			// Listing NIP 2 in nips.enabled only affects NIP-11 advertisement and admin toggles.
-		case 11:
-			// NIP-11 JSON is always served on GET /; listing 11 in nips.enabled affects supported_nips and admin toggles.
-		case 42:
-			relay.RegisterNIP42(s, store)
-		case 50:
-			relay.RegisterNIP50(s, store)
-		case 29:
-			relay.RegisterNIP29(s, store)
-		default:
-			return fmt.Errorf("nips: NIP %d is not implemented in the loader", n)
-		}
-	}
-	return nil
+	return registry.Load(cfg, s, store, log)
 }
 
 // IsImplemented reports whether the relay loader can register this NIP today.

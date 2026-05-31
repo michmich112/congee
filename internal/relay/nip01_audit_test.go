@@ -42,7 +42,7 @@ func testRelayConfig() *config.Config {
 		NIP11: config.NIP11Section{
 			Name: "t", Description: "t", PubKey: "", Contact: "", Software: "https://example.com",
 		},
-		NIPs: config.NIPsSection{Enabled: []int{1, 11}},
+		NIPs: make(map[string]config.NipPluginEntry),
 	}
 }
 

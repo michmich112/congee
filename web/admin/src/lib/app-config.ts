@@ -1,8 +1,14 @@
 /** Matches `internal/config.DefaultQueryLimitIfUnset` (relay when JSON omits the field). */
 export const DEFAULT_QUERY_LIMIT_IF_UNSET = 500;
 
+export type NipPluginEntry = {
+	enabled: boolean;
+	settings?: Record<string, unknown>;
+};
+
 /** Mirrors `internal/config/config_types.go` JSON shape (admin config file). */
 export type AppConfig = {
+	config_version?: number;
 	relay: { port: number; instance_id?: string };
 	admin: { port: number };
 	database: { type: string; dsn: string };
@@ -39,6 +45,7 @@ export type AppConfig = {
 	};
 	/** NIP-42 client authentication; required fields apply when NIP 42 is enabled. */
 	nip42: {
+		enabled: boolean;
 		relay_url: string;
 		send_challenge_on_connect: boolean;
 		created_at_skew_seconds: number;
@@ -46,12 +53,7 @@ export type AppConfig = {
 		require_auth_publish_kinds: number[];
 		allowlisted_pubkeys: string[];
 	};
-	/** NIP-29 relay groups; used when NIP 29 is enabled. */
-	nip29: {
-		late_publication_max_past_seconds: number;
-		strict_previous_same_h: boolean;
-	};
-	nips: { enabled: number[] };
+	nips: Record<string, NipPluginEntry>;
 };
 
 export function cloneConfig(c: AppConfig): AppConfig {
@@ -59,6 +61,7 @@ export function cloneConfig(c: AppConfig): AppConfig {
 }
 
 const defaultNip42 = (): AppConfig['nip42'] => ({
+	enabled: false,
 	relay_url: '',
 	send_challenge_on_connect: false,
 	created_at_skew_seconds: 600,
@@ -67,14 +70,12 @@ const defaultNip42 = (): AppConfig['nip42'] => ({
 	allowlisted_pubkeys: []
 });
 
-const defaultNip29 = (): AppConfig['nip29'] => ({
-	late_publication_max_past_seconds: 86400,
-	strict_previous_same_h: false
-});
-
 /** Ensures nip42 exists for older config files and the config form. */
 export function ensureNip42Draft(cfg: AppConfig): void {
 	cfg.nip42 ??= defaultNip42();
+	if (typeof cfg.nip42.enabled !== 'boolean') {
+		cfg.nip42.enabled = false;
+	}
 	const n = cfg.nip42;
 	// Go JSON encodes nil slices as null; the admin form expects arrays.
 	if (!Array.isArray(n.require_auth_subscribe_kinds)) {
@@ -88,11 +89,19 @@ export function ensureNip42Draft(cfg: AppConfig): void {
 	}
 }
 
-/** Ensures nips.enabled exists; Go may emit null for a nil enabled slice. */
+/** Ensures nips map exists; Go may emit null for an empty map. */
 export function ensureNipsDraft(cfg: AppConfig): void {
-	cfg.nips ??= { enabled: [] };
-	if (!Array.isArray(cfg.nips.enabled)) {
-		cfg.nips.enabled = [];
+	if (!cfg.nips || typeof cfg.nips !== 'object' || Array.isArray(cfg.nips)) {
+		cfg.nips = {};
+	}
+	for (const [id, entry] of Object.entries(cfg.nips)) {
+		if (!entry || typeof entry !== 'object') {
+			cfg.nips[id] = { enabled: false };
+			continue;
+		}
+		if (typeof entry.enabled !== 'boolean') {
+			entry.enabled = false;
+		}
 	}
 }
 
@@ -102,9 +111,61 @@ export function ensureRelayDraft(cfg: AppConfig): void {
 	cfg.relay.instance_id ??= '';
 }
 
-/** Ensures nip29 exists for older config files and the config form. */
-export function ensureNip29Draft(cfg: AppConfig): void {
-	cfg.nip29 ??= defaultNip29();
+function migrateLegacyNipsMap(v: Record<string, unknown>): void {
+	const nipNumberToPluginId: Record<number, string> = {
+		2: 'nip-02',
+		29: 'nip-29',
+		50: 'nip-50'
+	};
+
+	if (v.nip29 && typeof v.nip29 === 'object' && v.nip29 !== null) {
+		const legacy = v.nip29 as Record<string, unknown>;
+		const nips =
+			v.nips && typeof v.nips === 'object' && !Array.isArray(v.nips)
+				? (v.nips as Record<string, NipPluginEntry>)
+				: {};
+		const entry = nips['nip-29'] ?? { enabled: false };
+		entry.settings = { ...(entry.settings ?? {}), ...legacy };
+		nips['nip-29'] = entry;
+		v.nips = nips;
+		delete v.nip29;
+	}
+
+	const rawNips = v.nips;
+	if (rawNips && typeof rawNips === 'object' && !Array.isArray(rawNips)) {
+		const probe = rawNips as Record<string, unknown>;
+		if (Array.isArray(probe.enabled)) {
+			const enabled = probe.enabled as number[];
+			const nips: Record<string, NipPluginEntry> = {};
+			for (const [key, val] of Object.entries(probe)) {
+				if (key === 'enabled') continue;
+				if (val && typeof val === 'object') {
+					nips[key] = val as NipPluginEntry;
+				}
+			}
+			for (const n of enabled) {
+				if (n === 42) {
+					const nip42 =
+						v.nip42 && typeof v.nip42 === 'object' && v.nip42 !== null
+							? (v.nip42 as Record<string, unknown>)
+							: {};
+					nip42.enabled = true;
+					v.nip42 = nip42;
+					continue;
+				}
+				const id = nipNumberToPluginId[n];
+				if (id) {
+					nips[id] ??= { enabled: false };
+					nips[id].enabled = true;
+				}
+			}
+			v.nips = nips;
+		}
+	}
+
+	if (typeof v.config_version !== 'number') {
+		v.config_version = 1;
+	}
 }
 
 export function parseConfigJson(text: string): AppConfig {
@@ -115,9 +176,9 @@ export function parseConfigJson(text: string): AppConfig {
 		delete n11.supported_nips;
 		delete n11.version;
 	}
+	migrateLegacyNipsMap(v);
 	const cfg = v as AppConfig;
 	ensureNip42Draft(cfg);
-	ensureNip29Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
 	return cfg;

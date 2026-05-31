@@ -1,4 +1,5 @@
 {
+  "config_version": 1,
   "relay": {
     "port": 3334
   },
@@ -48,6 +49,7 @@
     "cors_allow_any_origin": false
   },
   "nip42": {
+    "enabled": false,
     "relay_url": "",
     "send_challenge_on_connect": false,
     "created_at_skew_seconds": 600,
@@ -55,11 +57,5 @@
     "require_auth_publish_kinds": [],
     "allowlisted_pubkeys": []
   },
-  "nip29": {
-    "late_publication_max_past_seconds": 86400,
-    "strict_previous_same_h": false
-  },
-  "nips": {
-    "enabled": [1, 11]
-  }
+  "nips": {}
 }

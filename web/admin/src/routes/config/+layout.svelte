@@ -7,9 +7,9 @@
 	import {
 		ADMIN_CONFIG_CTX,
 		type AdminConfigContext,
-		type ChangelogRow,
-		type NipRow
+		type ChangelogRow
 	} from '$lib/config/admin-config-context';
+	import { setPluginEnabledInDraft, type PluginRow } from '$lib/plugin-catalog';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -23,7 +23,7 @@
 		'border-input dark:bg-input/30 focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50';
 
 	let draft = $state<AppConfig | null>(null);
-	let nipCatalog = $state<NipRow[]>([]);
+	let nipCatalog = $state<PluginRow[]>([]);
 	let changelog = $state<ChangelogRow[]>([]);
 	let loadErr = $state<string | null>(null);
 	let changelogErr = $state<string | null>(null);
@@ -92,18 +92,10 @@
 		draft.nip11.pubkey = relayIdentity.pubkey_hex;
 	}
 
-	function setNipEnabled(list: number[], nip: number, on: boolean, row: NipRow): number[] {
-		if (row.mandatory) return list;
-		if (!row.implemented && on) {
-			saveErr = `NIP-${nip} is not implemented in this relay yet; enable it only via raw JSON if you know what you are doing.`;
-			return list;
-		}
-		const s = new Set(list);
-		if (on) s.add(nip);
-		else s.delete(nip);
-		const next = Array.from(s).sort((a, b) => a - b);
+	function setNipEnabled(plugin: PluginRow, on: boolean): void {
+		if (!draft || plugin.mandatory) return;
+		setPluginEnabledInDraft(draft, plugin, on);
 		saveErr = null;
-		return next;
 	}
 
 	async function loadNipCatalog() {
@@ -113,8 +105,12 @@
 				nipCatalog = [];
 				return;
 			}
-			const data = (await r.json()) as { nips?: NipRow[] };
-			nipCatalog = data.nips ?? [];
+			const data = (await r.json()) as { plugins?: PluginRow[] };
+			nipCatalog = (data.plugins ?? []).map((p) => ({
+				...p,
+				config_schema: p.config_schema ?? { fields: [] },
+				capabilities: p.capabilities ?? []
+			}));
 		} catch {
 			nipCatalog = [];
 		}

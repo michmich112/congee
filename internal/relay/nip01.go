@@ -3,41 +3,23 @@ package relay
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
-// RegisterNIP01 wires NIP-01 validation, hooks, and message handlers.
+// RegisterNIP01 wires NIP-01 message handlers (validation/broadcast via plugin pipeline).
 func RegisterNIP01(s *Server, store storage.Store) {
-	s.AppendValidator(EventValidatorFunc(nip01ValidateSig))
-	s.AppendPostHook("nip01_audit_event", func(ctx context.Context, env HookEnv) error {
-		action := audit.ActionEventEphemeral
-		if env.Stored {
-			action = audit.ActionEventStored
-		}
-		detail := fmt.Sprintf("event_id=%s conn_id=%s kind=%d", env.Event.ID, env.Conn.ID, env.Event.Kind)
-		return audit.Log(ctx, store, action, detail, env.Event.PubKey)
-	})
-	s.AppendPostHook("nip01_broadcast_event", func(ctx context.Context, env HookEnv) error {
-		_ = ctx
-		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
-			return nil
-		}
-		s.broadcastEvent(env.Event)
-		return nil
-	})
 	s.RegisterMessageHandler("EVENT", func(ctx context.Context, c *Conn, msg any) error {
 		return handleEVENT(ctx, s, store, c, msg.(*nostr.EventMessage))
 	})
 	s.RegisterMessageHandler("REQ", func(ctx context.Context, c *Conn, msg any) error {
-		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage), false)
+		return handleREQ(ctx, s, c, msg.(*nostr.ReqMessage))
 	})
 	s.RegisterMessageHandler("CLOSE", func(ctx context.Context, c *Conn, msg any) error {
 		handleCLOSE(ctx, s, c, msg.(*nostr.CloseMessage))
@@ -45,89 +27,82 @@ func RegisterNIP01(s *Server, store storage.Store) {
 	})
 }
 
-func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
-	_ = ctx
-	return ev.VerifySig()
-}
-
-func logEventRejected(ctx context.Context, store storage.Store, c *Conn, ev *nostr.Event, reason string) {
-	log := relayLogger(c, ctx)
-	detail := fmt.Sprintf("event_id=%s conn_id=%s reason=%s kind=%d",
-		ev.ID, c.ID, audit.SanitizeAuditDetailFragment(reason), ev.Kind)
-	if err := audit.Log(ctx, store, audit.ActionEventRejected, detail, ev.PubKey); err != nil {
-		log.Error().Err(err).Msg("audit save failed for event_rejected")
-	}
-}
-
 func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage) error {
 	log := relayLogger(c, ctx)
 	ev := &msg.Event
 	log.Info().Str("pubkey", ev.PubKey).Int("kind", ev.Kind).Msg("event received")
-	if err := s.validators.Validate(ctx, c, ev); err != nil {
+
+	stored, reason, authChallenge, err := runEventPipeline(ctx, s, store, c, ev)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
 		if s.metrics != nil {
 			s.metrics.IncEventsRejected()
 		}
-		reason := err.Error()
 		san := audit.SanitizeAuditDetailFragment(reason)
 		log.Warn().Str("audit_action", "event_rejected").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
 			Int("kind", ev.Kind).Str("reason", san).Msg("event rejected")
 		logEventRejected(ctx, store, c, ev, reason)
-		if strings.HasPrefix(reason, "auth-required:") {
+		if authChallenge {
 			_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		}
 		return c.sendOK(ev.ID, false, reason)
 	}
-	if nostr.IsEphemeral(ev.Kind) {
-		if err := c.sendOK(ev.ID, true, ""); err != nil {
-			return err
+
+	if stored {
+		if s.metrics != nil {
+			s.metrics.IncEventsStoredOK()
 		}
+	} else if nostr.IsEphemeral(ev.Kind) {
 		if s.metrics != nil {
 			s.metrics.IncEventsEphemeralOK()
 		}
-		env := HookEnv{Conn: c, Event: ev, Stored: false}
-		if err := s.hooks.Run(ctx, env); err != nil {
-			log.Error().Err(err).Str("pubkey", ev.PubKey).Msg("post-hook error")
-		}
-		return nil
 	}
-	if err := store.SaveEvent(ctx, ev); err != nil {
-		if s.metrics != nil {
-			s.metrics.IncEventsRejected()
-		}
-		reason := err.Error()
-		log.Warn().Err(err).Str("audit_action", "event_rejected").Str("operation", "SaveEvent").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
-			Int("kind", ev.Kind).Str("reason", audit.SanitizeAuditDetailFragment(reason)).Msg("event rejected: store save failed")
-		logEventRejected(ctx, store, c, ev, reason)
-		return c.sendOK(ev.ID, false, reason)
-	}
-	if s.metrics != nil {
-		s.metrics.IncEventsStoredOK()
-	}
-	env := HookEnv{Conn: c, Event: ev, Stored: true}
-	if err := s.hooks.Run(ctx, env); err != nil {
-		log.Error().Err(err).Str("pubkey", ev.PubKey).Msg("post-hook error")
-	}
+
 	if err := c.sendOK(ev.ID, true, ""); err != nil {
 		return err
+	}
+	if ev.Kind != nip42AuthEventKind {
+		s.broadcastEvent(ev)
 	}
 	return nil
 }
 
-func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, searchEnabled bool) error {
+func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage) error {
 	log := relayLogger(c, ctx)
 	if s.metrics != nil {
 		s.metrics.IncReq()
 	}
-	for i := range msg.Filters {
-		if msg.Filters[i].HasSearch() && !searchEnabled {
-			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
+
+	gates, err := runReqPipeline(ctx, s, c, msg)
+	if err != nil {
+		var auth plugin.AuthRequired
+		if errors.As(err, &auth) {
+			_ = nip42EnqueueAuthChallenge(c, s.cfg)
+			reason := auth.Reason
+			if reason == "" {
+				reason = "auth-required: subscription requires authentication"
+			}
+			return c.sendClosed(msg.SubID, reason)
 		}
+		var rej plugin.Reject
+		if errors.As(err, &rej) {
+			reason := rej.Reason
+			if reason == "" {
+				reason = "rejected"
+			}
+			return c.sendClosed(msg.SubID, reason)
+		}
+		return c.sendClosed(msg.SubID, err.Error())
 	}
-	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
-		_ = nip42EnqueueAuthChallenge(c, s.cfg)
-		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
+
+	filters := make([]nostr.Filter, len(gates))
+	for i := range gates {
+		filters[i] = gates[i].Filter
 	}
-	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
+
+	if err := s.subs.AddWithGates(c.ID, msg.SubID, filters, gates); err != nil {
 		switch {
 		case errors.Is(err, ErrSubscriptionIDTooLong):
 			return c.sendClosed(msg.SubID, "subscription id too long")
@@ -140,29 +115,23 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			return c.sendClosed(msg.SubID, err.Error())
 		}
 	}
+
 	t0 := time.Now()
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
-	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled, defaultLimit)
+	events, err := queryInitialFromGates(ctx, s, gates, defaultLimit)
 	durationMs := time.Since(t0).Milliseconds()
 	if s.metrics != nil {
 		s.metrics.RecordQueryLatency(time.Since(t0))
 	}
 	if err != nil {
-		hasSearch := false
-		for i := range msg.Filters {
-			if msg.Filters[i].HasSearch() {
-				hasSearch = true
-				break
-			}
-		}
 		LogStoreErr(log, zerolog.ErrorLevel, "REQ.QueryInitial", err, "req query failed", func(e *zerolog.Event) {
-			e.Str("sub_id", msg.SubID).Int("filter_count", len(msg.Filters)).Bool("search_enabled", searchEnabled).
-				Bool("filter_has_search", hasSearch).Int64("duration_ms", durationMs)
+			e.Str("sub_id", msg.SubID).Int("filter_count", len(gates)).Int64("duration_ms", durationMs)
 		})
 		return c.sendClosed(msg.SubID, "internal error")
 	}
+
 	for _, ev := range events {
-		if !s.EventVisibleToSubscription(c.ID, ev) {
+		if !eventVisibleForSub(s, c.ID, gates, ev) {
 			continue
 		}
 		err := c.sendEvent(msg.SubID, ev)

@@ -10,13 +10,14 @@ import (
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/storage"
 )
 
 const nip42AuthEventKind = 22242
 
 func relayNIP42Enabled(cfg *config.Config) bool {
-	return cfg != nil && slices.Contains(cfg.NIPs.Enabled, 42)
+	return cfg != nil && cfg.NIP42.Enabled
 }
 
 func nip42CreatedAtSkew(cfg *config.Config) int {
@@ -61,11 +62,11 @@ func validateNIP42PublishPolicy(cfg *config.Config, c *Conn, ev *nostr.Event) er
 		return nil
 	}
 	if !c.nip42HasPubkey(ev.PubKey) {
-		return fmt.Errorf("auth-required: publish requires authentication for this kind")
+		return plugin.AuthRequired{Reason: "auth-required: publish requires authentication for this kind"}
 	}
 	if len(cfg.NIP42.AllowlistedPubkeys) > 0 {
 		if !slices.Contains(cfg.NIP42.AllowlistedPubkeys, ev.PubKey) {
-			return fmt.Errorf("restricted: pubkey is not allowlisted to publish")
+			return plugin.Reject{Reason: "restricted: pubkey is not allowlisted to publish"}
 		}
 	}
 	return nil
@@ -147,15 +148,11 @@ func nip42EnqueueAuthChallenge(c *Conn, cfg *config.Config) error {
 	return c.enqueue(b)
 }
 
-// RegisterNIP42 registers AUTH handling and publish policy validation (NIP-42).
+// RegisterNIP42 registers AUTH handling (publish policy runs in EVENT auth-gate).
 func RegisterNIP42(s *Server, _ storage.Store) {
 	s.RegisterMessageHandler("AUTH", func(ctx context.Context, c *Conn, msg any) error {
 		return handleNIP42AUTH(ctx, s, c, msg.(*nostr.AuthMessage))
 	})
-	s.AppendValidator(EventValidatorFunc(func(ctx context.Context, conn *Conn, ev *nostr.Event) error {
-		_ = ctx
-		return validateNIP42PublishPolicy(s.cfg, conn, ev)
-	}))
 }
 
 func handleNIP42AUTH(ctx context.Context, s *Server, c *Conn, msg *nostr.AuthMessage) error {

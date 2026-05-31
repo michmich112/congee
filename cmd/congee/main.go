@@ -68,6 +68,12 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("database open failed")
 	}
+	if mig := config.PendingMigration; mig != nil {
+		if err := config.SaveConfigChange(ctx, storeDB, mig.Summary, mig.Diff); err != nil {
+			log.Fatal().Err(err).Msg("config migration changelog failed")
+		}
+		config.PendingMigration = nil
+	}
 	dbClosed := false
 	defer func() {
 		if !dbClosed {
