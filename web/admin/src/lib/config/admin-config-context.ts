@@ -1,5 +1,6 @@
 import { getContext } from 'svelte';
 import type { AppConfig } from '$lib/app-config';
+import type { PluginRow } from '$lib/plugin-catalog';
 
 export const ADMIN_CONFIG_CTX = Symbol('admin-config');
 
@@ -9,19 +10,10 @@ export type ChangelogRow = {
 	json_diff: string;
 };
 
-export type NipRow = {
-	number: number;
-	title: string;
-	github_url: string;
-	mandatory: boolean;
-	implemented: boolean;
-	enabled: boolean;
-};
-
 /** Context provided by `routes/config/+layout.svelte` for subsection pages. */
 export type AdminConfigContext = {
 	get draft(): AppConfig | null;
-	get nipCatalog(): NipRow[];
+	get nipCatalog(): PluginRow[];
 	get relayIdentity(): { pubkey_hex: string; npub: string } | null;
 	/** Runtime LISTEN/NOTIFY origin id (matches process start); null if not reported by the API. */
 	get relayInstanceRuntime(): { instance_id: string; env_locked: boolean } | null;
@@ -38,7 +30,7 @@ export type AdminConfigContext = {
 	set changelogExpanded(v: boolean);
 	get dirty(): boolean;
 	markDirty: () => void;
-	setNipEnabled: (list: number[], nip: number, on: boolean, row: NipRow) => number[];
+	setNipEnabled: (plugin: PluginRow, on: boolean) => void;
 	selectClass: string;
 	/** Bound Security "default query limit" text; synced from draft on load/reload. */
 	get defaultQueryLimitField(): string;

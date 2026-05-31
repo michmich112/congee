@@ -18,7 +18,7 @@ Related plans (under `docs/plans/` locally, if present): relay identity secrets,
 **Goal:** eyeball compatibility with real client expectations and TLS/WebSocket edge cases.
 
 1. Build: `go build -o congee ./cmd/congee`
-2. Config: use a dev `config.json` (SQLite DSN under `/tmp` or `./data`), enable the NIPs under test in `nips.enabled`, set `nip42.relay_url` to `ws://127.0.0.1:<relay-port>/` (or `wss://` behind a reverse proxy).
+2. Config: use a dev `config.json` (SQLite DSN under `/tmp` or `./data`), enable optional NIPs under the `nips` map (e.g. `"nip-29": { "enabled": true }`) or legacy `nips.enabled` (migrated on load), set `nip42.relay_url` to `ws://127.0.0.1:<relay-port>/` (or `wss://` behind a reverse proxy) and `nip42.enabled` when testing NIP-42.
 3. Optional: `RELAY_SECRETS_PATH=/tmp/congee-test-relay.secrets.json` for a disposable identity file.
 4. Run: `./congee` (or `CONFIG_PATH=./config.json ./congee` when not using the container default `/data/config/config.json`).
 5. **Clients:** point [Damus](https://damus.io/), [Amethyst](https://github.com/vitorpamplona/amethyst), [Snort](https://snort.social/), or [noStrudel](https://nostrudel.ninja/) at `ws://127.0.0.1:<port>/` (dev only; browsers may need `nip11.cors_allow_any_origin` for NIP-11 fetches).

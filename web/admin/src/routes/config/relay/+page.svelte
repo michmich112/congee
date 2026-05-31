@@ -3,6 +3,7 @@
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import ClipCopy from '$lib/components/ClipCopy.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
+	import { enabledNipNumbersFromDraft } from '$lib/plugin-catalog';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -14,6 +15,10 @@
 	function draft() {
 		return ctx.draft!;
 	}
+
+	const supportedNips = $derived(
+		enabledNipNumbersFromDraft(draft(), ctx.nipCatalog).join(', ') || '—'
+	);
 </script>
 
 <section class="space-y-4">
@@ -116,10 +121,11 @@
 			<div class="space-y-2 md:col-span-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
 				<p class="text-sm font-medium">Supported NIPs (NIP-11)</p>
 				<p class="mt-1 font-mono text-xs text-foreground">
-					{[...draft().nips.enabled].sort((a, b) => a - b).join(', ') || '—'}
+					{supportedNips}
 				</p>
 				<p class="mt-2 text-xs text-muted-foreground">
-					Mirrors the enabled NIPs list; not stored as a separate config field.
+					Derived from enabled plugins in the catalog (mandatory core NIPs, optional plugins, and NIP-42 when
+					enabled); not stored as a separate config field.
 				</p>
 			</div>
 			<div class="space-y-2">

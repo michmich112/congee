@@ -21,26 +21,9 @@ func TestValidateRejectsBadPort(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresMandatoryNIPs(t *testing.T) {
+func TestValidateRejectsUnknownPluginID(t *testing.T) {
 	c := minimalValidConfig()
-	c.NIPs.Enabled = []int{2}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestValidateUnknownNIP(t *testing.T) {
-	c := minimalValidConfig()
-	c.NIPs.Enabled = []int{1, 99999}
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestValidateRejectsNIP29NegativeLatePublication(t *testing.T) {
-	c := minimalValidConfig()
-	c.NIPs.Enabled = []int{1, 11, 29}
-	c.NIP29.LatePublicationMaxPastSeconds = -1
+	c.NIPs["unknown"] = NipPluginEntry{Enabled: true}
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error")
 	}
@@ -48,11 +31,12 @@ func TestValidateRejectsNIP29NegativeLatePublication(t *testing.T) {
 
 func minimalValidConfig() *Config {
 	return &Config{
-		Relay:    RelaySection{Port: 3334},
-		Admin:    AdminSection{Port: 3335},
-		Database: DatabaseSection{Type: "sqlite", DSN: "./x.db"},
-		Logging:  LoggingSection{Level: "info", Format: "json"},
-		Audit:    AuditSection{RetentionDays: 30},
+		ConfigVersion: ConfigVersionCurrent,
+		Relay:         RelaySection{Port: 3334},
+		Admin:         AdminSection{Port: 3335},
+		Database:      DatabaseSection{Type: "sqlite", DSN: "./x.db"},
+		Logging:       LoggingSection{Level: "info", Format: "json"},
+		Audit:         AuditSection{RetentionDays: 30},
 		RateLimits: RateLimitsSection{
 			EventsPerMinutePerConnection: 1,
 			BytesPerSecondPerConnection:  1,
@@ -70,9 +54,8 @@ func minimalValidConfig() *Config {
 		WebSocket:               WebSocketSection{CompressionEnabled: true, MaxMessageBytes: 1},
 		MaxSubscriptionIDLength: 128,
 		NIP11:                   NIP11Section{Name: "t"},
-		NIPs:                    NIPsSection{Enabled: []int{1, 11}},
+		NIPs:                    make(map[string]NipPluginEntry),
 		NIP42:                   NIP42Section{},
-		NIP29:                   NIP29Section{},
 	}
 }
 
@@ -99,6 +82,9 @@ func TestEnsureConfigFileCreatesDefault(t *testing.T) {
 	cfg, err := LoadJSON(p)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.ConfigVersion != ConfigVersionCurrent {
+		t.Fatalf("config_version: got %d want %d", cfg.ConfigVersion, ConfigVersionCurrent)
 	}
 	if cfg.Relay.Port != 3334 {
 		t.Fatalf("relay.port: got %d", cfg.Relay.Port)

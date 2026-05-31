@@ -25,6 +25,7 @@ var (
 // subEntry wraps a subscription's filters with an atomic closed flag.
 type subEntry struct {
 	filters []nostr.Filter
+	gates   []SubFilterGate
 	closed  atomic.Bool
 
 	openedUnix     int64
@@ -88,6 +89,11 @@ func (m *SubscriptionManager) UnregisterSender(connID string) []string {
 
 // Add creates or replaces a subscription for connID.
 func (m *SubscriptionManager) Add(connID, subID string, filters []nostr.Filter) error {
+	return m.AddWithGates(connID, subID, filters, nil)
+}
+
+// AddWithGates creates or replaces a subscription with per-filter gating snapshots.
+func (m *SubscriptionManager) AddWithGates(connID, subID string, filters []nostr.Filter, gates []SubFilterGate) error {
 	if len(subID) > m.maxSubIDLen {
 		return fmt.Errorf("%w: len %d max %d", ErrSubscriptionIDTooLong, len(subID), m.maxSubIDLen)
 	}
@@ -106,6 +112,7 @@ func (m *SubscriptionManager) Add(connID, subID string, filters []nostr.Filter) 
 	}
 	cmap[subID] = &subEntry{
 		filters:    filters,
+		gates:      gates,
 		openedUnix: time.Now().Unix(),
 	}
 	return nil
@@ -153,10 +160,9 @@ func filtersMatch(filters []nostr.Filter, ev *nostr.Event) bool {
 }
 
 // Broadcast delivers EVENT to every matching subscription.
-// If visible is nil, all connections receive matching events. Otherwise visible(connID, ev) must be true.
-func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID string, ev *nostr.Event) bool) {
+func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID, subID string, entry *subEntry, ev *nostr.Event) bool) {
 	if visible == nil {
-		visible = func(string, *nostr.Event) bool { return true }
+		visible = func(string, string, *subEntry, *nostr.Event) bool { return true }
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -165,14 +171,14 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 		if send == nil {
 			continue
 		}
-		if !visible(connID, ev) {
-			continue
-		}
 		for subID, entry := range cmap {
 			if entry.closed.Load() {
 				continue
 			}
 			if !filtersMatch(entry.filters, ev) {
+				continue
+			}
+			if !visible(connID, subID, entry, ev) {
 				continue
 			}
 			b, err := nostr.MarshalRelayEvent(subID, ev)

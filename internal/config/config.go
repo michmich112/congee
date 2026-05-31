@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-
-	"github.com/michmich112/congee/internal/nipmeta"
 )
 
 // Load reads and validates JSON config from path (e.g. from CONFIG_PATH).
@@ -20,12 +17,13 @@ func Load(path string) (*Config, error) {
 // DefaultConfig returns the stock configuration matching config.example.json.
 func DefaultConfig() *Config {
 	return &Config{
-		Relay:    RelaySection{Port: 3334},
-		Admin:    AdminSection{Port: 3335},
-		Database: DatabaseSection{Type: "sqlite", DSN: "./congee.db"},
-		Logging:  LoggingSection{Level: "info", Format: "json"},
-		Audit:    AuditSection{RetentionDays: 30},
-		Metrics:  MetricsSection{RelayBucketRetentionDays: 30},
+		ConfigVersion: ConfigVersionCurrent,
+		Relay:         RelaySection{Port: 3334},
+		Admin:         AdminSection{Port: 3335},
+		Database:      DatabaseSection{Type: "sqlite", DSN: "./congee.db"},
+		Logging:       LoggingSection{Level: "info", Format: "json"},
+		Audit:         AuditSection{RetentionDays: 30},
+		Metrics:       MetricsSection{RelayBucketRetentionDays: 30},
 		RateLimits: RateLimitsSection{
 			EventsPerMinutePerConnection: 120,
 			BytesPerSecondPerConnection:  1048576,
@@ -54,7 +52,7 @@ func DefaultConfig() *Config {
 			Software:           "https://github.com/michmich112/congee",
 			CORSAllowAnyOrigin: false,
 		},
-		NIPs: NIPsSection{Enabled: []int{1, 11}},
+		NIPs: make(map[string]NipPluginEntry),
 	}
 }
 
@@ -81,23 +79,53 @@ func EnsureConfigFile(path string) error {
 	return nil
 }
 
-// LoadJSON reads JSON from path and runs semantic validation.
+// LoadJSON reads JSON from path, migrates legacy configs when needed, and runs semantic validation.
 func LoadJSON(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
+	if needsLegacyMigration(data) {
+		migrated, mig, err := migrateLegacyJSON(data)
+		if err != nil {
+			return nil, err
+		}
+		if err := WriteConfigAtomic(path, migrated); err != nil {
+			return nil, fmt.Errorf("config: migrate write %s: %w", path, err)
+		}
+		PendingMigration = mig
+		return migrated, nil
+	}
+	c, err := ParseConfigBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	if needsConfigVersionBump(data) {
+		if err := WriteConfigAtomic(path, c); err != nil {
+			return nil, fmt.Errorf("config: version bump write %s: %w", path, err)
+		}
+	}
+	return c, nil
+}
+
+// ParseConfigBytes unmarshals JSON bytes and validates.
+func ParseConfigBytes(data []byte) (*Config, error) {
+	if needsLegacyMigration(data) {
+		migrated, _, err := migrateLegacyJSON(data)
+		return migrated, err
+	}
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("config: json: %w", err)
 	}
+	normalizeConfigVersion(&c)
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-// Validate checks ports, retention, NIP lists, and registry membership.
+// Validate checks ports, retention, plugin map keys, and core NIP sections.
 func (c *Config) Validate() error {
 	if c == nil {
 		return errors.New("config: nil")
@@ -177,23 +205,15 @@ func (c *Config) Validate() error {
 	if c.NIP11.Name == "" {
 		return errors.New("config: nip11.name is required")
 	}
-	if len(c.NIPs.Enabled) == 0 {
-		return errors.New("config: nips.enabled must be non-empty")
+	if c.NIPs == nil {
+		c.NIPs = make(map[string]NipPluginEntry)
 	}
-	for _, n := range c.NIPs.Enabled {
-		if !nipmeta.IsKnown(n) {
-			return fmt.Errorf("config: unknown nip %d in nips.enabled (not in registry)", n)
+	for id := range c.NIPs {
+		if !IsKnownPluginID(id) {
+			return fmt.Errorf("config: unknown plugin %q in nips (expected one of %v)", id, KnownPluginIDs)
 		}
 	}
-	for n, m := range nipmeta.KnownNIPs {
-		if !m.Mandatory {
-			continue
-		}
-		if !slices.Contains(c.NIPs.Enabled, n) {
-			return fmt.Errorf("config: nips.enabled must include mandatory nip %d", n)
-		}
-	}
-	if slices.Contains(c.NIPs.Enabled, 42) {
+	if c.NIP42.Enabled {
 		if strings.TrimSpace(c.NIP42.RelayURL) == "" {
 			return errors.New("config: nip42.relay_url is required when NIP 42 is enabled")
 		}
@@ -204,9 +224,9 @@ func (c *Config) Validate() error {
 	if c.NIP42.CreatedAtSkewSeconds < 0 {
 		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")
 	}
-	if slices.Contains(c.NIPs.Enabled, 29) {
-		if c.NIP29.LatePublicationMaxPastSeconds < 0 {
-			return errors.New("config: nip29.late_publication_max_past_seconds must be >= 0 (0 uses relay default)")
+	if pluginConfigValidator != nil {
+		if err := pluginConfigValidator(c); err != nil {
+			return err
 		}
 	}
 	return nil

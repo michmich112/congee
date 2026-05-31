@@ -22,7 +22,7 @@ func TestNormalizeNIP42RelayURL(t *testing.T) {
 
 func TestValidateNIP42RelayURLWhenEnabled(t *testing.T) {
 	c := minimalValidConfig()
-	c.NIPs.Enabled = []int{1, 11, 42}
+	c.NIP42.Enabled = true
 	c.NIP42.RelayURL = ""
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "nip42.relay_url") {
 		t.Fatalf("expected nip42.relay_url error, got %v", err)

@@ -3,7 +3,6 @@ package relay
 import (
 	"encoding/json"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/michmich112/congee/internal/config"
@@ -12,7 +11,8 @@ import (
 
 // NIP11Handler serves relay information when the client requests application/nostr+json.
 type NIP11Handler struct {
-	Cfg *config.Config
+	Cfg    *config.Config
+	Server *Server
 }
 
 type nip11Doc struct {
@@ -26,16 +26,12 @@ type nip11Doc struct {
 }
 
 // writeNIP11CORSResponse sets CORS headers for browser NIP-11 fetches.
-// Access-Control-Allow-Private-Network is required when the relay is reached via Tailscale,
-// RFC1918, etc., and the page is on a public origin (Chrome Private Network Access).
 func writeNIP11CORSResponse(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Private-Network", "true")
 }
 
 // writeNIP11CORSPreflightHeaders sets CORS headers for OPTIONS preflight on GET / (NIP-11).
-// When the browser sends Access-Control-Request-Headers, that value must be reflected in
-// Access-Control-Allow-Headers or the preflight fails (some clients list more than Accept).
 func writeNIP11CORSPreflightHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -44,7 +40,6 @@ func writeNIP11CORSPreflightHeaders(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Access-Control-Allow-Headers", "Accept")
 	}
-	// PNA preflight: browser sends Access-Control-Request-Private-Network: true
 	if r.Header.Get("Access-Control-Request-Private-Network") == "true" {
 		w.Header().Set("Access-Control-Allow-Private-Network", "true")
 	}
@@ -56,8 +51,10 @@ func (h *NIP11Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Cfg.NIP11.CORSAllowAnyOrigin {
 		writeNIP11CORSResponse(w)
 	}
-	supported := slices.Clone(h.Cfg.NIPs.Enabled)
-	slices.Sort(supported)
+	supported := []int{1, 11}
+	if h.Server != nil {
+		supported = h.Server.SupportedNIPs()
+	}
 
 	doc := nip11Doc{
 		Name:          h.Cfg.NIP11.Name,

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +43,8 @@ type Server struct {
 	metricsCancel context.CancelFunc
 	startedUnix   atomic.Int64
 	serveOnce     sync.Once
+
+	plugins PluginRunner
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -165,7 +166,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if AcceptsNostrJSON(r) {
-		(&NIP11Handler{Cfg: s.cfg}).ServeHTTP(w, r)
+		(&NIP11Handler{Cfg: s.cfg, Server: s}).ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Connection", "Upgrade")
@@ -334,7 +335,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	})
 
 	go c.writeLoop()
-	if slices.Contains(s.cfg.NIPs.Enabled, 42) && s.cfg.NIP42.SendChallengeOnConnect {
+	if s.cfg.NIP42.Enabled && s.cfg.NIP42.SendChallengeOnConnect {
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 	}
 	if useFlate {

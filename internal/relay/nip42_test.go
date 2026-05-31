@@ -12,8 +12,9 @@ import (
 
 func TestSubscribeAuthRequired(t *testing.T) {
 	cfg := &config.Config{
-		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
+		NIPs: make(map[string]config.NipPluginEntry),
 		NIP42: config.NIP42Section{
+			Enabled:                   true,
 			RelayURL:                  "wss://r.example/nostr",
 			RequireAuthSubscribeKinds: []int{4, 40},
 		},
@@ -41,8 +42,9 @@ func TestVerifyNIP42AuthEvent(t *testing.T) {
 	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
 
 	cfg := &config.Config{
-		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
+		NIPs: make(map[string]config.NipPluginEntry),
 		NIP42: config.NIP42Section{
+			Enabled:              true,
 			RelayURL:             "wss://relay.example.com/",
 			CreatedAtSkewSeconds: 600,
 		},
@@ -86,8 +88,9 @@ func TestVerifyNIP42AuthEvent(t *testing.T) {
 
 func TestValidateNIP42PublishPolicy(t *testing.T) {
 	cfg := &config.Config{
-		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
+		NIPs: make(map[string]config.NipPluginEntry),
 		NIP42: config.NIP42Section{
+			Enabled:                 true,
 			RelayURL:                "wss://r/",
 			RequireAuthPublishKinds: []int{1},
 			AllowlistedPubkeys:      []string{"abc"},

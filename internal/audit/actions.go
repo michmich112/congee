@@ -4,9 +4,11 @@ import "strings"
 
 // Audit action names for NIP-01 EVENT outcomes (persisted in audit_log.action).
 const (
-	ActionEventRejected  = "event_rejected"
-	ActionEventStored    = "event_stored"
-	ActionEventEphemeral = "event_ephemeral"
+	ActionEventRejected          = "event_rejected"
+	ActionEventStored            = "event_stored"
+	ActionEventEphemeral         = "event_ephemeral"
+	ActionEventDeleted           = "event_deleted"
+	ActionPluginCapabilityDenied = "plugin_capability_denied"
 )
 
 // SanitizeAuditDetailFragment collapses whitespace so a reason (or fragment) fits one logical line

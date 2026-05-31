@@ -99,18 +99,42 @@
 			<Card.Header>
 				<Card.Title class="text-base">Client authentication</Card.Title>
 				<Card.Description>
-					Used when NIP-42 is enabled under Enabled NIPs. Set the public WebSocket URL clients put in the
+					Enable NIP-42 here (<code class="rounded bg-muted px-1 text-[0.7rem]">nip42.enabled</code> in config).
+					Set the public WebSocket URL clients put in the
 					<code class="rounded bg-muted px-1 text-[0.7rem]">relay</code> tag (for example
 					<code class="rounded bg-muted px-1 text-[0.7rem]">wss://relay.example.com/</code>).
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
+				<div
+					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="space-y-1">
+						<Label for="nip42-enabled" class="text-sm font-medium">Enable NIP-42</Label>
+						<p class="text-xs text-muted-foreground">
+							When off, the relay does not require client authentication. When on, configure relay URL and
+							gated kinds below.
+						</p>
+					</div>
+					<Switch
+						id="nip42-enabled"
+						checked={draft().nip42.enabled}
+						onCheckedChange={(on) => {
+							draft().nip42.enabled = on;
+							ctx.markDirty();
+						}}
+					/>
+				</div>
+				{@const nip42Active = draft().nip42.enabled}
 				<div class="space-y-2 md:col-span-2">
-					<Label for="nip42-relay-url">Canonical relay URL (ws / wss)</Label>
+					<Label for="nip42-relay-url" class={!nip42Active ? 'pointer-events-none opacity-50' : ''}
+						>Canonical relay URL (ws / wss)</Label
+					>
 					<Input
 						id="nip42-relay-url"
 						class="font-mono text-xs"
 						spellcheck={false}
+						disabled={!nip42Active}
 						value={draft().nip42.relay_url}
 						oninput={(e) => {
 							draft().nip42.relay_url = e.currentTarget.value;
@@ -122,7 +146,9 @@
 					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
 				>
 					<div class="space-y-1">
-						<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
+						<Label for="nip42-chal" class="text-sm font-medium {!nip42Active ? 'opacity-50' : ''}"
+							>Send AUTH challenge on connect</Label
+						>
 						<p class="text-xs text-muted-foreground">
 							<strong class="font-medium text-foreground">On:</strong> the relay sends
 							<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with a challenge as soon as the
@@ -139,6 +165,7 @@
 					</div>
 					<Switch
 						id="nip42-chal"
+						disabled={!nip42Active}
 						checked={draft().nip42.send_challenge_on_connect}
 						onCheckedChange={(on) => {
 							draft().nip42.send_challenge_on_connect = on;
@@ -147,11 +174,14 @@
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for="nip42-skew">Created-at skew (seconds)</Label>
+					<Label for="nip42-skew" class={!nip42Active ? 'pointer-events-none opacity-50' : ''}
+						>Created-at skew (seconds)</Label
+					>
 					<Input
 						id="nip42-skew"
 						type="number"
 						min="0"
+						disabled={!nip42Active}
 						value={String(draft().nip42.created_at_skew_seconds)}
 						oninput={(e) => {
 							draft().nip42.created_at_skew_seconds = parseIntSafe(
@@ -163,11 +193,14 @@
 					/>
 				</div>
 				<div class="space-y-2 md:col-span-2">
-					<Label for="nip42-sub-kinds">Require auth for subscribe (kinds)</Label>
+					<Label for="nip42-sub-kinds" class={!nip42Active ? 'pointer-events-none opacity-50' : ''}
+						>Require auth for subscribe (kinds)</Label
+					>
 					<Input
 						id="nip42-sub-kinds"
 						class="font-mono text-xs"
 						spellcheck={false}
+						disabled={!nip42Active}
 						placeholder="e.g. 4, 40"
 						value={draft().nip42.require_auth_subscribe_kinds.join(', ')}
 						oninput={(e) => {
@@ -180,11 +213,14 @@
 					/>
 				</div>
 				<div class="space-y-2 md:col-span-2">
-					<Label for="nip42-pub-kinds">Require auth for publish (kinds)</Label>
+					<Label for="nip42-pub-kinds" class={!nip42Active ? 'pointer-events-none opacity-50' : ''}
+						>Require auth for publish (kinds)</Label
+					>
 					<Input
 						id="nip42-pub-kinds"
 						class="font-mono text-xs"
 						spellcheck={false}
+						disabled={!nip42Active}
 						placeholder="e.g. 1"
 						value={draft().nip42.require_auth_publish_kinds.join(', ')}
 						oninput={(e) => {
@@ -197,11 +233,14 @@
 					/>
 				</div>
 				<div class="space-y-2 md:col-span-2">
-					<Label for="nip42-allow">Allowlisted pubkeys (hex, one per line)</Label>
+					<Label for="nip42-allow" class={!nip42Active ? 'pointer-events-none opacity-50' : ''}
+						>Allowlisted pubkeys (hex, one per line)</Label
+					>
 					<Textarea
 						id="nip42-allow"
 						class="min-h-[100px] font-mono text-xs"
 						spellcheck={false}
+						disabled={!nip42Active}
 						value={draft().nip42.allowlisted_pubkeys.join('\n')}
 						oninput={(e) => {
 							draft().nip42.allowlisted_pubkeys = e.currentTarget.value

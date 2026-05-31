@@ -4,27 +4,16 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"slices"
 	"sync"
 
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/nipmeta"
-	"github.com/michmich112/congee/internal/nips"
+	"github.com/michmich112/congee/internal/nips/registry"
 	"github.com/michmich112/congee/internal/storage"
 )
 
-type nipRow struct {
-	Number        int    `json:"number"`
-	Title         string `json:"title"`
-	GitHubURL     string `json:"github_url"`
-	Mandatory     bool   `json:"mandatory"`
-	Implemented   bool   `json:"implemented"`
-	Enabled       bool   `json:"enabled"`
-}
-
-type patchNIPBody struct {
-	NIP     int  `json:"nip"`
-	Enabled bool `json:"enabled"`
+type patchPluginBody struct {
+	Enabled  *bool           `json:"enabled"`
+	Settings json.RawMessage `json:"settings"`
 }
 
 func handleNIPsGet(cfgPath string) http.HandlerFunc {
@@ -38,66 +27,46 @@ func handleNIPsGet(cfgPath string) http.HandlerFunc {
 			http.Error(w, `{"error":"load config"}`, http.StatusInternalServerError)
 			return
 		}
-		enabledSet := make(map[int]struct{})
-		for _, n := range cfg.NIPs.Enabled {
-			enabledSet[n] = struct{}{}
-		}
-		var nums []int
-		for n := range nipmeta.KnownNIPs {
-			nums = append(nums, n)
-		}
-		slices.Sort(nums)
-		out := make([]nipRow, 0, len(nums))
-		for _, n := range nums {
-			m := nipmeta.KnownNIPs[n]
-			_, on := enabledSet[n]
-			out = append(out, nipRow{
-				Number:      m.Number,
-				Title:       m.Title,
-				GitHubURL:   m.GitHubURL,
-				Mandatory:   m.Mandatory,
-				Implemented: nips.IsImplemented(n),
-				Enabled:     on,
-			})
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"nips": out})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"config_version": cfg.ConfigVersion,
+			"plugins":        registry.Catalog(cfg),
+		})
 	}
 }
 
-func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func()) http.HandlerFunc {
+func handleNIPPluginPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, scheduleRestart func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		pluginID := r.PathValue("id")
+		if pluginID == "" {
+			http.Error(w, `{"error":"missing plugin id"}`, http.StatusBadRequest)
+			return
+		}
+		if !config.IsKnownPluginID(pluginID) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown plugin id"})
+			return
+		}
+
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
 			http.Error(w, `{"error":"read body"}`, http.StatusBadRequest)
 			return
 		}
-		var req patchNIPBody
+		var req patchPluginBody
 		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
 			return
 		}
-		meta, known := nipmeta.KnownNIPs[req.NIP]
-		if !known {
+		if req.Enabled == nil && req.Settings == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown nip"})
-			return
-		}
-		if meta.Mandatory && !req.Enabled {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "cannot disable mandatory nip"})
-			return
-		}
-		if req.Enabled && !nips.IsImplemented(req.NIP) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "nip not implemented in relay yet"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "enabled or settings required"})
 			return
 		}
 
@@ -109,18 +78,7 @@ func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 			http.Error(w, `{"error":"load config"}`, http.StatusInternalServerError)
 			return
 		}
-		next := slices.Clone(cfg.NIPs.Enabled)
-		if req.Enabled {
-			if !slices.Contains(next, req.NIP) {
-				next = append(next, req.NIP)
-			}
-		} else {
-			next = slices.DeleteFunc(next, func(n int) bool { return n == req.NIP })
-		}
-		slices.Sort(next)
-		cfg.NIPs.Enabled = slices.Compact(next)
-
-		if err := cfg.Validate(); err != nil {
+		if err := registry.ApplyPluginPatch(cfg, pluginID, req.Enabled, req.Settings); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -132,7 +90,7 @@ func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-		summary := "PATCH /api/nips"
+		summary := "PATCH /api/nips/" + pluginID
 		if err := config.SaveConfigChange(r.Context(), st, summary, string(body)); err != nil {
 			http.Error(w, `{"error":"changelog write failed"}`, http.StatusInternalServerError)
 			return
@@ -145,6 +103,7 @@ func handleNIPsPatch(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 			"ok":               true,
 			"restart_required": true,
 			"restarting":       scheduleRestart != nil,
+			"plugin":           registry.Catalog(cfg),
 		})
 	}
 }

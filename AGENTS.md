@@ -11,9 +11,10 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `cmd/congee/` — entrypoint: config, storage, NIP loader, relay server, optional admin server.
 - `internal/nostr/` — event, filter, message parsing, kind classification (NIP-01).
 - `internal/storage/` — `Store` interface; SQLite and PostgreSQL implementations (Bun ORM).
-- `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
+- `internal/relay/` — HTTP/WebSocket relay, subscription manager, plugin pipeline runner, rate limiting, NIP-11, health; implements `plugin.HostAPI`.
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
-- `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).
+- `internal/plugin/` — plugin contract (`Plugin`, `HostAPI`, capability interfaces, `EventContext`/`ReqContext`, typed `Reject`/`AuthRequired`).
+- `internal/nips/` — built-in NIP plugins (`nip02`, `nip29`, `nip50`, …) and `registry` (routing index, pipeline phases, NIP-11 `supported_nips`).
 - `internal/audit/` — audit log writes and retention cleanup.
 - `internal/admin/` — standalone admin HTTP server (API + static UI or dev proxy).
 - `internal/config/` — JSON config load/validate, atomic writes, changelog.
@@ -43,7 +44,7 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 2. **Go layout**: Application code lives under `internal/` (not intended as a public library).
 3. **Storage**: All database access goes through the `Store` interface — no ad-hoc SQL in relay handlers.
 4. **Admin**: Admin routes and server must respect `ENABLE_ADMIN_UI`; do not expose admin API when disabled.
-5. **NIPs**: Implement NIPs by registering validators, post-store hooks, and message handlers via the NIP registry — avoid hard-coding optional behavior in core relay loops.
+5. **NIPs**: Implement optional NIPs as plugins under `internal/nips/<id>/` (manifest, routes, capability interfaces). Register via `internal/nips/registry`; `internal/relay` must not import individual NIP packages. Avoid hard-coding optional behavior in core relay loops.
 6. **NIP toggles**: Enabling/disabling optional NIPs updates config and requires a **relay restart**; no hot-reload of pipeline registration.
 7. **Svelte**: Svelte 5 runes only; use shadcn-svelte patterns; Tailwind for styling.
 8. **Environment vs JSON config**: Boot-time env vars are `CONGEE_ENV`, `ENABLE_ADMIN_UI`, `ADMIN_PASSWORD`, `CONFIG_PATH`, `RELAY_SECRETS_PATH`, `CONGEE_RELAY_PORT`, `CONGEE_ADMIN_PORT`, `CONGEE_DATA_DIR`, plus PostgreSQL `CONGEE_INSTANCE_ID` and test-only `TEST_POSTGRES_DSN` as documented. Default `CONFIG_PATH` is `/data/config/config.json`; relay secrets default to `relay.secrets.json` beside that file. Optional port and SQLite data-dir vars override the loaded JSON before validation. Everything else belongs in the JSON config file. For local dev, an optional **`.env`** in the process working directory is loaded on startup (see `cmd/congee/main.go`); it does not override variables already set in the environment.
