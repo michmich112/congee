@@ -14,6 +14,32 @@ func TestClientIP(t *testing.T) {
 		want   string
 	}{
 		{
+			name: "CF-Connecting-IP single IP",
+			header: map[string]string{
+				"CF-Connecting-IP": "203.0.113.42",
+			},
+			addr: "127.0.0.1:7844",
+			want: "203.0.113.42",
+		},
+		{
+			name: "CF-Connecting-IP takes precedence over X-Forwarded-For",
+			header: map[string]string{
+				"CF-Connecting-IP": "203.0.113.42",
+				"X-Forwarded-For":  "198.51.100.25, 10.0.0.5",
+			},
+			addr: "127.0.0.1:7844",
+			want: "203.0.113.42",
+		},
+		{
+			name: "CF-Connecting-IP when XFF has tunnel IP only",
+			header: map[string]string{
+				"CF-Connecting-IP": "198.51.100.25",
+				"X-Forwarded-For":  "127.0.0.1",
+			},
+			addr: "127.0.0.1:7844",
+			want: "198.51.100.25",
+		},
+		{
 			name: "X-Forwarded-For single IP",
 			header: map[string]string{
 				"X-Forwarded-For": "203.0.113.50",
