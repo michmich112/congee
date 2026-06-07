@@ -389,20 +389,33 @@ func peerIP(remote string) string {
 	return host
 }
 
+func parseClientIPHeader(v string) (string, bool) {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return "", false
+	}
+	if ip := net.ParseIP(trimmed); ip != nil {
+		return ip.String(), true
+	}
+	return "", false
+}
+
 func clientIP(r *http.Request) string {
+	// Cloudflare Tunnel and other Cloudflare-proxied HTTP traffic set this with the
+	// original visitor IP. Prefer it over X-Forwarded-For (Cloudflare recommendation).
+	if ip, ok := parseClientIPHeader(r.Header.Get("CF-Connecting-IP")); ok {
+		return ip
+	}
+
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		first := strings.SplitN(xff, ",", 2)[0]
-		trimmed := strings.TrimSpace(first)
-		if net.ParseIP(trimmed) != nil {
-			return trimmed
+		if ip, ok := parseClientIPHeader(first); ok {
+			return ip
 		}
 	}
 
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		trimmed := strings.TrimSpace(xri)
-		if net.ParseIP(trimmed) != nil {
-			return trimmed
-		}
+	if ip, ok := parseClientIPHeader(r.Header.Get("X-Real-IP")); ok {
+		return ip
 	}
 
 	if fwd := r.Header.Get("Forwarded"); fwd != "" {
@@ -411,8 +424,8 @@ func clientIP(r *http.Request) string {
 			if strings.HasPrefix(part, "for=") {
 				ip := strings.TrimPrefix(part, "for=")
 				ip = strings.Trim(ip, "\" \t")
-				if net.ParseIP(ip) != nil {
-					return ip
+				if parsed, ok := parseClientIPHeader(ip); ok {
+					return parsed
 				}
 				break
 			}
