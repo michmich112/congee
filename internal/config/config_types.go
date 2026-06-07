@@ -15,6 +15,7 @@ type Config struct {
 	NIP11                   NIP11Section            `json:"nip11"`
 	NIP42                   NIP42Section            `json:"nip42"`
 	NIP29                   NIP29Section            `json:"nip29"`
+	NIP17                   NIP17Section            `json:"nip17"`
 	NIPs                    NIPsSection             `json:"nips"`
 }
 
@@ -108,6 +109,29 @@ type NIP42Section struct {
 	RequireAuthSubscribeKinds []int    `json:"require_auth_subscribe_kinds"`
 	RequireAuthPublishKinds   []int    `json:"require_auth_publish_kinds"`
 	AllowlistedPubkeys        []string `json:"allowlisted_pubkeys"`
+}
+
+// NIP17Section configures NIP-17 private direct messages (optional NIP).
+type NIP17Section struct {
+	// RejectGiftWrapWhenDisabled rejects incoming kind 1059 when NIP-17 is not in nips.enabled.
+	// Omitted in JSON defaults to true. Ignored when NIP-17 is enabled.
+	RejectGiftWrapWhenDisabled *bool `json:"reject_gift_wrap_when_disabled,omitempty"`
+}
+
+// NIP17RejectGiftWrapWhenDisabled reports whether kind 1059 publishes should be rejected while NIP-17 is off.
+func NIP17RejectGiftWrapWhenDisabled(cfg *Config) bool {
+	if cfg == nil {
+		return true
+	}
+	for _, n := range cfg.NIPs.Enabled {
+		if n == 17 {
+			return false
+		}
+	}
+	if cfg.NIP17.RejectGiftWrapWhenDisabled == nil {
+		return true
+	}
+	return *cfg.NIP17.RejectGiftWrapWhenDisabled
 }
 
 // NIP29Section configures NIP-29 relay-based groups (optional NIP).

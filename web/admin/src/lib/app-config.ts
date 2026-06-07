@@ -51,6 +51,10 @@ export type AppConfig = {
 		late_publication_max_past_seconds: number;
 		strict_previous_same_h: boolean;
 	};
+	/** NIP-17 private DMs; reject policy applies when NIP 17 is disabled. */
+	nip17: {
+		reject_gift_wrap_when_disabled: boolean;
+	};
 	nips: { enabled: number[] };
 };
 
@@ -70,6 +74,10 @@ const defaultNip42 = (): AppConfig['nip42'] => ({
 const defaultNip29 = (): AppConfig['nip29'] => ({
 	late_publication_max_past_seconds: 86400,
 	strict_previous_same_h: false
+});
+
+const defaultNip17 = (): AppConfig['nip17'] => ({
+	reject_gift_wrap_when_disabled: true
 });
 
 /** Ensures nip42 exists for older config files and the config form. */
@@ -107,6 +115,14 @@ export function ensureNip29Draft(cfg: AppConfig): void {
 	cfg.nip29 ??= defaultNip29();
 }
 
+/** Ensures nip17 exists for older config files and the config form. */
+export function ensureNip17Draft(cfg: AppConfig): void {
+	cfg.nip17 ??= defaultNip17();
+	if (cfg.nip17.reject_gift_wrap_when_disabled === undefined) {
+		cfg.nip17.reject_gift_wrap_when_disabled = true;
+	}
+}
+
 export function parseConfigJson(text: string): AppConfig {
 	const v = JSON.parse(text) as Record<string, unknown>;
 	if (typeof v !== 'object' || v === null) throw new Error('config root must be an object');
@@ -118,6 +134,7 @@ export function parseConfigJson(text: string): AppConfig {
 	const cfg = v as AppConfig;
 	ensureNip42Draft(cfg);
 	ensureNip29Draft(cfg);
+	ensureNip17Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
 	return cfg;

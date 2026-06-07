@@ -55,6 +55,9 @@ func DefaultConfig() *Config {
 			CORSAllowAnyOrigin: false,
 		},
 		NIPs: NIPsSection{Enabled: []int{1, 11}},
+		NIP17: NIP17Section{
+			RejectGiftWrapWhenDisabled: ptrBool(true),
+		},
 	}
 }
 
@@ -209,6 +212,9 @@ func (c *Config) Validate() error {
 			return errors.New("config: nip29.late_publication_max_past_seconds must be >= 0 (0 uses relay default)")
 		}
 	}
+	if slices.Contains(c.NIPs.Enabled, 17) && !slices.Contains(c.NIPs.Enabled, 42) {
+		return errors.New("config: NIP 17 requires NIP 42 to be enabled in nips.enabled")
+	}
 	return nil
 }
 
@@ -234,5 +240,9 @@ func validateRelayInstanceIDField(s string) error {
 }
 
 func ptrInt(v int) *int {
+	return &v
+}
+
+func ptrBool(v bool) *bool {
 	return &v
 }
