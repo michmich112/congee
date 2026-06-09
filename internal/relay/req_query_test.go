@@ -9,7 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/michmich112/congee/internal/nostr"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/db"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -24,14 +25,14 @@ func sameSlice(a, b []nostr.Filter) bool {
 func TestQueryInitialREQEvents_SearchORWithKinds(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	pk := strings.Repeat("b", 64)
 	sig := strings.Repeat("s", 128)
@@ -64,14 +65,14 @@ func TestQueryInitialREQEvents_SearchORWithKinds(t *testing.T) {
 func TestQueryInitialREQEvents_SearchDisabledSkipsSearchBranch(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q2.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q2.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	q := "nope"
 	f := nostr.Filter{Search: &q}
@@ -84,7 +85,7 @@ func TestQueryInitialREQEvents_SearchDisabledSkipsSearchBranch(t *testing.T) {
 	}
 }
 
-func createTestEvents(t *testing.T, st *sqlite.Store, ctx context.Context, n int) {
+func createTestEvents(t *testing.T, st storage.EventStore, ctx context.Context, n int) {
 	t.Helper()
 	pk := strings.Repeat("b", 64)
 	sig := strings.Repeat("s", 128)
@@ -236,14 +237,14 @@ func TestApplyDefaultQueryLimit_ZeroConfigDefaultWithNegativeClientLimit(t *test
 func TestQueryInitialREQEvents_DefaultLimitApplies(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q3.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q3.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -260,14 +261,14 @@ func TestQueryInitialREQEvents_DefaultLimitApplies(t *testing.T) {
 func TestQueryInitialREQEvents_RespectsDefaultCap500(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q500.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q500.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 505)
 
@@ -284,14 +285,14 @@ func TestQueryInitialREQEvents_RespectsDefaultCap500(t *testing.T) {
 func TestQueryInitialREQEvents_ExplicitLimitOverridesDefault(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q4.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q4.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -309,14 +310,14 @@ func TestQueryInitialREQEvents_ExplicitLimitOverridesDefault(t *testing.T) {
 func TestQueryInitialREQEvents_ZeroDefaultIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q5.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q5.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -333,14 +334,14 @@ func TestQueryInitialREQEvents_ZeroDefaultIsUnlimited(t *testing.T) {
 func TestQueryInitialREQEvents_NegativeClientLimitIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q6.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q6.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -358,14 +359,14 @@ func TestQueryInitialREQEvents_NegativeClientLimitIsUnlimited(t *testing.T) {
 func TestQueryInitialREQEvents_ZeroClientLimitIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q7.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q7.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -383,14 +384,14 @@ func TestQueryInitialREQEvents_ZeroClientLimitIsUnlimited(t *testing.T) {
 func TestQueryInitialREQEvents_DoesNotMutateOriginalFilters(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q8.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q8.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -413,14 +414,14 @@ func TestQueryInitialREQEvents_DoesNotMutateOriginalFilters(t *testing.T) {
 func TestQueryInitialREQEvents_ZeroLimitWithZeroDefaultIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q9.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q9.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 
@@ -438,14 +439,14 @@ func TestQueryInitialREQEvents_ZeroLimitWithZeroDefaultIsUnlimited(t *testing.T)
 func TestQueryInitialREQEvents_MultipleFiltersMixedLimits(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "q10.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "q10.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	createTestEvents(t, st, ctx, 6)
 

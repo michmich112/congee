@@ -21,6 +21,18 @@ type compositeStore struct {
 
 var _ storage.Store = (*compositeStore)(nil)
 
+// NewCompositeForTest builds a storage.Store from separate event and meta backends (tests).
+func NewCompositeForTest(events storage.EventStore, meta storage.MetaStore) storage.Store {
+	var evSnap, metaSnap snapshotter
+	if s, ok := events.(snapshotter); ok {
+		evSnap = s
+	}
+	if s, ok := meta.(snapshotter); ok {
+		metaSnap = s
+	}
+	return newCompositeStore(events, meta, evSnap, metaSnap)
+}
+
 func newCompositeStore(events storage.EventStore, meta storage.MetaStore, evSnap, metaSnap snapshotter) *compositeStore {
 	return &compositeStore{
 		events:   events,

@@ -46,18 +46,12 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 	if err := src.SaveEvent(ctx, ev); err != nil {
 		t.Fatal(err)
 	}
-	if err := src.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 1, Action: "x", Detail: "d", Pubkey: pk}); err != nil {
-		t.Fatal(err)
-	}
-	if err := src.SaveConfigChange(ctx, storage.ConfigChange{CreatedAt: 2, Summary: "s", JSONDiff: "{}"}); err != nil {
-		t.Fatal(err)
-	}
 
 	sum, err := storage.Migrate(ctx, src, dst, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.EventsInserted != 1 || sum.EventsSkipped != 0 || sum.ChangelogCopied != 1 {
+	if sum.EventsInserted != 1 || sum.EventsSkipped != 0 {
 		t.Fatalf("summary: %+v", sum)
 	}
 
@@ -101,19 +95,8 @@ func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
 	if err := src.SaveEvent(ctx, ev); err != nil {
 		t.Fatal(err)
 	}
-	ae := storage.AuditEntry{CreatedAt: 9, Action: "event_stored", Detail: "event_id=" + ev.ID + " conn_id=m kind=1", Pubkey: pk}
-	if err := src.SaveAuditEntry(ctx, ae); err != nil {
-		t.Fatal(err)
-	}
-	if err := src.SaveConfigChange(ctx, storage.ConfigChange{CreatedAt: 2, Summary: "s", JSONDiff: "{}"}); err != nil {
-		t.Fatal(err)
-	}
 
-	// Destination already has the same event; audit row for same event_id+pubkey but different timestamp.
 	if err := dst.SaveEvent(ctx, ev); err != nil {
-		t.Fatal(err)
-	}
-	if err := dst.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 1, Action: ae.Action, Detail: ae.Detail, Pubkey: ae.Pubkey}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +104,7 @@ func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.EventsInserted != 0 || sum.EventsSkipped != 1 || sum.AuditInserted != 0 || sum.AuditSkipped != 1 {
+	if sum.EventsInserted != 0 || sum.EventsSkipped != 1 {
 		t.Fatalf("summary: %+v", sum)
 	}
 

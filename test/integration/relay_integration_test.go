@@ -22,7 +22,8 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/db"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -209,7 +210,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 	var (
 		tmpDir   string
 		cfg      *config.Config
-		st       *sqlite.Store
+		st       storage.Store
 		srv      *relay.Server
 		ln       net.Listener
 		baseWS   string
@@ -229,8 +230,10 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err = sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		var closeStore func() error
+		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = closeStore() })
 
 		log = zerolog.Nop()
 		srv, err = relay.NewServer(cfg, st, log, rid)
@@ -250,7 +253,6 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
-		_ = st.Close()
 		_ = ln.Close()
 	})
 
@@ -452,9 +454,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsRid, err := relayidentity.Load(corsSec)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
-		corsSt, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		corsSt, closeCors, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer corsSt.Close()
+		defer closeCors()
 		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop(), corsRid)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(nips.LoadEnabled(corsCfg, corsSrv, corsSt, zerolog.Nop())).To(Succeed())
@@ -540,9 +542,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -636,9 +638,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -718,9 +720,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -798,9 +800,9 @@ var _ = Describe("NIP-29 relay groups", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)

@@ -12,9 +12,11 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/storage/sqlitemeta"
 	"github.com/rs/zerolog"
 )
 
@@ -48,16 +50,43 @@ func testRelayConfig() *config.Config {
 	}
 }
 
-type faultSaveStore struct {
-	*sqlite.Store
+type faultEventStore struct {
+	storage.EventStore
 	saveErr error
 }
 
-func (f *faultSaveStore) SaveEvent(ctx context.Context, ev *nostr.Event) error {
+func (f *faultEventStore) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if f.saveErr != nil {
 		return f.saveErr
 	}
-	return f.Store.SaveEvent(ctx, ev)
+	return f.EventStore.SaveEvent(ctx, ev)
+}
+
+func openAuditTestStore(ctx context.Context, t *testing.T, dir, name string) (storage.Store, func() error) {
+	t.Helper()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(dir, name), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, closeFn
+}
+
+func openFaultAuditTestStore(ctx context.Context, t *testing.T, dir string, saveErr error) (storage.Store, func()) {
+	t.Helper()
+	meta, err := sqlitemeta.Open(ctx, filepath.Join(dir, "meta.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
+	if err != nil {
+		_ = meta.Close()
+		t.Fatal(err)
+	}
+	st := db.NewCompositeForTest(&faultEventStore{EventStore: ev, saveErr: saveErr}, meta)
+	return st, func() {
+		_ = meta.Close()
+		_ = ev.Close()
+	}
 }
 
 func signedTestEvent(t *testing.T, priv *btcec.PrivateKey, kind int) *nostr.Event {
@@ -91,33 +120,33 @@ func latestAuditAction(ctx context.Context, t *testing.T, st storage.Store, acti
 	return rows[0]
 }
 
-func testConn(srv *Server) *Conn {
-	ctxConn, cancel := context.WithCancel(context.Background())
-	return &Conn{
-		ID:     "c1",
-		server: srv,
-		ctx:    ctxConn,
-		cancel: cancel,
-		send:   make(chan []byte, 32),
-		log:    zerolog.Nop(),
+func testConn(t *testing.T, srv *Server) *Conn {
+	t.Helper()
+	c := registerTestConn(t, srv, "c1")
+	c.send = make(chan []byte, 64)
+	return c
+}
+
+func drainOK(t *testing.T, c *Conn) {
+	t.Helper()
+	select {
+	case <-c.send:
+	default:
+		t.Fatal("expected outbound OK frame")
 	}
 }
 
 func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
+	st, closeStore := openAuditTestStore(ctx, t, dir, "r.db")
+	defer closeStore()
 	srv, err := NewServer(testRelayConfig(), st, zerolog.Nop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	RegisterNIP01(srv, st)
-	c := testConn(srv)
-	defer c.cancel()
+	c := testConn(t, srv)
 
 	ev := &nostr.Event{
 		ID:        strings.Repeat("a", 64),
@@ -131,6 +160,7 @@ func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
+	drainOK(t, c)
 	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey: %s", row.Pubkey)
@@ -146,19 +176,14 @@ func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	base, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer base.Close()
-	st := &faultSaveStore{Store: base, saveErr: errors.New("disk full")}
+	st, closeStores := openFaultAuditTestStore(ctx, t, dir, errors.New("disk full"))
+	defer closeStores()
 	srv, err := NewServer(testRelayConfig(), st, zerolog.Nop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	RegisterNIP01(srv, st)
-	c := testConn(srv)
-	defer c.cancel()
+	c := testConn(t, srv)
 
 	priv, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -169,6 +194,7 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
+	drainOK(t, c)
 	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
 	if !strings.Contains(row.Detail, "reason=disk full") {
 		t.Fatalf("detail: %q", row.Detail)
@@ -178,18 +204,14 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 func TestHandleEVENT_AuditStored(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
+	st, closeStore := openAuditTestStore(ctx, t, dir, "r.db")
+	defer closeStore()
 	srv, err := NewServer(testRelayConfig(), st, zerolog.Nop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	RegisterNIP01(srv, st)
-	c := testConn(srv)
-	defer c.cancel()
+	c := testConn(t, srv)
 
 	priv, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -200,6 +222,7 @@ func TestHandleEVENT_AuditStored(t *testing.T) {
 	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
+	drainOK(t, c)
 	row := latestAuditAction(ctx, t, st, audit.ActionEventStored)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey")
@@ -213,18 +236,14 @@ func TestHandleEVENT_AuditStored(t *testing.T) {
 func TestHandleEVENT_AuditEphemeral(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
+	st, closeStore := openAuditTestStore(ctx, t, dir, "r.db")
+	defer closeStore()
 	srv, err := NewServer(testRelayConfig(), st, zerolog.Nop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	RegisterNIP01(srv, st)
-	c := testConn(srv)
-	defer c.cancel()
+	c := testConn(t, srv)
 
 	priv, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -235,6 +254,7 @@ func TestHandleEVENT_AuditEphemeral(t *testing.T) {
 	if err := handleEVENT(ctx, srv, st, c, msg); err != nil {
 		t.Fatal(err)
 	}
+	drainOK(t, c)
 	row := latestAuditAction(ctx, t, st, audit.ActionEventEphemeral)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey")

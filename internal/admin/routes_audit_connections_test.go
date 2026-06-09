@@ -11,18 +11,18 @@ import (
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/rs/zerolog"
 )
 
 func TestAuditConnectionsList_HTTP(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "conn-audit.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "conn-audit.db"), zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = closeStore() }()
 
 	if _, err := st.SaveWSConnectionSession(ctx, storage.WSConnectionSession{
 		ConnID:           "deadbeef",
@@ -78,11 +78,11 @@ func TestAuditConnectionsList_HTTP(t *testing.T) {
 func TestAuditConnectionsList_omitClosed(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "conn-audit-omit.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "conn-audit-omit.db"), zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = closeStore() }()
 
 	if _, err := st.SaveWSConnectionSession(ctx, storage.WSConnectionSession{
 		ConnID:           "x",
@@ -128,11 +128,11 @@ func TestAuditConnectionsList_omitClosed(t *testing.T) {
 func TestAuditConnectionsDetail_HTTP(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "conn-audit2.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "conn-audit2.db"), zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = closeStore() }()
 
 	id, err := st.SaveWSConnectionSession(ctx, storage.WSConnectionSession{
 		ConnID:           "abc12345",

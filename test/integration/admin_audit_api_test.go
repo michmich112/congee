@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/michmich112/congee/internal/admin"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -38,7 +38,7 @@ type integrationAuditResponse struct {
 	Total   int64                `json:"total"`
 }
 
-func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Store, n int) {
+func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st storage.MetaStore, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("%064x", i+100)
@@ -55,7 +55,7 @@ func seedIntegrationAuditRows(ctx context.Context, t *testing.T, st *sqlite.Stor
 
 // seedAuditFilterRows writes 10 rows: created_at 2000..2009, kinds (i%3)+1 in relay-shaped detail,
 // actions event_stored for i<8 and special_only for i>=8, pubkeys alternate a.. / b..
-func seedAuditFilterRows(ctx context.Context, t *testing.T, st *sqlite.Store) {
+func seedAuditFilterRows(ctx context.Context, t *testing.T, st storage.MetaStore) {
 	t.Helper()
 	pkA := strings.Repeat("a", 64)
 	pkB := strings.Repeat("b", 64)
@@ -86,14 +86,14 @@ func TestIntegrationAdminAuditAPI_Pagination(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "integration_audit.db")
-	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, dbPath, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	const rowCount = 25
 	seedIntegrationAuditRows(ctx, t, st, rowCount)
@@ -187,14 +187,14 @@ func TestIntegrationAdminAuditAPI_QueryFilters(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_filters.db")
-	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, dbPath, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	seedAuditFilterRows(ctx, t, st)
 
@@ -348,14 +348,14 @@ func TestIntegrationAdminAuditAPI_KindFilterMatchesRelayDetailSuffix(t *testing.
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_kind_suffix.db")
-	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, dbPath, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	id := strings.Repeat("c", 64)
 	// Exact shape from internal/relay/nip01.go post-hook (note space before kind=).
@@ -401,14 +401,14 @@ func TestIntegrationAdminAuditAPI_AuditKindsEndpoint(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "audit_kinds_list.db")
-	st, err := sqlite.Open(ctx, dbPath, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, dbPath, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	seedAuditFilterRows(ctx, t, st)
 

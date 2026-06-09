@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -18,11 +18,11 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	p := filepath.Join(t.TempDir(), "stats.db")
-	st, err := sqlite.Open(ctx, p, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, p, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	defer closeStore()
 
 	cfg := config.DefaultConfig()
 	h := handleStats(cfg, nil, st)
