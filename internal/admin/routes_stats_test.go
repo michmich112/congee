@@ -63,7 +63,7 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 	if stg == nil {
 		t.Fatal("storage not object")
 	}
-	for _, k := range []string{"bytes", "events", "tags", "audit"} {
+	for _, k := range []string{"bytes", "meta_bytes", "events", "tags", "audit"} {
 		if _, ok := stg[k]; !ok {
 			t.Errorf("storage missing %q", k)
 		}
