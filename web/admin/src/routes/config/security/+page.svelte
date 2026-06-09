@@ -29,6 +29,19 @@
 		const n = defaultQueryLimitFieldParsed();
 		return n !== null && n < 1;
 	}
+
+	/** Parsed value from the bound text field; empty or non-numeric → null. */
+	function queryPageSizeFieldParsed(): number | null {
+		const t = ctx.queryPageSizeField.trim();
+		if (t === '') return null;
+		const n = parseInt(t, 10);
+		return Number.isFinite(n) ? n : null;
+	}
+
+	function queryPageSizeFieldShowsPagingDisabledPill(): boolean {
+		const n = queryPageSizeFieldParsed();
+		return n !== null && n < 1;
+	}
 </script>
 
 <div class="space-y-8">
@@ -84,6 +97,37 @@
 							class="rounded-md border border-destructive/80 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:bg-destructive/15"
 						>
 							{ctx.defaultQueryLimitFieldError}
+						</div>
+					{/if}
+				</div>
+				<div class="space-y-2">
+					<div class="flex flex-wrap items-center gap-2">
+						<Label for="query-page-size">Query page size</Label>
+						{#if queryPageSizeFieldShowsPagingDisabledPill()}
+							<Badge
+								variant="outline"
+								class="rounded-full border-amber-500/70 bg-amber-500/15 text-amber-900 dark:border-amber-400/60 dark:bg-amber-950/50 dark:text-amber-100"
+							>
+								Paging disabled
+							</Badge>
+						{/if}
+					</div>
+					<Input
+						id="query-page-size"
+						type="number"
+						step="1"
+						autocomplete="off"
+						spellcheck={false}
+						class="font-mono text-sm"
+						value={ctx.queryPageSizeField}
+						oninput={(e) => ctx.setQueryPageSizeField(e.currentTarget.value)}
+					/>
+					{#if ctx.queryPageSizeFieldError}
+						<div
+							role="alert"
+							class="rounded-md border border-destructive/80 bg-destructive/10 px-3 py-2 text-sm text-destructive dark:bg-destructive/15"
+						>
+							{ctx.queryPageSizeFieldError}
 						</div>
 					{/if}
 				</div>

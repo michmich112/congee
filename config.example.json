@@ -35,7 +35,8 @@
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 120,
     "write_deadline_seconds": 30,
-    "default_query_limit": 500
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": true,

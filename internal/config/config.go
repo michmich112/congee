@@ -41,6 +41,7 @@ func DefaultConfig() *Config {
 			ReadDeadlineSeconds:           120,
 			WriteDeadlineSeconds:          30,
 			DefaultQueryLimit:             ptrInt(DefaultQueryLimitIfUnset),
+			QueryPageSize:                 ptrInt(DefaultQueryPageSizeIfUnset),
 		},
 		WebSocket: WebSocketSection{
 			CompressionEnabled: true,

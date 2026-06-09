@@ -44,6 +44,10 @@ export type AdminConfigContext = {
 	get defaultQueryLimitField(): string;
 	setDefaultQueryLimitField(v: string): void;
 	get defaultQueryLimitFieldError(): string | null;
+	/** Bound Security "query page size" text; synced from draft on load/reload. */
+	get queryPageSizeField(): string;
+	setQueryPageSizeField(v: string): void;
+	get queryPageSizeFieldError(): string | null;
 };
 
 export function getAdminConfig(): AdminConfigContext {
