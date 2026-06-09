@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -92,14 +91,11 @@ func LoadJSON(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+	c, err := unmarshalConfigJSON(data)
+	if err != nil {
 		return nil, fmt.Errorf("config: json: %w", err)
 	}
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return c, nil
 }
 
 // Validate checks ports, retention, NIP lists, and registry membership.

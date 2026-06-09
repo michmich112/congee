@@ -8,14 +8,7 @@ import (
 
 // ParseConfigJSON unmarshals and validates JSON bytes as Config.
 func ParseConfigJSON(data []byte) (*Config, error) {
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, err
-	}
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return unmarshalConfigJSON(data)
 }
 
 // WriteConfigAtomic writes validated config as indented JSON using temp file + rename.
