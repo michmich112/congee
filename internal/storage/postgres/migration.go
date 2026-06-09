@@ -7,8 +7,6 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 )
 
-var _ storage.MigrationSource = (*Store)(nil)
-
 // MigrationRowCounts returns table row totals for migration verification.
 func (s *Store) MigrationRowCounts(ctx context.Context) (storage.MigrationCounts, error) {
 	ev, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Count(ctx)
