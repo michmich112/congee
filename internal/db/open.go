@@ -35,20 +35,19 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 	case "", "sqlite":
 		return openSQLite(ctx, sec, log)
 	case "postgres":
-		st, err := postgres.Open(ctx, sec.DSN, relayInstanceID, log)
-		if err != nil {
-			return nil, err
-		}
 		metaDSN := ResolveMetaDSN(sec)
 		meta, err := sqlitemeta.Open(ctx, metaDSN, log)
 		if err != nil {
-			_ = st.Close()
 			return nil, err
 		}
 		if err := migrateLegacyMetaPostgres(ctx, sec.DSN, meta); err != nil {
 			_ = meta.Close()
-			_ = st.Close()
 			return nil, fmt.Errorf("db: legacy meta migration: %w", err)
+		}
+		st, err := postgres.Open(ctx, sec.DSN, relayInstanceID, log)
+		if err != nil {
+			_ = meta.Close()
+			return nil, err
 		}
 		store := newCompositeStore(st, meta, st, meta)
 		return &Handle{

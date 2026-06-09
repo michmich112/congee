@@ -152,9 +152,9 @@ func openMigrationSource(ctx context.Context, dbType, dsn, congeeInstanceID stri
 }
 
 // applyPostMigrationDatabaseConfig updates database.type and database.dsn in the JSON config
-// to match the migration target, records a changelog row on dst (the new canonical store), and
+// to match the migration target, records a changelog row on the running relay meta store, and
 // returns whether the running relay must restart to pick up the new file.
-func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu *sync.Mutex, dst storage.MigrationSource, target migrationEndpoint, relayID *relayidentity.Identity) (restartNeeded bool, err error) {
+func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, target migrationEndpoint, relayID *relayidentity.Identity) (restartNeeded bool, err error) {
 	cfgMu.Lock()
 	defer cfgMu.Unlock()
 
@@ -194,13 +194,13 @@ func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu
 		diff = "previous_bytes=" + strconv.Itoa(len(prev)) + "\n" + diff
 	}
 	summary := "POST /api/migration/start: database set to " + dbType
-	if err := config.SaveConfigChange(ctx, dst, summary, diff); err != nil {
-		return false, fmt.Errorf("changelog on target: %w", err)
+	if err := config.SaveConfigChange(ctx, meta, summary, diff); err != nil {
+		return false, fmt.Errorf("changelog on meta store: %w", err)
 	}
 	return needRestart, nil
 }
 
-func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex, scheduleRestart func(), relayID *relayidentity.Identity) http.HandlerFunc {
+func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, scheduleRestart func(), relayID *relayidentity.Identity) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -317,7 +317,7 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		var cfgErr error
 		if req.MakeTargetPrimary {
 			l.Debug().Msg("make_target_primary: updating config file to target database")
-			restartNeeded, cfgErr = applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, dst, req.Target, relayID)
+			restartNeeded, cfgErr = applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, meta, req.Target, relayID)
 			if cfgErr != nil {
 				l.Warn().Err(cfgErr).Msg("migration copy ok but config update failed")
 			} else if restartNeeded && scheduleRestart != nil {

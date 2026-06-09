@@ -168,3 +168,60 @@ FROM ws_connection_sessions ORDER BY id ASC`)
 	}
 	return rows.Err()
 }
+
+// migrateLegacyMetaPostgres copies operational metadata from a pre-v7 PostgreSQL events
+// database into the SQLite meta sidecar before the event store runs schema v7.
+func migrateLegacyMetaPostgres(ctx context.Context, eventsDSN string, meta *sqlitemeta.Store) error {
+	dsn := strings.TrimSpace(eventsDSN)
+	if dsn == "" {
+		return nil
+	}
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+	defer func() { _ = sqldb.Close() }()
+	if err := sqldb.PingContext(ctx); err != nil {
+		return fmt.Errorf("legacy meta: ping postgres: %w", err)
+	}
+
+	var version int
+	err := sqldb.QueryRowContext(ctx, `SELECT version FROM congee_schema_version WHERE id = 1`).Scan(&version)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("legacy meta: read postgres schema version: %w", err)
+	}
+	if version >= 7 {
+		return nil
+	}
+
+	var hasAudit bool
+	if err := sqldb.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'audit_log'
+)`).Scan(&hasAudit); err != nil {
+		return fmt.Errorf("legacy meta: check postgres audit_log: %w", err)
+	}
+	if !hasAudit {
+		return nil
+	}
+
+	n, err := meta.CountAuditLog(ctx, storage.AuditQuery{})
+	if err != nil {
+		return fmt.Errorf("legacy meta: count meta audit: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+
+	if err := copyLegacyAudit(ctx, sqldb, meta); err != nil {
+		return err
+	}
+	if err := copyLegacyChangelog(ctx, sqldb, meta); err != nil {
+		return err
+	}
+	if err := copyLegacyMetricBuckets(ctx, sqldb, meta); err != nil {
+		return err
+	}
+	return copyLegacyWSSessions(ctx, sqldb, meta)
+}

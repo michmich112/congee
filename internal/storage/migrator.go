@@ -7,8 +7,8 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 )
 
-// Migrate copies events (with tags), audit_log, and config_changelog from src to dst.
-// Events and audit rows already present on dst (same event id, or identical audit row) are skipped.
+// Migrate copies events (with tags) from src to dst.
+// Events already present on dst (same event id) are skipped.
 // dst may be pre-populated; verification compares row deltas against dst's counts at start.
 // progress is optional; it may be called from the caller's goroutine frequently during the run.
 // debug is optional; when non-nil it receives short milestone strings (not per-row).
@@ -32,12 +32,10 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	if err != nil {
 		return MigrationSummary{}, fmt.Errorf("migration: destination baseline counts: %w", err)
 	}
-	debug(fmt.Sprintf("source_row_counts events=%d tags=%d audit=%d changelog=%d",
-		srcCounts.Events, srcCounts.Tags, srcCounts.Audit, srcCounts.Changelog))
-	debug(fmt.Sprintf("dst_start_counts events=%d tags=%d audit=%d changelog=%d",
-		dstStart.Events, dstStart.Tags, dstStart.Audit, dstStart.Changelog))
+	debug(fmt.Sprintf("source_row_counts events=%d tags=%d", srcCounts.Events, srcCounts.Tags))
+	debug(fmt.Sprintf("dst_start_counts events=%d tags=%d", dstStart.Events, dstStart.Tags))
 
-	totalSteps := srcCounts.Events + srcCounts.Audit + srcCounts.Changelog
+	totalSteps := srcCounts.Events
 	if totalSteps == 0 {
 		totalSteps = 1
 	}
@@ -86,75 +84,13 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 	}
 	debug(fmt.Sprintf("events_copy_done inserted=%d skipped=%d", evInserted, evSkipped))
 
-	progress(MigrationProgress{Percent: 40, Message: fmt.Sprintf("copying audit_log (0 / %d)", srcCounts.Audit)})
-	var auditInserted, auditSkipped int64
-	err = src.ScanAuditForMigration(ctx, func(e AuditEntry) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		dup, err := dst.HasAuditDuplicate(ctx, e)
-		if err != nil {
-			return fmt.Errorf("migration: check audit: %w", err)
-		}
-		if dup {
-			auditSkipped++
-			done++
-			if srcCounts.Audit > 0 {
-				report(fmt.Sprintf("audit %d / %d (%d skipped)", auditInserted+auditSkipped, srcCounts.Audit, auditSkipped))
-			}
-			return nil
-		}
-		if err := dst.SaveAuditEntry(ctx, e); err != nil {
-			return fmt.Errorf("migration: save audit: %w", err)
-		}
-		auditInserted++
-		done++
-		if srcCounts.Audit > 0 {
-			report(fmt.Sprintf("audit %d / %d (%d skipped)", auditInserted+auditSkipped, srcCounts.Audit, auditSkipped))
-		}
-		return nil
-	})
-	if err != nil {
-		return MigrationSummary{}, err
-	}
-	debug(fmt.Sprintf("audit_copy_done inserted=%d skipped=%d", auditInserted, auditSkipped))
-
-	progress(MigrationProgress{Percent: 70, Message: fmt.Sprintf("copying config_changelog (0 / %d)", srcCounts.Changelog)})
-	var chCopied int64
-	err = src.ScanChangelogForMigration(ctx, func(c ConfigChange) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := dst.SaveConfigChange(ctx, c); err != nil {
-			return fmt.Errorf("migration: save changelog: %w", err)
-		}
-		chCopied++
-		done++
-		if srcCounts.Changelog > 0 {
-			report(fmt.Sprintf("changelog %d / %d", chCopied, srcCounts.Changelog))
-		}
-		return nil
-	})
-	if err != nil {
-		return MigrationSummary{}, err
-	}
-	debug(fmt.Sprintf("changelog_copy_done copied=%d", chCopied))
-
 	progress(MigrationProgress{Percent: 92, Message: "verifying row counts"})
 	dstCounts, err := dst.MigrationRowCounts(ctx)
 	if err != nil {
 		return MigrationSummary{}, fmt.Errorf("migration: destination counts: %w", err)
 	}
-	if dstCounts.Audit != dstStart.Audit+auditInserted {
-		return MigrationSummary{}, fmt.Errorf("migration: audit count mismatch start=%d inserted=%d dst=%d",
-			dstStart.Audit, auditInserted, dstCounts.Audit)
-	}
-	if dstCounts.Changelog != dstStart.Changelog+chCopied {
-		return MigrationSummary{}, fmt.Errorf("migration: changelog count mismatch start=%d copied=%d dst=%d",
-			dstStart.Changelog, chCopied, dstCounts.Changelog)
-	}
-	debug(fmt.Sprintf("verify_ok dst events=%d tags=%d audit=%d changelog=%d (tags_added=%d from inserted events)",
-		dstCounts.Events, dstCounts.Tags, dstCounts.Audit, dstCounts.Changelog, tagsAdded))
+	debug(fmt.Sprintf("verify_ok dst events=%d tags=%d (tags_added=%d from inserted events)",
+		dstCounts.Events, dstCounts.Tags, tagsAdded))
 
 	progress(MigrationProgress{Percent: 100, Message: "done"})
 	return MigrationSummary{
@@ -163,8 +99,5 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 		EventsInserted:   evInserted,
 		EventsSkipped:    evSkipped,
 		TagsAdded:        tagsAdded,
-		AuditInserted:    auditInserted,
-		AuditSkipped:     auditSkipped,
-		ChangelogCopied:  chCopied,
 	}, nil
 }
