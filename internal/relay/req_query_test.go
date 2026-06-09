@@ -576,3 +576,30 @@ func TestQueryInitialREQEvents_MultipleFiltersMixedLimits(t *testing.T) {
 		t.Fatalf("want 3 events after dedup (filter1=2, filter2=3, OR dedup), got %d", len(out))
 	}
 }
+
+func TestFetchREQPage_ZeroPageSizeIsSingleQuery(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "page5.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 6)
+	state := newREQQueryState([]nostr.Filter{{Kinds: []int{1}}}, 3, false)
+	evs, hasMore, err := fetchREQPage(ctx, st, state, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasMore {
+		t.Fatal("pageSize 0 must not paginate")
+	}
+	if len(evs) != 3 {
+		t.Fatalf("want 3 events (default limit), got %d", len(evs))
+	}
+}
+

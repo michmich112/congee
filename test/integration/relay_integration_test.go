@@ -49,7 +49,9 @@ func writeIntegrationConfig(dir, dsn string) string {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -91,7 +93,9 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnCon
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -141,7 +145,9 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -314,6 +320,51 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(eose[1]).To(Equal("sub1"))
 	})
 
+	It("paginates REQ snapshot and sends one EOSE after all pages", func() {
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+
+		var pubHex string
+		for i := 0; i < 250; i++ {
+			ev := signedEvent(priv, 1, fmt.Sprintf("note-%d", i), nil)
+			ev.CreatedAt = int64(250 - i)
+			_, _ = ev.ComputeID()
+			Expect(ev.Sign(priv)).To(Succeed())
+			if i == 0 {
+				pubHex = ev.PubKey
+			}
+			Expect(st.SaveEvent(context.Background(), &ev)).To(Succeed())
+		}
+
+		w2, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer w2.Close()
+		pub := pubHex
+		f := map[string]any{"kinds": []int{1}, "authors": []string{pub}, "limit": 250}
+		p2, err := json.Marshal([]any{"REQ", "page-sub", f})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w2.WriteMessage(websocket.TextMessage, p2)).To(Succeed())
+
+		eventCount := 0
+		for {
+			_, data, err := w2.ReadMessage()
+			Expect(err).NotTo(HaveOccurred())
+			var msg []any
+			Expect(json.Unmarshal(data, &msg)).To(Succeed())
+			switch msg[0] {
+			case "EVENT":
+				Expect(msg[1]).To(Equal("page-sub"))
+				eventCount++
+			case "EOSE":
+				Expect(msg[1]).To(Equal("page-sub"))
+				Expect(eventCount).To(Equal(250))
+				return
+			default:
+				Fail(fmt.Sprintf("unexpected message type %v", msg[0]))
+			}
+		}
+	})
+
 	It("handles CLOSE", func() {
 		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -430,7 +481,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
