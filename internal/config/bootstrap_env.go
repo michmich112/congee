@@ -10,7 +10,7 @@ import (
 )
 
 // ApplyBootstrapEnvOverrides mutates c from process environment after JSON load.
-// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (SQLite only),
+// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (SQLite events + meta paths),
 // then re-validates c.
 func ApplyBootstrapEnvOverrides(c *Config) error {
 	if c == nil {
@@ -35,6 +35,7 @@ func ApplyBootstrapEnvOverrides(c *Config) error {
 			}
 			clean := filepath.Clean(dir)
 			c.Database.DSN = filepath.Join(clean, "congee.db")
+			c.Database.MetaDSN = filepath.Join(clean, "congee-meta.db")
 		case "postgres":
 			// Documented: ignored when using PostgreSQL.
 		default:

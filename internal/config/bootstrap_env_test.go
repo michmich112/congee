@@ -26,11 +26,15 @@ func TestApplyBootstrapEnvOverrides_sqliteDataDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(dir, "congee.db")
+	wantMeta := filepath.Join(dir, "congee-meta.db")
 	if c.Database.Type != "sqlite" {
 		t.Fatalf("type: %q", c.Database.Type)
 	}
 	if c.Database.DSN != want {
 		t.Fatalf("dsn: got %q want %q", c.Database.DSN, want)
+	}
+	if c.Database.MetaDSN != wantMeta {
+		t.Fatalf("meta_dsn: got %q want %q", c.Database.MetaDSN, wantMeta)
 	}
 }
 
