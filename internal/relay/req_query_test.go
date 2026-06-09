@@ -436,6 +436,121 @@ func TestQueryInitialREQEvents_ZeroLimitWithZeroDefaultIsUnlimited(t *testing.T)
 	}
 }
 
+func TestFetchREQPage_CursorAdvanceAndExhaustion(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "page.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 5)
+
+	stQ := newREQQueryState([]nostr.Filter{{Kinds: []int{1}}}, 0, false)
+	var total int
+	for {
+		page, hasMore, err := fetchREQPage(ctx, st, stQ, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += len(page)
+		if !hasMore {
+			break
+		}
+		if len(page) == 0 {
+			t.Fatal("expected non-empty page before exhaustion")
+		}
+	}
+	if total != 5 {
+		t.Fatalf("want 5 events across pages, got %d", total)
+	}
+}
+
+func TestFetchREQPage_DedupAcrossFilters(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "dedup.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 4)
+
+	two := 2
+	stQ := newREQQueryState([]nostr.Filter{
+		{Kinds: []int{1}, Limit: &two},
+		{Kinds: []int{1}},
+	}, 3, false)
+
+	page, hasMore, err := fetchREQPage(ctx, st, stQ, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasMore {
+		t.Fatal("expected single page to exhaust both filters")
+	}
+	if len(page) != 3 {
+		t.Fatalf("want 3 deduped events, got %d", len(page))
+	}
+}
+
+func TestFetchREQPage_SearchQueriedOnceNotPaged(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(dir, "searchpage.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	pk := strings.Repeat("b", 64)
+	sig := strings.Repeat("s", 128)
+	ev := &nostr.Event{
+		ID: strings.Repeat("1", 64), PubKey: pk, CreatedAt: 2, Kind: 1,
+		Tags: nil, Content: "alpha beta", Sig: sig,
+	}
+	if err := st.SaveEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	createTestEvents(t, st, ctx, 4)
+
+	q := "alpha"
+	stQ := newREQQueryState([]nostr.Filter{
+		{Search: &q, Kinds: []int{1}},
+		{Kinds: []int{1}},
+	}, 0, true)
+
+	page1, hasMore, err := fetchREQPage(ctx, st, stQ, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) == 0 {
+		t.Fatal("expected events on first page")
+	}
+	page2, hasMore2, err := fetchREQPage(ctx, st, stQ, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range page2 {
+		if ev.Content == "alpha beta" {
+			t.Fatal("search result should not appear on second page")
+		}
+	}
+	_ = hasMore
+	_ = hasMore2
+}
+
 func TestQueryInitialREQEvents_MultipleFiltersMixedLimits(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

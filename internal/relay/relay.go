@@ -14,7 +14,6 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
@@ -382,7 +381,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		_ = c.sendClosed(sid, "connection closed")
 	}
 	c.sendMu.Lock()
-	c.sendClosed = true
+	c.outboundClosed = true
 	c.sendMu.Unlock()
 	c.cancel()
 	close(c.send)
