@@ -356,20 +356,12 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		Int("max_open_per_ip", s.cfg.ConnectionLimits.MaxOpenPerIP).
 		Int("idle_no_event_no_sub_seconds", s.cfg.ConnectionLimits.IdleNoEventNoSubSeconds).
 		Msg("ws client connected")
-	defer cancel()
 
 	s.conns.Store(id, c)
 	defer s.conns.Delete(id)
 
 	s.subs.RegisterSender(id, func(b []byte) bool {
-		select {
-		case c.send <- b:
-			return true
-		case <-ctx.Done():
-			return false
-		default:
-			return false
-		}
+		return c.enqueue(b) == nil
 	})
 
 	go c.writeLoop()
@@ -387,15 +379,12 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 
 	ids := s.subs.UnregisterSender(id)
 	for _, sid := range ids {
-		b, err := nostr.MarshalRelayClosed(sid, "connection closed")
-		if err != nil {
-			continue
-		}
-		select {
-		case c.send <- b:
-		default:
-		}
+		_ = c.sendClosed(sid, "connection closed")
 	}
+	c.sendMu.Lock()
+	c.sendClosed = true
+	c.sendMu.Unlock()
+	c.cancel()
 	close(c.send)
 	<-c.writerDone
 	_ = nc.Close()

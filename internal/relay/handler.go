@@ -57,6 +57,9 @@ type Conn struct {
 	nip42Challenge string
 	nip42AuthSent  bool // true after ["AUTH", challenge] was enqueued for this connection
 	nip42Pubkeys   map[string]struct{}
+
+	sendMu     sync.Mutex
+	sendClosed bool
 }
 
 func newConnID() string {
@@ -317,6 +320,12 @@ func (c *Conn) sendNotice(msg string) error {
 }
 
 func (c *Conn) enqueue(b []byte) error {
+	c.sendMu.Lock()
+	if c.sendClosed {
+		c.sendMu.Unlock()
+		return ErrSlowConsumer
+	}
+	c.sendMu.Unlock()
 	select {
 	case c.send <- b:
 		return nil
