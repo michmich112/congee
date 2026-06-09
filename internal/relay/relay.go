@@ -44,6 +44,8 @@ type Server struct {
 	metricsCancel context.CancelFunc
 	startedUnix   atomic.Int64
 	serveOnce     sync.Once
+
+	readQueue *ReaderQueue
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -71,6 +73,7 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		metricsCtx:    mctx,
 		metricsCancel: mcancel,
 	}
+	s.readQueue = newReaderQueue(s)
 	mux := http.NewServeMux()
 	mux.Handle("/health", &HealthHandler{Store: store})
 	mux.HandleFunc("/", s.handleRoot)
@@ -143,6 +146,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 		go s.connAuditSampler()
 		go s.idleConnSweeper()
+		s.readQueue.start()
 	})
 	s.http.Addr = ln.Addr().String()
 	return s.http.Serve(ln)
@@ -391,6 +395,9 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 
 // Shutdown stops listening and closes active WebSocket connections.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.readQueue != nil {
+		s.readQueue.stop()
+	}
 	if s.metricsCancel != nil {
 		s.metricsCancel()
 	}

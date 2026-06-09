@@ -193,6 +193,24 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 	}
 }
 
+// IsOpen reports whether connID/subID is an active subscription with a registered sender.
+func (m *SubscriptionManager) IsOpen(connID, subID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.senders[connID] == nil {
+		return false
+	}
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return false
+	}
+	e := cmap[subID]
+	if e == nil {
+		return false
+	}
+	return !e.closed.Load()
+}
+
 // SubCount returns how many active subscriptions a connection has (for tests).
 func (m *SubscriptionManager) SubCount(connID string) int {
 	m.mu.RLock()
