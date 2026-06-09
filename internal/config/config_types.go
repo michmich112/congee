@@ -29,8 +29,9 @@ type AdminSection struct {
 }
 
 type DatabaseSection struct {
-	Type string `json:"type"`
-	DSN  string `json:"dsn"`
+	Type    string `json:"type"`
+	DSN     string `json:"dsn"`
+	MetaDSN string `json:"meta_dsn,omitempty"`
 }
 
 type LoggingSection struct {
