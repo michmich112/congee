@@ -14,35 +14,69 @@
 
 	type ConnectionLimitKey = keyof AppConfig['connection_limits'];
 
-	const MAX_OPEN_PER_IP_INFO =
-		'Maximum concurrent WebSocket connections from one client IP (resolved peer IP, including proxy headers). Set to 0 for unlimited — no per-IP cap. The global max open connections limit still applies.';
-
-	const IDLE_TIMEOUT_INFO =
-		'Closes connections that have sent no client EVENT and hold no open REQ subscriptions after this many seconds. The idle clock pauses while subscriptions are open or after any EVENT. Set to 0 to disable idle disconnects.';
-
 	const connectionLimitRows: {
 		k: ConnectionLimitKey;
 		label: string;
 		min: number;
-		info?: string;
+		info: string;
 	}[] = [
-		{ k: 'max_open', label: 'Max open connections', min: 1 },
-		{ k: 'max_open_per_ip', label: 'Max open connections / IP', min: 0, info: MAX_OPEN_PER_IP_INFO },
-		{ k: 'max_subscriptions_per_connection', label: 'Max subscriptions / connection', min: 1 },
-		{ k: 'max_filters_per_req', label: 'Max filters per REQ', min: 1 },
-		{ k: 'connections_per_minute_per_ip', label: 'Connections / min / IP', min: 1 },
+		{
+			k: 'max_open',
+			label: 'Max open connections',
+			min: 1,
+			info: 'Maximum concurrent WebSocket connections across the whole relay. When reached, new upgrades are rejected with HTTP 503 until existing connections close.'
+		},
+		{
+			k: 'max_open_per_ip',
+			label: 'Max open connections / IP',
+			min: 0,
+			info: 'Maximum concurrent WebSocket connections from one client IP (resolved peer IP, including proxy headers). Set to 0 for unlimited — no per-IP cap. The global max open connections limit still applies.'
+		},
+		{
+			k: 'max_subscriptions_per_connection',
+			label: 'Max subscriptions / connection',
+			min: 1,
+			info: 'Maximum open REQ subscriptions allowed on a single WebSocket connection. Additional REQ messages receive CLOSED with an error.'
+		},
+		{
+			k: 'max_filters_per_req',
+			label: 'Max filters per REQ',
+			min: 1,
+			info: 'Maximum filters allowed in one REQ message. Extra filters cause the subscription to be rejected.'
+		},
+		{
+			k: 'connections_per_minute_per_ip',
+			label: 'Connections / min / IP',
+			min: 1,
+			info: 'Sliding-window rate limit on new WebSocket upgrades per client IP per minute. Does not cap how many connections can stay open at once (see max open connections / IP).'
+		},
 		{
 			k: 'idle_no_event_no_sub_seconds',
 			label: 'Idle timeout (seconds)',
 			min: 0,
-			info: IDLE_TIMEOUT_INFO
+			info: 'Closes connections that have sent no client EVENT and hold no open REQ subscriptions after this many seconds. The idle clock pauses while subscriptions are open or after any EVENT. Set to 0 to disable idle disconnects.'
 		},
-		{ k: 'read_deadline_seconds', label: 'Read deadline (seconds)', min: 1 },
-		{ k: 'write_deadline_seconds', label: 'Write deadline (seconds)', min: 1 }
+		{
+			k: 'read_deadline_seconds',
+			label: 'Read deadline (seconds)',
+			min: 1,
+			info: 'Per-read timeout on the WebSocket. If no complete message arrives within this interval, the connection is closed. Refreshed after each handled message.'
+		},
+		{
+			k: 'write_deadline_seconds',
+			label: 'Write deadline (seconds)',
+			min: 1,
+			info: 'Per-write timeout when sending outbound relay messages on the WebSocket. Slow or blocked clients may be disconnected when a write exceeds this limit.'
+		}
 	];
 
 	function draft() {
 		return ctx.draft!;
+	}
+
+	function connectionLimitValue(k: ConnectionLimitKey): number {
+		const v = draft().connection_limits[k];
+		return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 	}
 </script>
 
@@ -107,20 +141,18 @@
 					<div class="space-y-2">
 						<div class="flex flex-wrap items-center gap-1.5">
 							<Label for={`cl-${row.k}`}>{row.label}</Label>
-							{#if row.info}
-								<StatInfoIcon info={row.info} />
-							{/if}
+							<StatInfoIcon info={row.info} />
 						</div>
 						<Input
 							id={`cl-${row.k}`}
 							type="number"
 							min={String(row.min)}
-							value={String(draft().connection_limits[row.k])}
+							value={String(connectionLimitValue(row.k))}
 							oninput={(e) => {
-								const v = draft().connection_limits[row.k];
-								if (typeof v === 'number') {
-									draft().connection_limits[row.k] = parseIntSafe(e.currentTarget.value, v);
-								}
+								draft().connection_limits[row.k] = parseIntSafe(
+									e.currentTarget.value,
+									connectionLimitValue(row.k)
+								);
 								ctx.markDirty();
 							}}
 						/>

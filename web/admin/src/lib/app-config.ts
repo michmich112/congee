@@ -60,6 +60,18 @@ export type AppConfig = {
 	nips: { enabled: number[] };
 };
 
+/** Matches `internal/config.DefaultConfig` connection_limits defaults. */
+export const DEFAULT_CONNECTION_LIMITS: AppConfig['connection_limits'] = {
+	max_open: 10000,
+	max_open_per_ip: 20,
+	max_subscriptions_per_connection: 20,
+	max_filters_per_req: 10,
+	connections_per_minute_per_ip: 60,
+	idle_no_event_no_sub_seconds: 90,
+	read_deadline_seconds: 120,
+	write_deadline_seconds: 30
+};
+
 export function cloneConfig(c: AppConfig): AppConfig {
 	return JSON.parse(JSON.stringify(c)) as AppConfig;
 }
@@ -125,6 +137,31 @@ export function ensureNip17Draft(cfg: AppConfig): void {
 	}
 }
 
+function finiteNumber(v: unknown): v is number {
+	return typeof v === 'number' && Number.isFinite(v);
+}
+
+/** Backfills connection_limits for older config files missing newer keys. */
+export function ensureConnectionLimitsDraft(cfg: AppConfig): void {
+	const d = DEFAULT_CONNECTION_LIMITS;
+	cfg.connection_limits ??= { ...d };
+	const cl = cfg.connection_limits;
+	if (!finiteNumber(cl.max_open)) cl.max_open = d.max_open;
+	if (!finiteNumber(cl.max_open_per_ip)) cl.max_open_per_ip = d.max_open_per_ip;
+	if (!finiteNumber(cl.max_subscriptions_per_connection)) {
+		cl.max_subscriptions_per_connection = d.max_subscriptions_per_connection;
+	}
+	if (!finiteNumber(cl.max_filters_per_req)) cl.max_filters_per_req = d.max_filters_per_req;
+	if (!finiteNumber(cl.connections_per_minute_per_ip)) {
+		cl.connections_per_minute_per_ip = d.connections_per_minute_per_ip;
+	}
+	if (!finiteNumber(cl.idle_no_event_no_sub_seconds)) {
+		cl.idle_no_event_no_sub_seconds = d.idle_no_event_no_sub_seconds;
+	}
+	if (!finiteNumber(cl.read_deadline_seconds)) cl.read_deadline_seconds = d.read_deadline_seconds;
+	if (!finiteNumber(cl.write_deadline_seconds)) cl.write_deadline_seconds = d.write_deadline_seconds;
+}
+
 export function parseConfigJson(text: string): AppConfig {
 	const v = JSON.parse(text) as Record<string, unknown>;
 	if (typeof v !== 'object' || v === null) throw new Error('config root must be an object');
@@ -139,6 +176,7 @@ export function parseConfigJson(text: string): AppConfig {
 	ensureNip17Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
+	ensureConnectionLimitsDraft(cfg);
 	return cfg;
 }
 
