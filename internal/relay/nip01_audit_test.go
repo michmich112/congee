@@ -22,9 +22,11 @@ func testRelayConfig() *config.Config {
 	return &config.Config{
 		ConnectionLimits: config.ConnectionLimitsSection{
 			MaxOpen:                       10,
+			MaxOpenPerIP:                  20,
 			MaxSubscriptionsPerConnection: 20,
 			MaxFiltersPerReq:              10,
 			ConnectionsPerMinutePerIP:     60,
+			IdleNoEventNoSubSeconds:       90,
 			ReadDeadlineSeconds:           60,
 			WriteDeadlineSeconds:          30,
 		},

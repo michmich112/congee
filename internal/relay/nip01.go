@@ -127,6 +127,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
 	}
+	prevSubs := s.subs.SubCount(c.ID)
 	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
 		switch {
 		case errors.Is(err, ErrSubscriptionIDTooLong):
@@ -139,6 +140,13 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			log.Warn().Err(err).Str("sub_id", msg.SubID).Msg("req subscription add rejected")
 			return c.sendClosed(msg.SubID, err.Error())
 		}
+	}
+	c.noteSubscriptionCount(s.subs.SubCount(c.ID))
+	if s.subs.SubCount(c.ID) > prevSubs {
+		log.Debug().
+			Str("sub_id", msg.SubID).
+			Int("subscriptions", s.subs.SubCount(c.ID)).
+			Msg("subscription opened; idle timeout exempt")
 	}
 	t0 := time.Now()
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
@@ -188,9 +196,13 @@ func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessag
 	_ = ctx
 	c.sendClosed(msg.SubID, "")
 	s.subs.Remove(c.ID, msg.SubID)
+	c.noteSubscriptionCount(s.subs.SubCount(c.ID))
 	if s.metrics != nil {
 		s.metrics.IncClose()
 	}
 	cl := relayLogger(c, ctx)
-	cl.Debug().Str("sub_id", msg.SubID).Msg("subscription closed")
+	cl.Debug().
+		Str("sub_id", msg.SubID).
+		Int("subscriptions", s.subs.SubCount(c.ID)).
+		Msg("subscription closed")
 }

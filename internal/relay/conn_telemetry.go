@@ -61,6 +61,7 @@ func (c *Conn) noteInboundAfterParse(msg any) {
 	switch msg.(type) {
 	case *nostr.EventMessage:
 		c.clientEventTotal.Add(1)
+		c.noteClientEvent()
 	case *nostr.ReqMessage:
 		c.reqTotal.Add(1)
 	case *nostr.AuthMessage:

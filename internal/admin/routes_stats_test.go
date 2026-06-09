@@ -53,6 +53,7 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 		"events_stored_ok", "events_rejected", "events_ephemeral_ok", "req_total", "close_total",
 		"rate_limit_messages", "rate_limit_bandwidth", "rate_limit_events", "rate_limit_reqs",
 		"rate_limit_new_connections", "rate_limit_max_connections",
+		"rate_limit_per_ip_open", "idle_disconnect_total",
 	} {
 		if _, ok := rc[k]; !ok {
 			t.Errorf("relay_counters missing %q", k)

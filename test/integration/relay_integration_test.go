@@ -42,9 +42,11 @@ func writeIntegrationConfig(dir, dsn string) string {
   },
   "connection_limits": {
     "max_open": 100,
+    "max_open_per_ip": 20,
     "max_subscriptions_per_connection": 20,
     "max_filters_per_req": 10,
     "connections_per_minute_per_ip": 60,
+    "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
     "write_deadline_seconds": 30
   },
@@ -82,9 +84,11 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnCon
   },
   "connection_limits": {
     "max_open": 100,
+    "max_open_per_ip": 20,
     "max_subscriptions_per_connection": 20,
     "max_filters_per_req": 10,
     "connections_per_minute_per_ip": 60,
+    "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
     "write_deadline_seconds": 30
   },
@@ -130,9 +134,11 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
   },
   "connection_limits": {
     "max_open": 100,
+    "max_open_per_ip": 20,
     "max_subscriptions_per_connection": 20,
     "max_filters_per_req": 10,
     "connections_per_minute_per_ip": 60,
+    "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
     "write_deadline_seconds": 30
   },
@@ -416,9 +422,11 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
   },
   "connection_limits": {
     "max_open": 100,
+    "max_open_per_ip": 20,
     "max_subscriptions_per_connection": 20,
     "max_filters_per_req": 10,
     "connections_per_minute_per_ip": 60,
+    "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
     "write_deadline_seconds": 30
   },

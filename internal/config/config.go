@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -34,9 +33,11 @@ func DefaultConfig() *Config {
 		},
 		ConnectionLimits: ConnectionLimitsSection{
 			MaxOpen:                       10000,
+			MaxOpenPerIP:                  20,
 			MaxSubscriptionsPerConnection: 20,
 			MaxFiltersPerReq:              10,
 			ConnectionsPerMinutePerIP:     60,
+			IdleNoEventNoSubSeconds:       90,
 			ReadDeadlineSeconds:           120,
 			WriteDeadlineSeconds:          30,
 			DefaultQueryLimit:             ptrInt(DefaultQueryLimitIfUnset),
@@ -90,14 +91,11 @@ func LoadJSON(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+	c, err := unmarshalConfigJSON(data)
+	if err != nil {
 		return nil, fmt.Errorf("config: json: %w", err)
 	}
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return c, nil
 }
 
 // Validate checks ports, retention, NIP lists, and registry membership.
@@ -155,6 +153,12 @@ func (c *Config) Validate() error {
 	}
 	if c.ConnectionLimits.MaxOpen <= 0 {
 		return errors.New("config: connection_limits.max_open must be > 0")
+	}
+	if c.ConnectionLimits.MaxOpenPerIP < 0 {
+		return errors.New("config: connection_limits.max_open_per_ip must be >= 0")
+	}
+	if c.ConnectionLimits.IdleNoEventNoSubSeconds < 0 {
+		return errors.New("config: connection_limits.idle_no_event_no_sub_seconds must be >= 0")
 	}
 	if c.ConnectionLimits.MaxSubscriptionsPerConnection <= 0 {
 		return errors.New("config: connection_limits.max_subscriptions_per_connection must be > 0")

@@ -106,6 +106,8 @@ func zeroRelayCountersShape() map[string]any {
 		"rate_limit_reqs":            int64(0),
 		"rate_limit_new_connections": int64(0),
 		"rate_limit_max_connections": int64(0),
+		"rate_limit_per_ip_open":     int64(0),
+		"idle_disconnect_total":      int64(0),
 	}
 }
 
