@@ -37,6 +37,7 @@ type Server struct {
 
 	open   atomic.Int64
 	conns  sync.Map // conn id -> *Conn
+	ipOpen *ipConnTracker
 	connWG sync.WaitGroup
 
 	metrics       *RelayMetrics
@@ -66,6 +67,7 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		hooks:         &HookChain{},
 		subs:          NewSubscriptionManager(cfg, log),
 		limiter:       NewLimiterHub(cfg),
+		ipOpen:        newIPConnTracker(),
 		metrics:       newRelayMetrics(),
 		metricsCtx:    mctx,
 		metricsCancel: mcancel,
@@ -141,6 +143,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			})
 		}
 		go s.connAuditSampler()
+		go s.idleConnSweeper()
 	})
 	s.http.Addr = ln.Addr().String()
 	return s.http.Serve(ln)
@@ -238,6 +241,11 @@ func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request) {
 		if s.metrics != nil {
 			s.metrics.IncRateLimitMaxConnections()
 		}
+		s.log.Warn().
+			Int64("open_connections", s.open.Load()).
+			Int("max_open", s.cfg.ConnectionLimits.MaxOpen).
+			Str("remote", r.RemoteAddr).
+			Msg("connection rejected: global open connection limit reached")
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
@@ -246,12 +254,34 @@ func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request) {
 		if s.metrics != nil {
 			s.metrics.IncRateLimitNewConnections()
 		}
+		s.log.Warn().
+			Str("peer_ip", peer).
+			Str("remote", r.RemoteAddr).
+			Int("connections_per_minute_per_ip", s.cfg.ConnectionLimits.ConnectionsPerMinutePerIP).
+			Msg("connection rejected: per-IP connection rate limit")
 		http.Error(w, "connection rate limit", http.StatusTooManyRequests)
+		return
+	}
+
+	maxPerIP := s.cfg.ConnectionLimits.MaxOpenPerIP
+	openForIP, acquired := s.ipOpen.tryAcquire(peer, maxPerIP)
+	if !acquired {
+		if s.metrics != nil {
+			s.metrics.IncRateLimitPerIPOpen()
+		}
+		s.log.Warn().
+			Str("peer_ip", peer).
+			Str("remote", r.RemoteAddr).
+			Int("open_for_ip", openForIP).
+			Int("max_open_per_ip", maxPerIP).
+			Msg("connection rejected: per-IP open connection limit reached")
+		http.Error(w, "too many connections from this IP", http.StatusTooManyRequests)
 		return
 	}
 
 	nc, useFlate, err := s.upgradeConn(w, r)
 	if err != nil {
+		s.ipOpen.release(peer)
 		s.log.Warn().Err(err).Str("remote", r.RemoteAddr).Str("peer_ip", peer).Msg("websocket upgrade failed")
 		return
 	}
@@ -284,6 +314,7 @@ func (s *Server) upgradeConn(w http.ResponseWriter, r *http.Request) (net.Conn, 
 func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, useFlate bool) {
 	defer s.connWG.Done()
 	defer s.open.Add(-1)
+	defer s.ipOpen.release(resolvedPeerIP)
 
 	_, port, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -316,7 +347,15 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		log:         log,
 		startedUnix: time.Now().Unix(),
 	}
-	c.log.Info().Str("peer_ip", resolvedPeerIP).Str("ws_transport", wsTransport).Msg("ws client connected")
+	c.initIdleClock()
+	c.log.Info().
+		Str("peer_ip", resolvedPeerIP).
+		Str("remote_addr", remoteAddr).
+		Str("ws_transport", wsTransport).
+		Int("open_for_ip", s.ipOpen.openCount(resolvedPeerIP)).
+		Int("max_open_per_ip", s.cfg.ConnectionLimits.MaxOpenPerIP).
+		Int("idle_no_event_no_sub_seconds", s.cfg.ConnectionLimits.IdleNoEventNoSubSeconds).
+		Msg("ws client connected")
 	defer cancel()
 
 	s.conns.Store(id, c)

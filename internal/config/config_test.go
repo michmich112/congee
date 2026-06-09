@@ -75,9 +75,11 @@ func minimalValidConfig() *Config {
 		},
 		ConnectionLimits: ConnectionLimitsSection{
 			MaxOpen:                       1,
+			MaxOpenPerIP:                  1,
 			MaxSubscriptionsPerConnection: 1,
 			MaxFiltersPerReq:              1,
 			ConnectionsPerMinutePerIP:     1,
+			IdleNoEventNoSubSeconds:       0,
 			ReadDeadlineSeconds:           1,
 			WriteDeadlineSeconds:          1,
 		},
@@ -160,6 +162,14 @@ func TestLoadInvalidJSON(t *testing.T) {
 	_, err := LoadJSON(p)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestValidateAcceptsZeroMaxOpenPerIP(t *testing.T) {
+	c := minimalValidConfig()
+	c.ConnectionLimits.MaxOpenPerIP = 0
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected zero max_open_per_ip to be valid (unlimited), got: %v", err)
 	}
 }
 

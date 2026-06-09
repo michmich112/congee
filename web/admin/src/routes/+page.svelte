@@ -300,6 +300,12 @@
 				<div>
 					Max connections: <span class="font-mono">{formatCompactCount(counter('rate_limit_max_connections'))}</span>
 				</div>
+				<div>
+					Open / IP: <span class="font-mono">{formatCompactCount(counter('rate_limit_per_ip_open'))}</span>
+				</div>
+				<div>
+					Idle disconnects: <span class="font-mono">{formatCompactCount(counter('idle_disconnect_total'))}</span>
+				</div>
 			</Card.Content>
 		</Card.Root>
 

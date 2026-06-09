@@ -28,6 +28,8 @@ type RelayMetrics struct {
 	rateLimitReqs           atomic.Int64
 	rateLimitNewConnections atomic.Int64
 	rateLimitMaxConnections atomic.Int64
+	rateLimitPerIPOpen      atomic.Int64
+	idleDisconnectTotal     atomic.Int64
 
 	// Current UTC minute partial aggregates (reset on flush).
 	curEventsStored   atomic.Int64
@@ -84,6 +86,8 @@ func (m *RelayMetrics) IncRateLimitEvents()         { m.rateLimitEvents.Add(1) }
 func (m *RelayMetrics) IncRateLimitReqs()           { m.rateLimitReqs.Add(1) }
 func (m *RelayMetrics) IncRateLimitNewConnections() { m.rateLimitNewConnections.Add(1) }
 func (m *RelayMetrics) IncRateLimitMaxConnections() { m.rateLimitMaxConnections.Add(1) }
+func (m *RelayMetrics) IncRateLimitPerIPOpen()      { m.rateLimitPerIPOpen.Add(1) }
+func (m *RelayMetrics) IncIdleDisconnect()          { m.idleDisconnectTotal.Add(1) }
 
 func (m *RelayMetrics) RecordQueryLatency(d time.Duration) {
 	ms := d.Milliseconds()
@@ -137,6 +141,8 @@ func (m *RelayMetrics) CountersJSON() map[string]any {
 		"rate_limit_reqs":            m.rateLimitReqs.Load(),
 		"rate_limit_new_connections": m.rateLimitNewConnections.Load(),
 		"rate_limit_max_connections": m.rateLimitMaxConnections.Load(),
+		"rate_limit_per_ip_open":     m.rateLimitPerIPOpen.Load(),
+		"idle_disconnect_total":      m.idleDisconnectTotal.Load(),
 	}
 }
 

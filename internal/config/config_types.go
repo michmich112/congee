@@ -57,12 +57,17 @@ type RateLimitsSection struct {
 
 type ConnectionLimitsSection struct {
 	MaxOpen                       int  `json:"max_open"`
+	// MaxOpenPerIP caps concurrent WebSockets per peer IP. Zero disables the cap.
+	MaxOpenPerIP int `json:"max_open_per_ip"`
 	MaxSubscriptionsPerConnection int  `json:"max_subscriptions_per_connection"`
 	MaxFiltersPerReq              int  `json:"max_filters_per_req"`
 	ConnectionsPerMinutePerIP     int  `json:"connections_per_minute_per_ip"`
-	ReadDeadlineSeconds           int  `json:"read_deadline_seconds"`
-	WriteDeadlineSeconds          int  `json:"write_deadline_seconds"`
-	DefaultQueryLimit             *int `json:"default_query_limit,omitempty"`
+	// IdleNoEventNoSubSeconds closes connections with no client EVENT and no open REQ
+	// subscriptions after this many seconds. Zero disables the idle sweeper.
+	IdleNoEventNoSubSeconds int  `json:"idle_no_event_no_sub_seconds"`
+	ReadDeadlineSeconds     int  `json:"read_deadline_seconds"`
+	WriteDeadlineSeconds    int  `json:"write_deadline_seconds"`
+	DefaultQueryLimit       *int `json:"default_query_limit,omitempty"`
 }
 
 // DefaultQueryLimitIfUnset caps initial REQ results per filter when default_query_limit is omitted from JSON.

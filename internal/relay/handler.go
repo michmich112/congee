@@ -48,6 +48,7 @@ type Conn struct {
 	log     zerolog.Logger
 
 	startedUnix      int64
+	idleSinceUnix    int64 // 0 = exempt; else unix sec when idle clock started
 	reqTotal         atomic.Uint64
 	clientEventTotal atomic.Uint64
 	connAudit        connAuditRing

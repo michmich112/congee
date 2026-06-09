@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Network from '@lucide/svelte/icons/network';
-	import { parseIntSafe } from '$lib/app-config';
+	import { parseIntSafe, type AppConfig } from '$lib/app-config';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
+	import StatInfoIcon from '$lib/components/StatInfoIcon.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -10,6 +11,35 @@
 	import { Switch } from '$lib/components/ui/switch';
 
 	const ctx = getAdminConfig();
+
+	type ConnectionLimitKey = keyof AppConfig['connection_limits'];
+
+	const MAX_OPEN_PER_IP_INFO =
+		'Maximum concurrent WebSocket connections from one client IP (resolved peer IP, including proxy headers). Set to 0 for unlimited — no per-IP cap. The global max open connections limit still applies.';
+
+	const IDLE_TIMEOUT_INFO =
+		'Closes connections that have sent no client EVENT and hold no open REQ subscriptions after this many seconds. The idle clock pauses while subscriptions are open or after any EVENT. Set to 0 to disable idle disconnects.';
+
+	const connectionLimitRows: {
+		k: ConnectionLimitKey;
+		label: string;
+		min: number;
+		info?: string;
+	}[] = [
+		{ k: 'max_open', label: 'Max open connections', min: 1 },
+		{ k: 'max_open_per_ip', label: 'Max open connections / IP', min: 0, info: MAX_OPEN_PER_IP_INFO },
+		{ k: 'max_subscriptions_per_connection', label: 'Max subscriptions / connection', min: 1 },
+		{ k: 'max_filters_per_req', label: 'Max filters per REQ', min: 1 },
+		{ k: 'connections_per_minute_per_ip', label: 'Connections / min / IP', min: 1 },
+		{
+			k: 'idle_no_event_no_sub_seconds',
+			label: 'Idle timeout (seconds)',
+			min: 0,
+			info: IDLE_TIMEOUT_INFO
+		},
+		{ k: 'read_deadline_seconds', label: 'Read deadline (seconds)', min: 1 },
+		{ k: 'write_deadline_seconds', label: 'Write deadline (seconds)', min: 1 }
+	];
 
 	function draft() {
 		return ctx.draft!;
@@ -73,19 +103,24 @@
 		<h3 class="text-sm font-medium text-muted-foreground">Connection &amp; subscription limits</h3>
 		<Card.Root>
 			<Card.Content class="grid gap-4 pt-6 sm:grid-cols-2">
-				{#each [{ k: 'max_open' as const, label: 'Max open connections' }, { k: 'max_subscriptions_per_connection' as const, label: 'Max subscriptions / connection' }, { k: 'max_filters_per_req' as const, label: 'Max filters per REQ' }, { k: 'connections_per_minute_per_ip' as const, label: 'Connections / min / IP' }, { k: 'read_deadline_seconds' as const, label: 'Read deadline (seconds)' }, { k: 'write_deadline_seconds' as const, label: 'Write deadline (seconds)' }] as row (row.k)}
+				{#each connectionLimitRows as row (row.k)}
 					<div class="space-y-2">
-						<Label for={`cl-${row.k}`}>{row.label}</Label>
+						<div class="flex flex-wrap items-center gap-1.5">
+							<Label for={`cl-${row.k}`}>{row.label}</Label>
+							{#if row.info}
+								<StatInfoIcon info={row.info} />
+							{/if}
+						</div>
 						<Input
 							id={`cl-${row.k}`}
 							type="number"
-							min="1"
+							min={String(row.min)}
 							value={String(draft().connection_limits[row.k])}
 							oninput={(e) => {
-								draft().connection_limits[row.k] = parseIntSafe(
-									e.currentTarget.value,
-									draft().connection_limits[row.k]
-								);
+								const v = draft().connection_limits[row.k];
+								if (typeof v === 'number') {
+									draft().connection_limits[row.k] = parseIntSafe(e.currentTarget.value, v);
+								}
 								ctx.markDirty();
 							}}
 						/>

@@ -16,9 +16,11 @@ export type AppConfig = {
 	};
 	connection_limits: {
 		max_open: number;
+		max_open_per_ip: number;
 		max_subscriptions_per_connection: number;
 		max_filters_per_req: number;
 		connections_per_minute_per_ip: number;
+		idle_no_event_no_sub_seconds: number;
 		read_deadline_seconds: number;
 		write_deadline_seconds: number;
 		default_query_limit?: number | null;
