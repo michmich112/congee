@@ -208,6 +208,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 		return err
 	}
 	s.subs.NoteSubEOSE(c.ID, msg.SubID)
+	s.subs.FinishSnapshot(c.ID, msg.SubID)
 	return nil
 }
 

@@ -133,6 +133,7 @@ func (q *ReaderQueue) runJob(job *reqPageJob) {
 		return
 	}
 	s.subs.NoteSubEOSE(job.connID, job.subID)
+	s.subs.FinishSnapshot(job.connID, job.subID)
 }
 
 // drainRemainingPages fetches and sends all remaining REQ pages synchronously.

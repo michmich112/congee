@@ -22,6 +22,8 @@ var (
 	ErrTooManyFilters = errors.New("relay: too many filters per REQ")
 )
 
+const pendingLiveCap = 256
+
 // subEntry wraps a subscription's filters with an atomic closed flag.
 type subEntry struct {
 	filters []nostr.Filter
@@ -33,6 +35,10 @@ type subEntry struct {
 	broadcastOk    atomic.Uint64
 	broadcastDrop  atomic.Uint64
 	eoseSent       atomic.Uint32
+
+	snapshotDone atomic.Bool
+	pendingLive  [][]byte
+	overflow     atomic.Bool
 }
 
 // SubscriptionManager tracks REQ subscriptions per connection and broadcasts events.
@@ -104,10 +110,12 @@ func (m *SubscriptionManager) Add(connID, subID string, filters []nostr.Filter) 
 	if _, exists := cmap[subID]; !exists && len(cmap) >= m.maxSubsPerConn {
 		return ErrTooManySubscriptions
 	}
-	cmap[subID] = &subEntry{
+	e := &subEntry{
 		filters:    filters,
 		openedUnix: time.Now().Unix(),
 	}
+	e.snapshotDone.Store(false)
+	cmap[subID] = e
 	return nil
 }
 
@@ -158,8 +166,8 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 	if visible == nil {
 		visible = func(string, *nostr.Event) bool { return true }
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for connID, cmap := range m.subs {
 		send := m.senders[connID]
 		if send == nil {
@@ -179,6 +187,14 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 			if err != nil {
 				m.relayLog.Error().Err(err).Str("conn_id", connID).Str("sub_id", subID).
 					Str("event_id", ev.ID).Int("kind", ev.Kind).Msg("broadcast marshal relay event failed")
+				continue
+			}
+			if !entry.snapshotDone.Load() {
+				if len(entry.pendingLive) >= pendingLiveCap {
+					entry.overflow.Store(true)
+					continue
+				}
+				entry.pendingLive = append(entry.pendingLive, b)
 				continue
 			}
 			ok := send(b)
@@ -234,6 +250,56 @@ func (m *SubscriptionManager) NoteSubInitialDelivery(connID, subID string, ok bo
 		e.initialSent.Add(1)
 	} else {
 		e.initialDropped.Add(1)
+	}
+}
+
+// FinishSnapshot marks the initial REQ snapshot complete and flushes buffered live events.
+func (m *SubscriptionManager) FinishSnapshot(connID, subID string) {
+	var pending [][]byte
+	var overflow bool
+	var send func([]byte) bool
+
+	m.mu.Lock()
+	cmap := m.subs[connID]
+	if cmap != nil {
+		if e := cmap[subID]; e != nil {
+			e.snapshotDone.Store(true)
+			pending = e.pendingLive
+			e.pendingLive = nil
+			overflow = e.overflow.Load()
+			send = m.senders[connID]
+		}
+	}
+	m.mu.Unlock()
+
+	if overflow {
+		m.relayLog.Warn().Str("conn_id", connID).Str("sub_id", subID).
+			Int("cap", pendingLiveCap).
+			Msg("live events dropped during REQ snapshot: pending buffer overflow")
+	}
+	if send == nil {
+		return
+	}
+	for _, b := range pending {
+		if send(b) {
+			m.mu.RLock()
+			if cmap := m.subs[connID]; cmap != nil {
+				if e := cmap[subID]; e != nil {
+					e.broadcastOk.Add(1)
+				}
+			}
+			m.mu.RUnlock()
+		} else {
+			m.mu.RLock()
+			if cmap := m.subs[connID]; cmap != nil {
+				if e := cmap[subID]; e != nil {
+					e.broadcastDrop.Add(1)
+				}
+			}
+			m.mu.RUnlock()
+			m.relayLog.Debug().Str("conn_id", connID).Str("sub_id", subID).
+				Msg("buffered live event send queue full or closed")
+		}
 	}
 }
 
