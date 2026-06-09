@@ -1,4 +1,4 @@
-package db_test
+package db
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/sqlitemeta"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/sqliteshim"
 )
@@ -62,7 +62,7 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	_ = sqldb.Close()
 
 	sec := config.DatabaseSection{Type: "sqlite", DSN: eventsPath}
-	h, err := db.Open(ctx, sec, "", zerolog.Nop())
+	h, err := Open(ctx, sec, "", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,4 +117,78 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 		t.Fatalf("meta audit rows=%d", metaAudit)
 	}
 	_ = metaPath
+}
+
+func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
+	if !sqliteshim.HasDriver() {
+		t.Skip("sqliteshim not available")
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	eventsPath := filepath.Join(dir, "legacy-events.db")
+	metaPath := filepath.Join(dir, "congee-meta.db")
+
+	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+eventsPath+"?cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyDDL := []string{
+		`CREATE TABLE audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at INTEGER NOT NULL,
+			action TEXT NOT NULL,
+			detail TEXT,
+			pubkey TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE config_changelog (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at INTEGER NOT NULL,
+			summary TEXT NOT NULL,
+			json_diff TEXT NOT NULL
+		)`,
+		`INSERT INTO audit_log (created_at, action, detail, pubkey) VALUES (10, 'event_stored', 'kind=1', 'pub')`,
+		`INSERT INTO config_changelog (created_at, summary, json_diff) VALUES (11, 's', '{}')`,
+		`PRAGMA user_version = 6`,
+	}
+	for _, q := range legacyDDL {
+		if _, err := sqldb.ExecContext(ctx, q); err != nil {
+			t.Fatalf("legacy ddl: %v", err)
+		}
+	}
+	_ = sqldb.Close()
+
+	sec := config.DatabaseSection{Type: "sqlite", DSN: eventsPath}
+	h, err := Open(ctx, sec, "", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+
+	auditBefore, err := h.CountAuditLog(ctx, storage.AuditQuery{})
+	if err != nil || auditBefore != 1 {
+		t.Fatalf("audit after first open: %d %v", auditBefore, err)
+	}
+	chBefore, err := h.QueryConfigChangelog(ctx, 5)
+	if err != nil || len(chBefore) != 1 {
+		t.Fatalf("changelog after first open: %+v %v", chBefore, err)
+	}
+
+	meta, err := sqlitemeta.Open(ctx, metaPath, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meta.Close()
+
+	if err := migrateLegacyMetaSQLite(ctx, eventsPath, meta); err != nil {
+		t.Fatal(err)
+	}
+
+	auditAfter, err := h.CountAuditLog(ctx, storage.AuditQuery{})
+	if err != nil || auditAfter != 1 {
+		t.Fatalf("audit after re-migrate: %d want 1 %v", auditAfter, err)
+	}
+	chAfter, err := h.QueryConfigChangelog(ctx, 5)
+	if err != nil || len(chAfter) != 1 {
+		t.Fatalf("changelog after re-migrate: %+v want 1 %v", chAfter, err)
+	}
 }

@@ -37,37 +37,7 @@ func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN string, meta *sqlite
 		return nil
 	}
 
-	var hasAudit bool
-	if err := sqldb.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'audit_log')`,
-	).Scan(&hasAudit); err != nil {
-		return fmt.Errorf("legacy meta: check audit_log: %w", err)
-	}
-	if !hasAudit {
-		return nil
-	}
-
-	n, err := meta.CountAuditLog(ctx, storage.AuditQuery{})
-	if err != nil {
-		return fmt.Errorf("legacy meta: count meta audit: %w", err)
-	}
-	if n > 0 {
-		return nil
-	}
-
-	if err := copyLegacyAudit(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	if err := copyLegacyChangelog(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	if err := copyLegacyMetricBuckets(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	if err := copyLegacyWSSessions(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	return nil
+	return copyAllLegacyMeta(ctx, sqldb, meta, false)
 }
 
 func normalizeLegacyDSN(dsn string) string {
@@ -81,7 +51,45 @@ func normalizeLegacyDSN(dsn string) string {
 	return "file:" + dsn + "?cache=shared"
 }
 
-func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store) error {
+func legacyTableExists(ctx context.Context, legacy *sql.DB, table string, postgres bool) (bool, error) {
+	if postgres {
+		var exists bool
+		err := legacy.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1
+)`, table).Scan(&exists)
+		return exists, err
+	}
+	var exists bool
+	err := legacy.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)`,
+		table,
+	).Scan(&exists)
+	return exists, err
+}
+
+func copyAllLegacyMeta(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+	if err := copyLegacyAudit(ctx, legacy, meta, postgres); err != nil {
+		return err
+	}
+	if err := copyLegacyChangelog(ctx, legacy, meta, postgres); err != nil {
+		return err
+	}
+	if err := copyLegacyMetricBuckets(ctx, legacy, meta, postgres); err != nil {
+		return err
+	}
+	return copyLegacyWSSessions(ctx, legacy, meta, postgres)
+}
+
+func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+	exists, err := legacyTableExists(ctx, legacy, "audit_log", postgres)
+	if err != nil {
+		return fmt.Errorf("legacy meta: check audit_log: %w", err)
+	}
+	if !exists {
+		return nil
+	}
 	rows, err := legacy.QueryContext(ctx, `SELECT created_at, action, detail, pubkey FROM audit_log ORDER BY id ASC`)
 	if err != nil {
 		return fmt.Errorf("legacy meta: scan audit_log: %w", err)
@@ -92,6 +100,13 @@ func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store
 		if err := rows.Scan(&e.CreatedAt, &e.Action, &e.Detail, &e.Pubkey); err != nil {
 			return err
 		}
+		dup, err := meta.HasAuditDuplicate(ctx, e)
+		if err != nil {
+			return fmt.Errorf("legacy meta: audit duplicate check: %w", err)
+		}
+		if dup {
+			continue
+		}
 		if err := meta.SaveAuditEntry(ctx, e); err != nil {
 			return fmt.Errorf("legacy meta: save audit: %w", err)
 		}
@@ -99,7 +114,27 @@ func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store
 	return rows.Err()
 }
 
-func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store) error {
+func legacyChangelogExists(ctx context.Context, meta *sqlitemeta.Store, c storage.ConfigChange) (bool, error) {
+	rows, err := meta.QueryConfigChangelog(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range rows {
+		if r.CreatedAt == c.CreatedAt && r.Summary == c.Summary && r.JSONDiff == c.JSONDiff {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+	exists, err := legacyTableExists(ctx, legacy, "config_changelog", postgres)
+	if err != nil {
+		return fmt.Errorf("legacy meta: check config_changelog: %w", err)
+	}
+	if !exists {
+		return nil
+	}
 	rows, err := legacy.QueryContext(ctx, `SELECT created_at, summary, json_diff FROM config_changelog ORDER BY id ASC`)
 	if err != nil {
 		return fmt.Errorf("legacy meta: scan config_changelog: %w", err)
@@ -110,6 +145,13 @@ func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.S
 		if err := rows.Scan(&c.CreatedAt, &c.Summary, &c.JSONDiff); err != nil {
 			return err
 		}
+		exists, err := legacyChangelogExists(ctx, meta, c)
+		if err != nil {
+			return fmt.Errorf("legacy meta: changelog duplicate check: %w", err)
+		}
+		if exists {
+			continue
+		}
 		if err := meta.SaveConfigChange(ctx, c); err != nil {
 			return fmt.Errorf("legacy meta: save changelog: %w", err)
 		}
@@ -117,7 +159,14 @@ func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.S
 	return rows.Err()
 }
 
-func copyLegacyMetricBuckets(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store) error {
+func copyLegacyMetricBuckets(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+	exists, err := legacyTableExists(ctx, legacy, "relay_metric_buckets", postgres)
+	if err != nil {
+		return fmt.Errorf("legacy meta: check relay_metric_buckets: %w", err)
+	}
+	if !exists {
+		return nil
+	}
 	rows, err := legacy.QueryContext(ctx, `
 SELECT bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count, subscriptions_open
 FROM relay_metric_buckets ORDER BY bucket_start_unix ASC`)
@@ -137,11 +186,22 @@ FROM relay_metric_buckets ORDER BY bucket_start_unix ASC`)
 	return rows.Err()
 }
 
-func copyLegacyWSSessions(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store) error {
-	var exists bool
-	if err := legacy.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ws_connection_sessions')`,
-	).Scan(&exists); err != nil {
+func legacyWSSessionExists(ctx context.Context, meta *sqlitemeta.Store, connID string, startedUnix int64) (bool, error) {
+	sessions, err := meta.QueryWSConnectionSessions(ctx, storage.WSConnectionSessionQuery{Limit: 10000})
+	if err != nil {
+		return false, err
+	}
+	for _, s := range sessions {
+		if s.ConnID == connID && s.StartedUnix == startedUnix {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func copyLegacyWSSessions(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+	exists, err := legacyTableExists(ctx, legacy, "ws_connection_sessions", postgres)
+	if err != nil {
 		return fmt.Errorf("legacy meta: check ws_connection_sessions: %w", err)
 	}
 	if !exists {
@@ -162,6 +222,13 @@ FROM ws_connection_sessions ORDER BY id ASC`)
 		}
 		s.SeriesJSON = []byte(series)
 		s.SubsJSON = []byte(subs)
+		dup, err := legacyWSSessionExists(ctx, meta, s.ConnID, s.StartedUnix)
+		if err != nil {
+			return fmt.Errorf("legacy meta: ws session duplicate check: %w", err)
+		}
+		if dup {
+			continue
+		}
 		if _, err := meta.SaveWSConnectionSession(ctx, s); err != nil {
 			return fmt.Errorf("legacy meta: save ws session: %w", err)
 		}
@@ -194,34 +261,5 @@ func migrateLegacyMetaPostgres(ctx context.Context, eventsDSN string, meta *sqli
 		return nil
 	}
 
-	var hasAudit bool
-	if err := sqldb.QueryRowContext(ctx, `
-SELECT EXISTS (
-  SELECT 1 FROM information_schema.tables
-  WHERE table_schema = CURRENT_SCHEMA() AND table_name = 'audit_log'
-)`).Scan(&hasAudit); err != nil {
-		return fmt.Errorf("legacy meta: check postgres audit_log: %w", err)
-	}
-	if !hasAudit {
-		return nil
-	}
-
-	n, err := meta.CountAuditLog(ctx, storage.AuditQuery{})
-	if err != nil {
-		return fmt.Errorf("legacy meta: count meta audit: %w", err)
-	}
-	if n > 0 {
-		return nil
-	}
-
-	if err := copyLegacyAudit(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	if err := copyLegacyChangelog(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	if err := copyLegacyMetricBuckets(ctx, sqldb, meta); err != nil {
-		return err
-	}
-	return copyLegacyWSSessions(ctx, sqldb, meta)
+	return copyAllLegacyMeta(ctx, sqldb, meta, true)
 }
