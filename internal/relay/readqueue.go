@@ -123,10 +123,10 @@ func (q *ReaderQueue) runJob(job *reqPageJob) {
 	}
 
 	if hasMore {
-		if !q.Enqueue(job) {
-			drainRemainingPages(q.ctx, s, c, job.subID, job.state, job.pageSize)
+		if q.Enqueue(job) {
+			return
 		}
-		return
+		drainRemainingPages(q.ctx, s, c, job.subID, job.state, job.pageSize)
 	}
 
 	if err := c.sendEOSE(job.subID); err != nil {

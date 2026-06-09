@@ -148,9 +148,15 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			Int("subscriptions", s.subs.SubCount(c.ID)).
 			Msg("subscription opened; idle timeout exempt")
 	}
-	t0 := time.Now()
+	pageSize := config.EffectiveQueryPageSize(s.cfg.ConnectionLimits.QueryPageSize)
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
-	events, err := queryInitialREQEvents(ctx, s.store, msg.Filters, searchEnabled, defaultLimit)
+	if pageSize <= 0 {
+		pageSize = 1 << 20
+	}
+	state := newREQQueryState(msg.Filters, defaultLimit, searchEnabled)
+
+	t0 := time.Now()
+	events, hasMore, err := fetchREQPage(ctx, s.store, state, pageSize)
 	durationMs := time.Since(t0).Milliseconds()
 	if s.metrics != nil {
 		s.metrics.RecordQueryLatency(time.Since(t0))
@@ -184,6 +190,19 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			}
 		}
 		s.subs.NoteSubInitialDelivery(c.ID, msg.SubID, err == nil)
+	}
+	if hasMore {
+		job := &reqPageJob{
+			connID:        c.ID,
+			subID:         msg.SubID,
+			state:         state,
+			searchEnabled: searchEnabled,
+			pageSize:      pageSize,
+		}
+		if s.readQueue != nil && s.readQueue.Enqueue(job) {
+			return nil
+		}
+		drainRemainingPages(ctx, s, c, msg.SubID, state, pageSize)
 	}
 	if err := c.sendEOSE(msg.SubID); err != nil {
 		return err
