@@ -2,10 +2,11 @@ package storage
 
 // AdminStorageSnapshot is cheap-ish row counts plus optional on-disk size for the admin dashboard.
 type AdminStorageSnapshot struct {
-	Bytes  int64
-	Events int64
-	Tags   int64
-	Audit  int64
+	Bytes     int64
+	MetaBytes int64
+	Events    int64
+	Tags      int64
+	Audit     int64
 }
 
 // RelayMetricBucket is one persisted UTC-minute aggregate (wire-level relay telemetry).

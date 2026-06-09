@@ -23,7 +23,7 @@ type Store struct {
 	notifier *Notifier
 }
 
-var _ storage.Store = (*Store)(nil)
+var _ storage.EventStore = (*Store)(nil)
 
 // Open connects with Bun + pgdriver, runs migrations, and starts the event notifier listener.
 // instanceID is sent as NOTIFY payload origin so this process ignores its own writes.

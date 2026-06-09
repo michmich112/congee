@@ -55,8 +55,8 @@ type WSConnectionSessionQuery struct {
 	Offset int
 }
 
-// Store is the relay persistence API (SQLite, PostgreSQL, etc.).
-type Store interface {
+// EventStore persists and queries Nostr events (and related relay data such as NIP-29 lookups).
+type EventStore interface {
 	SaveEvent(ctx context.Context, ev *nostr.Event) error
 	QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error)
 	DeleteEvent(ctx context.Context, id string) error
@@ -72,6 +72,19 @@ type Store interface {
 	// The Search field on constraints is ignored.
 	SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error)
 
+	// NIP-29: EventIDPrefixExists reports whether each 8-hex prefix matches some stored event id.
+	// If groupID is non-empty and requireSameH is true, the matching event must carry tag h=groupID.
+	EventIDPrefixExists(ctx context.Context, prefix string, groupID string, requireSameH bool) (bool, error)
+	// GetLatestGroupMetadata39000 returns the newest kind-39000 addressable row for relayPubkey + group d-tag.
+	GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
+	// GetLatestGroupAdmins39001 returns the newest kind-39001 addressable row for relayPubkey + group d-tag.
+	GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
+	// IsGroupMember uses the latest relay-signed kind 9000 or 9001 for the group with p=memberPubkey.
+	IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error)
+}
+
+// MetaStore persists relay operational metadata (audit, metrics, config changelog, WS sessions).
+type MetaStore interface {
 	SaveAuditEntry(ctx context.Context, e AuditEntry) error
 	// HasAuditDuplicate reports whether an audit row identical to e already exists.
 	HasAuditDuplicate(ctx context.Context, e AuditEntry) (bool, error)
@@ -96,22 +109,18 @@ type Store interface {
 	SaveConfigChange(ctx context.Context, c ConfigChange) error
 	QueryConfigChangelog(ctx context.Context, limit int) ([]ConfigChange, error)
 
-	// NIP-29: EventIDPrefixExists reports whether each 8-hex prefix matches some stored event id.
-	// If groupID is non-empty and requireSameH is true, the matching event must carry tag h=groupID.
-	EventIDPrefixExists(ctx context.Context, prefix string, groupID string, requireSameH bool) (bool, error)
-	// GetLatestGroupMetadata39000 returns the newest kind-39000 addressable row for relayPubkey + group d-tag.
-	GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
-	// GetLatestGroupAdmins39001 returns the newest kind-39001 addressable row for relayPubkey + group d-tag.
-	GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error)
-	// IsGroupMember uses the latest relay-signed kind 9000 or 9001 for the group with p=memberPubkey.
-	IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error)
-
-	// AdminStorageSnapshot returns table row counts and best-effort database bytes on disk (SQLite file+WAL+SHM, Postgres pg_database_size).
-	AdminStorageSnapshot(ctx context.Context) (AdminStorageSnapshot, error)
 	// UpsertRelayMetricBucket writes or replaces one UTC-minute aggregate row.
 	UpsertRelayMetricBucket(ctx context.Context, b RelayMetricBucket) error
 	// QueryRelayMetricBuckets returns buckets with bucket_start_unix >= MinBucketStartUnix ordered ascending, capped by Limit.
 	QueryRelayMetricBuckets(ctx context.Context, q RelayMetricBucketQuery) ([]RelayMetricBucket, error)
 	// PurgeRelayMetricBucketsBefore deletes rows with bucket_start_unix < cutoffStartUnixExclusive.
 	PurgeRelayMetricBucketsBefore(ctx context.Context, cutoffStartUnixExclusive int64) (int64, error)
+}
+
+// Store is the full relay persistence API (events plus operational metadata).
+type Store interface {
+	EventStore
+	MetaStore
+	// AdminStorageSnapshot returns table row counts and best-effort database bytes on disk (SQLite file+WAL+SHM, Postgres pg_database_size).
+	AdminStorageSnapshot(ctx context.Context) (AdminStorageSnapshot, error)
 }

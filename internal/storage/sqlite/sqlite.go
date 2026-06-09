@@ -39,7 +39,7 @@ type Store struct {
 	dbPath    string // main database file path (for AdminStorageSnapshot size)
 }
 
-var _ storage.Store = (*Store)(nil)
+var _ storage.EventStore = (*Store)(nil)
 
 // Open opens a SQLite database (WAL, Bun + sqliteshim), runs migrations, and starts the writer loop.
 // log is used for optional debug traces (use zerolog.Nop() when silent).
