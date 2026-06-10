@@ -23,6 +23,8 @@ type writeTask struct {
 	done chan<- error
 }
 
+const writerQueueCapacity = 1024
+
 // Store is a SQLite-backed storage.MetaStore with a single-writer queue and concurrent reads.
 type Store struct {
 	db        *bun.DB
@@ -85,7 +87,7 @@ func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 	}
 	s := &Store{
 		db:        db,
-		writes:    make(chan writeTask, 256),
+		writes:    make(chan writeTask, writerQueueCapacity),
 		cancel:    cancel,
 		baseCtx:   baseCtx,
 		closedErr: errors.New("sqlitemeta: store closed"),
