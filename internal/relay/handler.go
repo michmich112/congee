@@ -321,11 +321,10 @@ func (c *Conn) sendNotice(msg string) error {
 
 func (c *Conn) enqueue(b []byte) error {
 	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 	if c.outboundClosed {
-		c.sendMu.Unlock()
 		return ErrSlowConsumer
 	}
-	c.sendMu.Unlock()
 	select {
 	case c.send <- b:
 		return nil

@@ -386,9 +386,9 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	}
 	c.sendMu.Lock()
 	c.outboundClosed = true
+	close(c.send)
 	c.sendMu.Unlock()
 	c.cancel()
-	close(c.send)
 	<-c.writerDone
 	_ = nc.Close()
 }
