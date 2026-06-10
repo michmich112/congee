@@ -192,9 +192,11 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 		s.subs.NoteSubInitialDelivery(c.ID, msg.SubID, err == nil)
 	}
 	if hasMore {
+		openedUnix, _ := s.subs.SubOpenedUnix(c.ID, msg.SubID)
 		job := &reqPageJob{
 			connID:        c.ID,
 			subID:         msg.SubID,
+			openedUnix:    openedUnix,
 			state:         state,
 			searchEnabled: searchEnabled,
 			pageSize:      pageSize,

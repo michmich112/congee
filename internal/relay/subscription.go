@@ -209,6 +209,39 @@ func (m *SubscriptionManager) Broadcast(ev *nostr.Event, visible func(connID str
 	}
 }
 
+// SubOpenedUnix returns the opened_unix stamp for an active subscription.
+func (m *SubscriptionManager) SubOpenedUnix(connID, subID string) (int64, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return 0, false
+	}
+	e := cmap[subID]
+	if e == nil || e.closed.Load() {
+		return 0, false
+	}
+	return e.openedUnix, true
+}
+
+// IsSameSnapshot reports whether connID/subID is still the subscription opened at openedUnix.
+func (m *SubscriptionManager) IsSameSnapshot(connID, subID string, openedUnix int64) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.senders[connID] == nil {
+		return false
+	}
+	cmap := m.subs[connID]
+	if cmap == nil {
+		return false
+	}
+	e := cmap[subID]
+	if e == nil || e.closed.Load() {
+		return false
+	}
+	return e.openedUnix == openedUnix
+}
+
 // IsOpen reports whether connID/subID is an active subscription with a registered sender.
 func (m *SubscriptionManager) IsOpen(connID, subID string) bool {
 	m.mu.RLock()

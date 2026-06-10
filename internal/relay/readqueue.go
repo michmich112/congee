@@ -17,6 +17,7 @@ const (
 type reqPageJob struct {
 	connID        string
 	subID         string
+	openedUnix    int64
 	state         *reqQueryState
 	searchEnabled bool
 	pageSize      int
@@ -89,7 +90,7 @@ func (q *ReaderQueue) runJob(job *reqPageJob) {
 		return
 	}
 	c := v.(*Conn)
-	if !s.subs.IsOpen(job.connID, job.subID) {
+	if !s.subs.IsSameSnapshot(job.connID, job.subID, job.openedUnix) {
 		return
 	}
 
