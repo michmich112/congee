@@ -150,9 +150,6 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 	}
 	pageSize := config.EffectiveQueryPageSize(s.cfg.ConnectionLimits.QueryPageSize)
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
-	if pageSize <= 0 {
-		pageSize = 1 << 20
-	}
 	state := newREQQueryState(msg.Filters, defaultLimit, searchEnabled)
 
 	t0 := time.Now()
