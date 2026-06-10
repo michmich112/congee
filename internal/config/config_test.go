@@ -261,6 +261,22 @@ func TestValidateAcceptsPositiveQueryPageSize(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsPostgresMetaDSN(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.MetaDSN = "postgres://localhost/meta"
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for postgres meta_dsn")
+	}
+}
+
+func TestValidateAcceptsSQLiteMetaDSN(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.MetaDSN = "./congee-meta.db"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected sqlite meta_dsn to be valid: %v", err)
+	}
+}
+
 func TestEffectiveQueryPageSize(t *testing.T) {
 	if g, w := EffectiveQueryPageSize(nil), DefaultQueryPageSizeIfUnset; g != w {
 		t.Fatalf("nil: got %d want %d", g, w)

@@ -9,13 +9,25 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
+type legacyCopyStats struct {
+	audit      int
+	changelog  int
+	buckets    int
+	wsSessions int
+}
+
+func (s legacyCopyStats) copied() bool {
+	return s.audit > 0 || s.changelog > 0 || s.buckets > 0 || s.wsSessions > 0
+}
+
 // migrateLegacyMetaSQLite copies operational metadata from a pre-v7 events SQLite file
 // into the meta store before the event store runs schema v7 (which drops meta tables).
-func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN string, meta *sqlitemeta.Store) error {
+func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN, metaPath string, meta *sqlitemeta.Store, log zerolog.Logger) error {
 	if !sqliteshim.HasDriver() {
 		return errors.New("legacy meta: sqliteshim driver not available")
 	}
@@ -37,7 +49,12 @@ func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN string, meta *sqlite
 		return nil
 	}
 
-	return copyAllLegacyMeta(ctx, sqldb, meta, false)
+	stats := &legacyCopyStats{}
+	if err := copyAllLegacyMeta(ctx, sqldb, meta, false, stats); err != nil {
+		return err
+	}
+	logLegacyCopySummary(log, metaPath, stats)
+	return nil
 }
 
 func normalizeLegacyDSN(dsn string) string {
@@ -69,20 +86,33 @@ SELECT EXISTS (
 	return exists, err
 }
 
-func copyAllLegacyMeta(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
-	if err := copyLegacyAudit(ctx, legacy, meta, postgres); err != nil {
+func copyAllLegacyMeta(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool, stats *legacyCopyStats) error {
+	if err := copyLegacyAudit(ctx, legacy, meta, postgres, stats); err != nil {
 		return err
 	}
-	if err := copyLegacyChangelog(ctx, legacy, meta, postgres); err != nil {
+	if err := copyLegacyChangelog(ctx, legacy, meta, postgres, stats); err != nil {
 		return err
 	}
-	if err := copyLegacyMetricBuckets(ctx, legacy, meta, postgres); err != nil {
+	if err := copyLegacyMetricBuckets(ctx, legacy, meta, postgres, stats); err != nil {
 		return err
 	}
-	return copyLegacyWSSessions(ctx, legacy, meta, postgres)
+	return copyLegacyWSSessions(ctx, legacy, meta, postgres, stats)
 }
 
-func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+func logLegacyCopySummary(log zerolog.Logger, metaPath string, stats *legacyCopyStats) {
+	if stats == nil || !stats.copied() {
+		return
+	}
+	log.Info().
+		Str("meta_path", metaPath).
+		Int("audit", stats.audit).
+		Int("config_changelog", stats.changelog).
+		Int("relay_metric_buckets", stats.buckets).
+		Int("ws_connection_sessions", stats.wsSessions).
+		Msg("legacy meta copied from events db")
+}
+
+func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool, stats *legacyCopyStats) error {
 	exists, err := legacyTableExists(ctx, legacy, "audit_log", postgres)
 	if err != nil {
 		return fmt.Errorf("legacy meta: check audit_log: %w", err)
@@ -110,6 +140,7 @@ func copyLegacyAudit(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store
 		if err := meta.SaveAuditEntry(ctx, e); err != nil {
 			return fmt.Errorf("legacy meta: save audit: %w", err)
 		}
+		stats.audit++
 	}
 	return rows.Err()
 }
@@ -127,7 +158,7 @@ func legacyChangelogExists(ctx context.Context, meta *sqlitemeta.Store, c storag
 	return false, nil
 }
 
-func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool, stats *legacyCopyStats) error {
 	exists, err := legacyTableExists(ctx, legacy, "config_changelog", postgres)
 	if err != nil {
 		return fmt.Errorf("legacy meta: check config_changelog: %w", err)
@@ -155,11 +186,12 @@ func copyLegacyChangelog(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.S
 		if err := meta.SaveConfigChange(ctx, c); err != nil {
 			return fmt.Errorf("legacy meta: save changelog: %w", err)
 		}
+		stats.changelog++
 	}
 	return rows.Err()
 }
 
-func copyLegacyMetricBuckets(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+func copyLegacyMetricBuckets(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool, stats *legacyCopyStats) error {
 	exists, err := legacyTableExists(ctx, legacy, "relay_metric_buckets", postgres)
 	if err != nil {
 		return fmt.Errorf("legacy meta: check relay_metric_buckets: %w", err)
@@ -182,11 +214,12 @@ FROM relay_metric_buckets ORDER BY bucket_start_unix ASC`)
 		if err := meta.UpsertRelayMetricBucket(ctx, b); err != nil {
 			return fmt.Errorf("legacy meta: save metric bucket: %w", err)
 		}
+		stats.buckets++
 	}
 	return rows.Err()
 }
 
-func copyLegacyWSSessions(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
+func copyLegacyWSSessions(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool, stats *legacyCopyStats) error {
 	exists, err := legacyTableExists(ctx, legacy, "ws_connection_sessions", postgres)
 	if err != nil {
 		return fmt.Errorf("legacy meta: check ws_connection_sessions: %w", err)
@@ -219,13 +252,14 @@ FROM ws_connection_sessions ORDER BY id ASC`)
 		if _, err := meta.SaveWSConnectionSession(ctx, s); err != nil {
 			return fmt.Errorf("legacy meta: save ws session: %w", err)
 		}
+		stats.wsSessions++
 	}
 	return rows.Err()
 }
 
 // migrateLegacyMetaPostgres copies operational metadata from a pre-v7 PostgreSQL events
 // database into the SQLite meta sidecar before the event store runs schema v7.
-func migrateLegacyMetaPostgres(ctx context.Context, eventsDSN string, meta *sqlitemeta.Store) error {
+func migrateLegacyMetaPostgres(ctx context.Context, eventsDSN, metaPath string, meta *sqlitemeta.Store, log zerolog.Logger) error {
 	dsn := strings.TrimSpace(eventsDSN)
 	if dsn == "" {
 		return nil
@@ -248,5 +282,10 @@ func migrateLegacyMetaPostgres(ctx context.Context, eventsDSN string, meta *sqli
 		return nil
 	}
 
-	return copyAllLegacyMeta(ctx, sqldb, meta, true)
+	stats := &legacyCopyStats{}
+	if err := copyAllLegacyMeta(ctx, sqldb, meta, true, stats); err != nil {
+		return err
+	}
+	logLegacyCopySummary(log, metaPath, stats)
+	return nil
 }

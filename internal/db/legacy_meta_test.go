@@ -219,7 +219,7 @@ func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
 	}
 	defer meta.Close()
 
-	if err := migrateLegacyMetaSQLite(ctx, eventsPath, meta); err != nil {
+	if err := migrateLegacyMetaSQLite(ctx, eventsPath, metaPath, meta, zerolog.Nop()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -322,7 +322,7 @@ func TestLegacyMetaMigrationFromV6PostgresDB(t *testing.T) {
 	}
 	defer meta.Close()
 
-	if err := migrateLegacyMetaPostgres(ctx, dsn, meta); err != nil {
+	if err := migrateLegacyMetaPostgres(ctx, dsn, metaPath, meta, zerolog.Nop()); err != nil {
 		t.Fatal(err)
 	}
 

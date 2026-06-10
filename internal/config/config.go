@@ -118,6 +118,9 @@ func (c *Config) Validate() error {
 		if c.Database.DSN == "" {
 			return errors.New("config: database.dsn is required")
 		}
+		if err := validateMetaDSN(c.Database.MetaDSN); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("config: unsupported database.type %q", c.Database.Type)
 	}
@@ -226,6 +229,28 @@ func (c *Config) Validate() error {
 func validatePort(field string, p int) error {
 	if p < 1 || p > 65535 {
 		return fmt.Errorf("config: %s must be between 1 and 65535", field)
+	}
+	return nil
+}
+
+func validateMetaDSN(metaDSN string) error {
+	metaDSN = strings.TrimSpace(metaDSN)
+	if metaDSN == "" {
+		return nil
+	}
+	lower := strings.ToLower(metaDSN)
+	if strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://") {
+		return errors.New("config: database.meta_dsn must be a SQLite file path, not a PostgreSQL URL")
+	}
+	path := metaDSN
+	if strings.HasPrefix(path, "file:") {
+		path = strings.TrimPrefix(path, "file:")
+		if i := strings.Index(path, "?"); i >= 0 {
+			path = path[:i]
+		}
+	}
+	if strings.TrimSpace(path) == "" {
+		return errors.New("config: database.meta_dsn must be a non-empty SQLite file path")
 	}
 	return nil
 }

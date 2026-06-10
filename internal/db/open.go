@@ -40,7 +40,7 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 		if err != nil {
 			return nil, err
 		}
-		if err := migrateLegacyMetaPostgres(ctx, sec.DSN, meta); err != nil {
+		if err := migrateLegacyMetaPostgres(ctx, sec.DSN, metaDSN, meta, log); err != nil {
 			_ = meta.Close()
 			return nil, fmt.Errorf("db: legacy meta migration: %w", err)
 		}
@@ -73,7 +73,7 @@ func openSQLite(ctx context.Context, sec config.DatabaseSection, log zerolog.Log
 	if err != nil {
 		return nil, err
 	}
-	if err := migrateLegacyMetaSQLite(ctx, sec.DSN, meta); err != nil {
+	if err := migrateLegacyMetaSQLite(ctx, sec.DSN, metaDSN, meta, log); err != nil {
 		_ = meta.Close()
 		return nil, fmt.Errorf("db: legacy meta migration: %w", err)
 	}
