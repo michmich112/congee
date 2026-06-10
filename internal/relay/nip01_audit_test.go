@@ -68,7 +68,11 @@ func openAuditTestStore(ctx context.Context, t *testing.T, dir, name string) (st
 	if err != nil {
 		t.Fatal(err)
 	}
-	return st, closeFn
+	audit.StartAsyncWriter(ctx, st, zerolog.Nop())
+	return st, func() error {
+		audit.StopAsyncWriter()
+		return closeFn()
+	}
 }
 
 func openFaultAuditTestStore(ctx context.Context, t *testing.T, dir string, saveErr error) (storage.Store, func()) {
@@ -83,7 +87,9 @@ func openFaultAuditTestStore(ctx context.Context, t *testing.T, dir string, save
 		t.Fatal(err)
 	}
 	st := db.NewCompositeForTest(&faultEventStore{EventStore: ev, saveErr: saveErr}, meta)
+	audit.StartAsyncWriter(ctx, st, zerolog.Nop())
 	return st, func() {
+		audit.StopAsyncWriter()
 		_ = meta.Close()
 		_ = ev.Close()
 	}
@@ -108,16 +114,21 @@ func signedTestEvent(t *testing.T, priv *btcec.PrivateKey, kind int) *nostr.Even
 	return ev
 }
 
-func latestAuditAction(ctx context.Context, t *testing.T, st storage.Store, action string) storage.AuditEntry {
+func auditWaitForRow(ctx context.Context, t *testing.T, st storage.Store, action string) storage.AuditEntry {
 	t.Helper()
-	rows, err := st.QueryAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 5})
-	if err != nil {
-		t.Fatal(err)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		rows, err := st.QueryAuditLog(ctx, storage.AuditQuery{Action: action, Limit: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) > 0 {
+			return rows[0]
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if len(rows) == 0 {
-		t.Fatalf("no audit rows for action %q", action)
-	}
-	return rows[0]
+	t.Fatalf("no audit rows for action %q after wait", action)
+	return storage.AuditEntry{}
 }
 
 func testConn(t *testing.T, srv *Server) *Conn {
@@ -161,7 +172,7 @@ func TestHandleEVENT_AuditRejectInvalidSig(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainOK(t, c)
-	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
+	row := auditWaitForRow(ctx, t, st, audit.ActionEventRejected)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey: %s", row.Pubkey)
 	}
@@ -195,7 +206,7 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainOK(t, c)
-	row := latestAuditAction(ctx, t, st, audit.ActionEventRejected)
+	row := auditWaitForRow(ctx, t, st, audit.ActionEventRejected)
 	if !strings.Contains(row.Detail, "reason=disk full") {
 		t.Fatalf("detail: %q", row.Detail)
 	}
@@ -223,7 +234,7 @@ func TestHandleEVENT_AuditStored(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainOK(t, c)
-	row := latestAuditAction(ctx, t, st, audit.ActionEventStored)
+	row := auditWaitForRow(ctx, t, st, audit.ActionEventStored)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey")
 	}
@@ -255,7 +266,7 @@ func TestHandleEVENT_AuditEphemeral(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainOK(t, c)
-	row := latestAuditAction(ctx, t, st, audit.ActionEventEphemeral)
+	row := auditWaitForRow(ctx, t, st, audit.ActionEventEphemeral)
 	if row.Pubkey != ev.PubKey {
 		t.Fatalf("pubkey")
 	}
