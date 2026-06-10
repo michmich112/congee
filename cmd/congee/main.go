@@ -68,6 +68,8 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("database open failed")
 	}
+	audit.StartAsyncWriter(ctx, storeDB, log)
+	defer audit.StopAsyncWriter()
 	dbClosed := false
 	defer func() {
 		if !dbClosed {
