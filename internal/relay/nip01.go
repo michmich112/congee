@@ -17,20 +17,27 @@ import (
 // RegisterNIP01 wires NIP-01 validation, hooks, and message handlers.
 func RegisterNIP01(s *Server, store storage.Store) {
 	s.AppendValidator(EventValidatorFunc(nip01ValidateSig))
-	s.AppendPostHook("nip01_audit_event", func(ctx context.Context, env HookEnv) error {
-		action := audit.ActionEventEphemeral
-		if env.Stored {
-			action = audit.ActionEventStored
-		}
-		detail := fmt.Sprintf("event_id=%s conn_id=%s kind=%d", env.Event.ID, env.Conn.ID, env.Event.Kind)
-		return audit.Log(ctx, store, action, detail, env.Event.PubKey)
-	})
 	s.AppendPostHook("nip01_broadcast_event", func(ctx context.Context, env HookEnv) error {
 		_ = ctx
 		if env.Event != nil && env.Event.Kind == nip42AuthEventKind {
 			return nil
 		}
 		s.broadcastEvent(env.Event)
+		return nil
+	})
+	s.AppendPostHook("nip01_audit_event", func(ctx context.Context, env HookEnv) error {
+		_ = ctx
+		action := audit.ActionEventEphemeral
+		if env.Stored {
+			action = audit.ActionEventStored
+		}
+		detail := fmt.Sprintf("event_id=%s conn_id=%s kind=%d", env.Event.ID, env.Conn.ID, env.Event.Kind)
+		audit.Enqueue(storage.AuditEntry{
+			CreatedAt: time.Now().Unix(),
+			Action:    action,
+			Detail:    detail,
+			Pubkey:    env.Event.PubKey,
+		})
 		return nil
 	})
 	s.RegisterMessageHandler("EVENT", func(ctx context.Context, c *Conn, msg any) error {
@@ -50,13 +57,16 @@ func nip01ValidateSig(ctx context.Context, _ *Conn, ev *nostr.Event) error {
 	return ev.VerifySig()
 }
 
-func logEventRejected(ctx context.Context, store storage.Store, c *Conn, ev *nostr.Event, reason string) {
-	log := relayLogger(c, ctx)
+func logEventRejected(ctx context.Context, c *Conn, ev *nostr.Event, reason string) {
+	_ = ctx
 	detail := fmt.Sprintf("event_id=%s conn_id=%s reason=%s kind=%d",
 		ev.ID, c.ID, audit.SanitizeAuditDetailFragment(reason), ev.Kind)
-	if err := audit.Log(ctx, store, audit.ActionEventRejected, detail, ev.PubKey); err != nil {
-		log.Error().Err(err).Msg("audit save failed for event_rejected")
-	}
+	audit.Enqueue(storage.AuditEntry{
+		CreatedAt: time.Now().Unix(),
+		Action:    audit.ActionEventRejected,
+		Detail:    detail,
+		Pubkey:    ev.PubKey,
+	})
 }
 
 func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, msg *nostr.EventMessage) error {
@@ -71,7 +81,7 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		san := audit.SanitizeAuditDetailFragment(reason)
 		log.Warn().Str("audit_action", "event_rejected").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
 			Int("kind", ev.Kind).Str("reason", san).Msg("event rejected")
-		logEventRejected(ctx, store, c, ev, reason)
+		logEventRejected(ctx, c, ev, reason)
 		if strings.HasPrefix(reason, "auth-required:") {
 			_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		}
@@ -97,7 +107,7 @@ func handleEVENT(ctx context.Context, s *Server, store storage.Store, c *Conn, m
 		reason := err.Error()
 		log.Warn().Err(err).Str("audit_action", "event_rejected").Str("operation", "SaveEvent").Str("event_id", ev.ID).Str("pubkey", ev.PubKey).
 			Int("kind", ev.Kind).Str("reason", audit.SanitizeAuditDetailFragment(reason)).Msg("event rejected: store save failed")
-		logEventRejected(ctx, store, c, ev, reason)
+		logEventRejected(ctx, c, ev, reason)
 		return c.sendOK(ev.ID, false, reason)
 	}
 	if s.metrics != nil {
