@@ -270,6 +270,40 @@ func TestAddResetsSnapshotBuffer(t *testing.T) {
 	m.mu.Unlock()
 }
 
+func TestIsSameSnapshot(t *testing.T) {
+	cfg := minimalRelayCfg()
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
+	m.RegisterSender("c1", func([]byte) bool { return true })
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	opened, ok := m.SubOpenedUnix("c1", "s1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
+	if !m.IsSameSnapshot("c1", "s1", opened) {
+		t.Fatal("expected same snapshot")
+	}
+	if m.IsSameSnapshot("c1", "s1", opened-1) {
+		t.Fatal("expected stale opened_unix to mismatch")
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if m.IsSameSnapshot("c1", "s1", opened) {
+		t.Fatal("expected replacement to invalidate stale opened_unix")
+	}
+	reopened, ok := m.SubOpenedUnix("c1", "s1")
+	if !ok || !m.IsSameSnapshot("c1", "s1", reopened) {
+		t.Fatal("expected new snapshot after replacement")
+	}
+	m.Remove("c1", "s1")
+	if m.IsSameSnapshot("c1", "s1", reopened) {
+		t.Fatal("expected closed sub to fail snapshot check")
+	}
+}
+
 func minimalRelayCfg() *config.Config {
 	return &config.Config{
 		MaxSubscriptionIDLength: 64,

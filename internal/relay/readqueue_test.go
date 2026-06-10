@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -91,6 +93,10 @@ func TestReaderQueueDrainsPagesThenEOSE(t *testing.T) {
 	if err := srv.subs.Add(connID, "sub1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
 		t.Fatal(err)
 	}
+	openedUnix, ok := srv.subs.SubOpenedUnix(connID, "sub1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
 
 	state := newREQQueryState([]nostr.Filter{{Kinds: []int{1}}}, 0, false)
 	page1, hasMore, err := fetchREQPage(ctx, st, state, pageSize)
@@ -99,10 +105,11 @@ func TestReaderQueueDrainsPagesThenEOSE(t *testing.T) {
 	}
 
 	job := &reqPageJob{
-		connID:   connID,
-		subID:    "sub1",
-		state:    state,
-		pageSize: pageSize,
+		connID:     connID,
+		subID:      "sub1",
+		openedUnix: openedUnix,
+		state:      state,
+		pageSize:   pageSize,
 	}
 	if !srv.readQueue.Enqueue(job) {
 		t.Fatal("enqueue failed")
@@ -189,6 +196,10 @@ func TestReaderQueueDropsJobWhenSubClosed(t *testing.T) {
 	if err := srv.subs.Add(connID, "sub1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
 		t.Fatal(err)
 	}
+	openedUnix, ok := srv.subs.SubOpenedUnix(connID, "sub1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
 
 	state := newREQQueryState([]nostr.Filter{{Kinds: []int{1}}}, 0, false)
 	_, hasMore, err := fetchREQPage(ctx, st, state, pageSize)
@@ -209,10 +220,11 @@ func TestReaderQueueDropsJobWhenSubClosed(t *testing.T) {
 			}
 		}()
 		srv.readQueue.runJob(&reqPageJob{
-			connID:   connID,
-			subID:    "sub1",
-			state:    state,
-			pageSize: pageSize,
+			connID:     connID,
+			subID:      "sub1",
+			openedUnix: openedUnix,
+			state:      state,
+			pageSize:   pageSize,
 		})
 	}()
 	wg.Wait()
@@ -294,5 +306,275 @@ func TestDrainRemainingPagesSyncFallback(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+type queryFaultStore struct {
+	storage.Store
+	queryErr error
+}
+
+func (f *queryFaultStore) QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error) {
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
+	return f.Store.QueryEvents(ctx, filters)
+}
+
+func TestReaderQueueDropsStaleJobOnSubReplacement(t *testing.T) {
+	ctx := context.Background()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "rq-replace.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 6)
+
+	cfg := testRelayConfig()
+	pageSize := 2
+	cfg.ConnectionLimits.QueryPageSize = &pageSize
+
+	srv, err := NewServer(cfg, st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connID := "rq-replace"
+	recv := make(chan []byte, 16)
+	ctxConn, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := &Conn{
+		ID:     connID,
+		server: srv,
+		send:   recv,
+		ctx:    ctxConn,
+		cancel: cancel,
+		log:    zerolog.Nop(),
+	}
+	srv.conns.Store(connID, c)
+	srv.subs.RegisterSender(connID, func(b []byte) bool {
+		return c.enqueue(b) == nil
+	})
+	filters := []nostr.Filter{{Kinds: []int{1}}}
+	if err := srv.subs.Add(connID, "sub1", filters); err != nil {
+		t.Fatal(err)
+	}
+	staleOpened, ok := srv.subs.SubOpenedUnix(connID, "sub1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
+
+	state := newREQQueryState(filters, 0, false)
+	_, hasMore, err := fetchREQPage(ctx, st, state, pageSize)
+	if err != nil || !hasMore {
+		t.Fatalf("setup page1: hasMore=%v err=%v", hasMore, err)
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+	if err := srv.subs.Add(connID, "sub1", filters); err != nil {
+		t.Fatal(err)
+	}
+	if srv.subs.IsSameSnapshot(connID, "sub1", staleOpened) {
+		t.Fatal("expected replacement to change opened_unix")
+	}
+
+	srv.readQueue.runJob(&reqPageJob{
+		connID:     connID,
+		subID:      "sub1",
+		openedUnix: staleOpened,
+		state:      state,
+		pageSize:   pageSize,
+	})
+
+	select {
+	case <-recv:
+		t.Fatal("expected no delivery for stale snapshot job")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestReaderQueueQueryErrorSendsClosed(t *testing.T) {
+	ctx := context.Background()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "rq-err.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 6)
+
+	cfg := testRelayConfig()
+	pageSize := 2
+	cfg.ConnectionLimits.QueryPageSize = &pageSize
+
+	fault := &queryFaultStore{Store: st}
+	srv, err := NewServer(cfg, fault, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connID := "rq-err"
+	recv := make(chan []byte, 16)
+	ctxConn, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := &Conn{
+		ID:     connID,
+		server: srv,
+		send:   recv,
+		ctx:    ctxConn,
+		cancel: cancel,
+		log:    zerolog.Nop(),
+	}
+	srv.conns.Store(connID, c)
+	srv.subs.RegisterSender(connID, func(b []byte) bool {
+		return c.enqueue(b) == nil
+	})
+	filters := []nostr.Filter{{Kinds: []int{1}}}
+	if err := srv.subs.Add(connID, "sub1", filters); err != nil {
+		t.Fatal(err)
+	}
+	openedUnix, ok := srv.subs.SubOpenedUnix(connID, "sub1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
+
+	state := newREQQueryState(filters, 0, false)
+	_, hasMore, err := fetchREQPage(ctx, st, state, pageSize)
+	if err != nil || !hasMore {
+		t.Fatalf("setup page1: hasMore=%v err=%v", hasMore, err)
+	}
+
+	fault.queryErr = errors.New("query failed")
+	srv.readQueue.runJob(&reqPageJob{
+		connID:     connID,
+		subID:      "sub1",
+		openedUnix: openedUnix,
+		state:      state,
+		pageSize:   pageSize,
+	})
+
+	deadline := time.After(2 * time.Second)
+	gotClosed := false
+	for !gotClosed {
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for CLOSED")
+		case b := <-recv:
+			var msg []json.RawMessage
+			if err := json.Unmarshal(b, &msg); err != nil {
+				t.Fatal(err)
+			}
+			var typ string
+			if err := json.Unmarshal(msg[0], &typ); err != nil {
+				t.Fatal(err)
+			}
+			if typ != "CLOSED" {
+				continue
+			}
+			gotClosed = true
+			if len(msg) < 3 {
+				t.Fatalf("CLOSED message: %s", string(b))
+			}
+			var reason string
+			if err := json.Unmarshal(msg[2], &reason); err != nil {
+				t.Fatal(err)
+			}
+			if reason != "internal error" {
+				t.Fatalf("CLOSED reason: got %q want %q", reason, "internal error")
+			}
+		}
+	}
+	if srv.subs.IsOpen(connID, "sub1") {
+		t.Fatal("subscription should be removed after query error")
+	}
+}
+
+func TestReaderQueueDropsJobOnDisconnect(t *testing.T) {
+	ctx := context.Background()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "rq-disc.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	createTestEvents(t, st, ctx, 6)
+
+	cfg := testRelayConfig()
+	pageSize := 2
+	cfg.ConnectionLimits.QueryPageSize = &pageSize
+
+	srv, err := NewServer(cfg, st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	connID := "rq-disc"
+	recv := make(chan []byte, 16)
+	ctxConn, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := &Conn{
+		ID:     connID,
+		server: srv,
+		send:   recv,
+		ctx:    ctxConn,
+		cancel: cancel,
+		log:    zerolog.Nop(),
+	}
+	srv.conns.Store(connID, c)
+	srv.subs.RegisterSender(connID, func(b []byte) bool {
+		return c.enqueue(b) == nil
+	})
+	filters := []nostr.Filter{{Kinds: []int{1}}}
+	if err := srv.subs.Add(connID, "sub1", filters); err != nil {
+		t.Fatal(err)
+	}
+	openedUnix, ok := srv.subs.SubOpenedUnix(connID, "sub1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
+
+	state := newREQQueryState(filters, 0, false)
+	_, hasMore, err := fetchREQPage(ctx, st, state, pageSize)
+	if err != nil || !hasMore {
+		t.Fatalf("setup page1: hasMore=%v err=%v", hasMore, err)
+	}
+
+	srv.conns.Delete(connID)
+
+	var panicked bool
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		srv.readQueue.runJob(&reqPageJob{
+			connID:     connID,
+			subID:      "sub1",
+			openedUnix: openedUnix,
+			state:      state,
+			pageSize:   pageSize,
+		})
+	}()
+	if panicked {
+		t.Fatal("runJob panicked after disconnect")
+	}
+	select {
+	case <-recv:
+		t.Fatal("expected no delivery after disconnect")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
