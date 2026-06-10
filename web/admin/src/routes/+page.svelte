@@ -50,7 +50,8 @@
 		ws: 'Current WebSocket connections to this relay process.',
 		subs: 'Open REQ filter subscriptions across all connections.',
 		uptime: 'Time since this relay process started serving, and local wall-clock start time.',
-		storage: 'Database footprint plus row counts for events, tags, and audit log.',
+		storage:
+			'On-disk size of the events database and the separate meta database (audit, metrics, changelog, WS sessions), plus row counts.',
 		eventsStored:
 			'Events that passed validation and were persisted (lifetime counter since process start).',
 		ephemeral:
@@ -70,7 +71,13 @@
 		uptime_sec?: number;
 		relay_counters?: Record<string, number>;
 		recent_query_latency?: LatencySample[];
-		storage?: { bytes?: number; events?: number; tags?: number; audit?: number };
+		storage?: {
+			bytes?: number;
+			meta_bytes?: number;
+			events?: number;
+			tags?: number;
+			audit?: number;
+		};
 		series?: { bucket_sec?: number; buckets?: MetricBucket[] };
 	};
 
@@ -229,12 +236,18 @@
 						<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage} />
 					</div>
 					<Card.Title class="text-xl tabular-nums leading-snug">
-						{formatBytes(stats.storage?.bytes ?? 0)}
+						{formatBytes((stats.storage?.bytes ?? 0) + (stats.storage?.meta_bytes ?? 0))}
 					</Card.Title>
 				</Card.Header>
-				<Card.Content class="text-muted-foreground text-xs">
-					{stats.storage?.events ?? 0} events · {stats.storage?.tags ?? 0} tags · {stats.storage?.audit ?? 0}
-					audit rows
+				<Card.Content class="text-muted-foreground space-y-1 text-xs">
+					<div>
+						Events DB {formatBytes(stats.storage?.bytes ?? 0)} · Meta DB
+						{formatBytes(stats.storage?.meta_bytes ?? 0)}
+					</div>
+					<div>
+						{stats.storage?.events ?? 0} events · {stats.storage?.tags ?? 0} tags ·
+						{stats.storage?.audit ?? 0} audit rows
+					</div>
 				</Card.Content>
 			</Card.Root>
 		</div>
