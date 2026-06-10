@@ -106,6 +106,7 @@ func (q *ReaderQueue) runJob(job *reqPageJob) {
 		LogStoreErr(log, zerolog.ErrorLevel, "REQ.QueryPage", err, "req page query failed", func(e *zerolog.Event) {
 			e.Str("sub_id", job.subID)
 		})
+		q.closeSubOnQueryError(c, job.connID, job.subID)
 		return
 	}
 
@@ -137,6 +138,16 @@ func (q *ReaderQueue) runJob(job *reqPageJob) {
 	s.subs.FinishSnapshot(job.connID, job.subID)
 }
 
+func (q *ReaderQueue) closeSubOnQueryError(c *Conn, connID, subID string) {
+	closeSubOnQueryError(q.srv, c, connID, subID)
+}
+
+func closeSubOnQueryError(s *Server, c *Conn, connID, subID string) {
+	_ = c.sendClosed(subID, "internal error")
+	s.subs.Remove(connID, subID)
+	s.subs.FinishSnapshot(connID, subID)
+}
+
 // drainRemainingPages fetches and sends all remaining REQ pages synchronously.
 func drainRemainingPages(ctx context.Context, s *Server, c *Conn, subID string, state *reqQueryState, pageSize int) {
 	for {
@@ -152,6 +163,7 @@ func drainRemainingPages(ctx context.Context, s *Server, c *Conn, subID string, 
 			LogStoreErr(log, zerolog.ErrorLevel, "REQ.QueryPage", err, "req page query failed", func(e *zerolog.Event) {
 				e.Str("sub_id", subID)
 			})
+			closeSubOnQueryError(s, c, c.ID, subID)
 			return
 		}
 		for _, ev := range events {
