@@ -186,19 +186,6 @@ FROM relay_metric_buckets ORDER BY bucket_start_unix ASC`)
 	return rows.Err()
 }
 
-func legacyWSSessionExists(ctx context.Context, meta *sqlitemeta.Store, connID string, startedUnix int64) (bool, error) {
-	sessions, err := meta.QueryWSConnectionSessions(ctx, storage.WSConnectionSessionQuery{Limit: 10000})
-	if err != nil {
-		return false, err
-	}
-	for _, s := range sessions {
-		if s.ConnID == connID && s.StartedUnix == startedUnix {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func copyLegacyWSSessions(ctx context.Context, legacy *sql.DB, meta *sqlitemeta.Store, postgres bool) error {
 	exists, err := legacyTableExists(ctx, legacy, "ws_connection_sessions", postgres)
 	if err != nil {
@@ -222,7 +209,7 @@ FROM ws_connection_sessions ORDER BY id ASC`)
 		}
 		s.SeriesJSON = []byte(series)
 		s.SubsJSON = []byte(subs)
-		dup, err := legacyWSSessionExists(ctx, meta, s.ConnID, s.StartedUnix)
+		dup, err := meta.HasWSConnectionSession(ctx, s.ConnID, s.StartedUnix)
 		if err != nil {
 			return fmt.Errorf("legacy meta: ws session duplicate check: %w", err)
 		}

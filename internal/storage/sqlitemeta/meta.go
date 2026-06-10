@@ -192,6 +192,14 @@ func (s *Store) CountWSConnectionSessions(ctx context.Context) (int64, error) {
 	return int64(n), err
 }
 
+func (s *Store) HasWSConnectionSession(ctx context.Context, connID string, startedUnix int64) (bool, error) {
+	n, err := s.db.NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).
+		Where("conn_id = ? AND started_unix = ?", connID, startedUnix).
+		Limit(1).
+		Count(ctx)
+	return n > 0, err
+}
+
 func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*storage.WSConnectionSession, error) {
 	var row storage.WSConnectionSessionRow
 	err := s.db.NewSelect().Model(&row).Where("id = ?", id).Scan(ctx)
