@@ -60,6 +60,11 @@ func applyAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.Sel
 	if query.Pubkey != "" {
 		q = q.Where("pubkey = ?", query.Pubkey)
 	}
+	if query.ConnID != "" {
+		if pat, ok := storage.AuditDetailConnIDLikePattern(query.ConnID); ok {
+			q = q.Where("detail LIKE ?", pat)
+		}
+	}
 	if sql, args := storage.AuditDetailKindSuffixMatchOr(true, query.Kinds); sql != "" {
 		q = q.Where(sql, args...)
 	}
