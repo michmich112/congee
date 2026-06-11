@@ -1,10 +1,10 @@
 <script lang="ts">
 	import Info from '@lucide/svelte/icons/info';
 	import { browser } from '$app/environment';
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { cn } from '$lib/utils.js';
 
-	let { info }: { info: string } = $props();
+	let { info, content }: { info: string; content?: Snippet } = $props();
 
 	let buttonEl = $state<HTMLButtonElement | null>(null);
 	let tooltipEl = $state<HTMLSpanElement | null>(null);
@@ -104,11 +104,15 @@
 			style:top="{top}px"
 			class={cn(
 				'border-border bg-popover text-popover-foreground pointer-events-none fixed z-50',
-				'w-max max-w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md border px-3 py-2 text-left text-xs leading-snug shadow-md',
+				'w-max max-w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md border px-3 py-2 text-left text-xs leading-snug shadow-md',
 				placed ? 'opacity-100' : 'opacity-0'
 			)}
 		>
-			{info}
+			{#if content}
+				{@render content()}
+			{:else}
+				{info}
+			{/if}
 		</span>
 	{/if}
 </span>

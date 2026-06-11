@@ -50,8 +50,7 @@
 		ws: 'Current WebSocket connections to this relay process.',
 		subs: 'Open REQ filter subscriptions across all connections.',
 		uptime: 'Time since this relay process started serving, and local wall-clock start time.',
-		storage:
-			'On-disk size of the events database and the separate meta database (audit, metrics, changelog, WS sessions), plus row counts.',
+		storage: 'Combined on-disk size of the events and meta SQLite databases. Hover the (i) icon for per-database size and row counts.',
 		eventsStored:
 			'Events that passed validation and were persisted (lifetime counter since process start).',
 		ephemeral:
@@ -233,22 +232,45 @@
 				<Card.Header class="pb-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<Card.Description>Storage (DB)</Card.Description>
-						<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage} />
+						<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage}>
+							{#snippet content()}
+								<table class="w-full border-collapse text-xs">
+									<thead>
+										<tr class="text-muted-foreground border-border border-b">
+											<th class="pr-4 pb-1.5 text-left font-medium"></th>
+											<th class="pr-4 pb-1.5 text-right font-medium">Size</th>
+											<th class="pb-1.5 text-right font-medium">Rows</th>
+										</tr>
+									</thead>
+									<tbody class="text-popover-foreground">
+										<tr>
+											<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Events DB</td>
+											<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
+												{formatBytes(stats.storage?.bytes ?? 0)}
+											</td>
+											<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
+												{formatCompactCount(stats.storage?.events ?? 0)} events ·
+												{formatCompactCount(stats.storage?.tags ?? 0)} tags
+											</td>
+										</tr>
+										<tr>
+											<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Meta DB</td>
+											<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
+												{formatBytes(stats.storage?.meta_bytes ?? 0)}
+											</td>
+											<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
+												{formatCompactCount(stats.storage?.audit ?? 0)} audit
+											</td>
+										</tr>
+									</tbody>
+								</table>
+							{/snippet}
+						</StatInfoIcon>
 					</div>
 					<Card.Title class="text-xl tabular-nums leading-snug">
 						{formatBytes((stats.storage?.bytes ?? 0) + (stats.storage?.meta_bytes ?? 0))}
 					</Card.Title>
 				</Card.Header>
-				<Card.Content class="text-muted-foreground space-y-1 text-xs">
-					<div>
-						Events DB {formatBytes(stats.storage?.bytes ?? 0)} · Meta DB
-						{formatBytes(stats.storage?.meta_bytes ?? 0)}
-					</div>
-					<div>
-						{stats.storage?.events ?? 0} events · {stats.storage?.tags ?? 0} tags ·
-						{stats.storage?.audit ?? 0} audit rows
-					</div>
-				</Card.Content>
 			</Card.Root>
 		</div>
 

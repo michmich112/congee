@@ -1,4 +1,4 @@
-/** Compact display for large analytics numbers: 1.20K, 123.45K, 10.20M (two decimal places). */
+/** Compact display for large analytics numbers: 999, 1.20K, 10.20M, 1.50B (two decimal places from 1K up). */
 export function formatCompactCount(n: number): string {
 	if (!Number.isFinite(n)) {
 		return '0';
@@ -11,5 +11,8 @@ export function formatCompactCount(n: number): string {
 	if (v < 1_000_000) {
 		return sign + (v / 1000).toFixed(2) + 'K';
 	}
-	return sign + (v / 1_000_000).toFixed(2) + 'M';
+	if (v < 1_000_000_000) {
+		return sign + (v / 1_000_000).toFixed(2) + 'M';
+	}
+	return sign + (v / 1_000_000_000).toFixed(2) + 'B';
 }
