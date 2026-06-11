@@ -11,13 +11,20 @@ import (
 )
 
 type memMetaStore struct {
-	mu      sync.Mutex
-	entries []storage.AuditEntry
-	hold    chan struct{}
+	mu           sync.Mutex
+	entries      []storage.AuditEntry
+	hold         chan struct{}
+	holdReady    chan struct{}
+	holdReadyOnce sync.Once
 }
 
 func (m *memMetaStore) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error {
 	if m.hold != nil {
+		m.holdReadyOnce.Do(func() {
+			if m.holdReady != nil {
+				close(m.holdReady)
+			}
+		})
 		select {
 		case <-m.hold:
 		case <-ctx.Done():
@@ -185,12 +192,17 @@ func TestAsyncWorkerPersists(t *testing.T) {
 
 func TestEnqueueDropsWhenQueueFull(t *testing.T) {
 	StopAsyncWriter()
-	meta := &memMetaStore{hold: make(chan struct{})}
+	meta := &memMetaStore{hold: make(chan struct{}), holdReady: make(chan struct{})}
 	ctx := context.Background()
 	StartAsyncWriter(ctx, meta, zerolog.Nop())
 	defer StopAsyncWriter()
 
 	Enqueue(storage.AuditEntry{CreatedAt: 1, Action: "block", Detail: "d", Pubkey: "pk"})
+	select {
+	case <-meta.holdReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not reach blocked SaveAuditEntry")
+	}
 	for i := 0; i < AsyncQueueCapacity; i++ {
 		Enqueue(storage.AuditEntry{
 			CreatedAt: int64(i + 2),
