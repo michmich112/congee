@@ -50,7 +50,8 @@
 		ws: 'Current WebSocket connections to this relay process.',
 		subs: 'Open REQ filter subscriptions across all connections.',
 		uptime: 'Time since this relay process started serving, and local wall-clock start time.',
-		storage: 'Combined on-disk size of the events and meta SQLite databases. Hover the (i) icon for per-database size and row counts.',
+		storage:
+			'Combined on-disk size of the events and meta databases. Row counts are approximate (SQLite sqlite_stat1 / Postgres pg stats) and refresh after ANALYZE or autovacuum. Hover the (i) icon for per-database breakdown.',
 		eventsStored:
 			'Events that passed validation and were persisted (lifetime counter since process start).',
 		ephemeral:
@@ -239,7 +240,7 @@
 										<tr class="text-muted-foreground border-border border-b">
 											<th class="pr-4 pb-1.5 text-left font-medium"></th>
 											<th class="pr-4 pb-1.5 text-right font-medium">Size</th>
-											<th class="pb-1.5 text-right font-medium">Rows</th>
+											<th class="pb-1.5 text-right font-medium">Rows (approx.)</th>
 										</tr>
 									</thead>
 									<tbody class="text-popover-foreground">

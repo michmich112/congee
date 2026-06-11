@@ -1,6 +1,6 @@
 package storage
 
-// AdminStorageSnapshot is cheap-ish row counts plus optional on-disk size for the admin dashboard.
+// AdminStorageSnapshot is approximate row counts (sqlite_stat1 / pg stats) plus on-disk size for the admin dashboard.
 type AdminStorageSnapshot struct {
 	Bytes     int64
 	MetaBytes int64

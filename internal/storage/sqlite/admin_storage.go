@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/approxrows"
 )
 
 func sqliteMainFilePath(rawDSN string) (string, error) {
@@ -56,13 +57,14 @@ func sqliteOnDiskBytes(mainPath string) int64 {
 func (s *Store) AdminStorageSnapshot(ctx context.Context) (storage.AdminStorageSnapshot, error) {
 	var out storage.AdminStorageSnapshot
 	out.Bytes = sqliteOnDiskBytes(s.dbPath)
-	row := s.db.QueryRowContext(ctx, `
-SELECT
-  (SELECT COUNT(*) FROM events) AS ev,
-  (SELECT COUNT(*) FROM event_tags) AS tg
-`)
-	if err := row.Scan(&out.Events, &out.Tags); err != nil {
-		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlite: admin snapshot counts: %w", err)
+	var err error
+	out.Events, err = approxrows.SQLiteTable(ctx, s.db, "events")
+	if err != nil {
+		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlite: admin snapshot events count: %w", err)
+	}
+	out.Tags, err = approxrows.SQLiteTable(ctx, s.db, "event_tags")
+	if err != nil {
+		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlite: admin snapshot tags count: %w", err)
 	}
 	return out, nil
 }
