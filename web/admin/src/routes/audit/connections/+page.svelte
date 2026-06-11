@@ -9,6 +9,8 @@
 	} from '$lib/admin-conn-poll-preference';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import ConnectionReqEventDeltaChart from '$lib/components/ConnectionReqEventDeltaChart.svelte';
+	import TimestampCell from '$lib/components/TimestampCell.svelte';
+	import { describeNostrKind } from '$lib/nostr-kind-descriptions';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
@@ -44,16 +46,18 @@
 		ended_unix: number;
 	};
 
-	type RecentRow = LiveRow & {
-		ended_unix: number;
-	};
-
 	type ConnListResp = {
 		retention_days: number;
 		live: LiveRow[];
-		recent?: RecentRow[];
 		closed: ClosedRow[];
 		closed_total?: number;
+	};
+
+	type AuditEntry = {
+		created_at: number;
+		action: string;
+		detail: string;
+		pubkey: string;
 	};
 
 	type SubDetail = {
@@ -82,11 +86,30 @@
 		total_client_event: number;
 		series: unknown;
 		subscription_details?: SubDetail[];
+		audit_entries?: AuditEntry[];
 	};
+
+	const eventIDInDetail = /event_id=([0-9a-f]{64})/i;
+	const kindSuffixInDetail = / kind=(\d+)$/;
+
+	function parseAuditEventId(detail: string): string | null {
+		const m = detail.match(eventIDInDetail);
+		return m ? m[1].toLowerCase() : null;
+	}
+
+	function parseAuditKind(detail: string): number | null {
+		const m = detail.match(kindSuffixInDetail);
+		if (!m) return null;
+		const n = Number.parseInt(m[1], 10);
+		return Number.isFinite(n) ? n : null;
+	}
+
+	function shortEventId(hex: string): string {
+		return hex.length <= 10 ? hex : `${hex.slice(0, 8)}…`;
+	}
 
 	let retentionDays = $state(30);
 	let liveRows = $state<LiveRow[]>([]);
-	let recentRows = $state<RecentRow[]>([]);
 	let listErr = $state<string | null>(null);
 	let listLoading = $state(true);
 	let liveBootstrapped = $state(false);
@@ -155,7 +178,6 @@
 			const j = (await res.json()) as ConnListResp;
 			retentionDays = typeof j.retention_days === 'number' ? j.retention_days : 30;
 			liveRows = Array.isArray(j.live) ? j.live : [];
-			recentRows = Array.isArray(j.recent) ? j.recent : [];
 		} catch (e) {
 			listErr = e instanceof Error ? e.message : 'load failed';
 		} finally {
@@ -334,7 +356,7 @@
 <div class="space-y-6">
 	<AdminPageHeading
 		title="Audit · Connections"
-		subtitle="Live and recent WebSocket sessions. Retention matches audit log ({retentionDays} days)."
+		subtitle="Live and closed WebSocket sessions. Retention matches audit log ({retentionDays} days)."
 		Icon={Activity}
 	/>
 
@@ -400,62 +422,6 @@
 									<Table.Cell class="text-xs text-muted-foreground"
 										>{fmtDuration(row.started_unix)}</Table.Cell
 									>
-									<Table.Cell class="py-0.5 align-middle">
-										<ConnectionReqEventDeltaChart {pts} compact />
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
-			{/if}
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header class="pb-2">
-			<Card.Title class="text-base">Recent</Card.Title>
-			<Card.Description
-				>Up to 1000 recently closed connections kept in relay memory (this process).</Card.Description
-			>
-		</Card.Header>
-		<Card.Content class="pt-0">
-			{#if listLoading}
-				<p class="text-muted-foreground py-6 text-sm">Loading…</p>
-			{:else if recentRows.length === 0}
-				<p class="text-muted-foreground py-6 text-sm">No recent disconnects in memory.</p>
-			{:else}
-				<div class="overflow-x-auto">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>Conn</Table.Head>
-								<Table.Head>IP</Table.Head>
-								<Table.Head class="text-right">Subs</Table.Head>
-								<Table.Head>Duration</Table.Head>
-								<Table.Head class="whitespace-nowrap">Closed</Table.Head>
-								<Table.Head class="w-[8.5rem] min-w-[8.5rem] max-w-[10rem]">AUTH / REQ / EVENT</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each recentRows as row (row.ref)}
-								{@const pts = parseSeries(row.series)}
-								<Table.Row
-									class={selectedRef === row.ref ? 'bg-muted/50' : 'cursor-pointer hover:bg-muted/30'}
-									onclick={() => selectRow(row.ref)}
-								>
-									<Table.Cell class="font-mono text-xs">{row.conn_id}</Table.Cell>
-									<Table.Cell class="text-xs">{row.peer_ip}</Table.Cell>
-									<Table.Cell class="text-right tabular-nums">{row.subscriptions}</Table.Cell>
-									<Table.Cell class="text-xs text-muted-foreground"
-										>{fmtDuration(row.started_unix, row.ended_unix)}</Table.Cell
-									>
-									<Table.Cell
-										class="text-xs tabular-nums text-muted-foreground whitespace-nowrap"
-										title={new Date(row.ended_unix * 1000).toISOString()}
-									>
-										{fmtClosedAgo(row.ended_unix)}
-									</Table.Cell>
 									<Table.Cell class="py-0.5 align-middle">
 										<ConnectionReqEventDeltaChart {pts} compact />
 									</Table.Cell>
@@ -648,6 +614,62 @@
 									</li>
 								{/each}
 							</ul>
+						{/if}
+					</div>
+					<div class="mt-6">
+						<p class="text-sm font-medium">Event audit</p>
+						<p class="text-muted-foreground mt-1 text-xs">
+							Audit log rows for EVENT messages on this connection (not full event payloads).
+						</p>
+						{#if !detail.audit_entries || detail.audit_entries.length === 0}
+							<p class="text-muted-foreground mt-2 text-sm">No matching audit rows.</p>
+						{:else}
+							<div class="mt-3 overflow-x-auto rounded-md border border-border">
+								<Table.Root>
+									<Table.Header>
+										<Table.Row>
+											<Table.Head class="whitespace-nowrap">Time</Table.Head>
+											<Table.Head>Action</Table.Head>
+											<Table.Head class="whitespace-nowrap text-right">Kind</Table.Head>
+											<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
+											<Table.Head>Detail</Table.Head>
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#each detail.audit_entries as row, i (i + '-' + row.created_at + '-' + row.action)}
+											{@const eid = parseAuditEventId(row.detail)}
+											{@const kind = parseAuditKind(row.detail)}
+											<Table.Row>
+												<Table.Cell class="whitespace-nowrap py-1.5">
+													<TimestampCell unixValue={row.created_at} />
+												</Table.Cell>
+												<Table.Cell class="py-1.5 text-xs">{row.action}</Table.Cell>
+												<Table.Cell class="py-1.5 text-right font-mono text-xs tabular-nums">
+													{#if kind !== null}
+														<span
+															class="cursor-help border-b border-dotted border-muted-foreground/60"
+															title={describeNostrKind(kind)}>{kind}</span
+														>
+													{:else}
+														<span class="text-muted-foreground">—</span>
+													{/if}
+												</Table.Cell>
+												<Table.Cell class="py-1.5 font-mono text-xs" title={eid ?? undefined}>
+													{#if eid}
+														{shortEventId(eid)}
+													{:else}
+														<span class="text-muted-foreground">—</span>
+													{/if}
+												</Table.Cell>
+												<Table.Cell
+													class="max-w-[12rem] py-1.5 text-xs text-muted-foreground whitespace-normal"
+													title={row.detail}>{row.detail || '—'}</Table.Cell
+												>
+											</Table.Row>
+										{/each}
+									</Table.Body>
+								</Table.Root>
+							</div>
 						{/if}
 					</div>
 				{/if}

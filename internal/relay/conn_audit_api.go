@@ -82,7 +82,6 @@ func (s *Server) persistConnAuditSession(c *Conn) {
 		return
 	}
 	endedUnix := time.Now().Unix()
-	s.recordRecentClosedSession(c, endedUnix)
 	if s.store == nil {
 		return
 	}

@@ -30,6 +30,8 @@ type AuditQuery struct {
 	Offset int
 	Action string
 	Pubkey string
+	// ConnID, when set, matches audit rows whose detail contains "conn_id=<8-hex>" for that connection.
+	ConnID string
 	// Kinds, when non-empty, matches audit rows whose detail ends with " kind=<n>" (NIP-01 post-hook format)
 	// for any n in the list (OR semantics). Values are deduped and sorted by the admin API layer.
 	Kinds []int

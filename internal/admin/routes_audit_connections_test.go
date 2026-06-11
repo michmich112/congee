@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/config"
@@ -149,6 +150,32 @@ func TestAuditConnectionsDetail_HTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	evID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+		CreatedAt: 550,
+		Action:    "event_stored",
+		Detail:    "event_id=" + evID + " conn_id=abc12345 kind=1",
+		Pubkey:    strings.Repeat("b", 64),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+		CreatedAt: 560,
+		Action:    "event_rejected",
+		Detail:    "event_id=" + evID + " conn_id=deadbeef reason=bad sig kind=1",
+		Pubkey:    strings.Repeat("c", 64),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{
+		CreatedAt: 570,
+		Action:    "event_stored",
+		Detail:    "event_id=" + evID + " conn_id=abc12345 kind=1",
+		Pubkey:    strings.Repeat("b", 64),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	cfg := &config.Config{}
 	api := http.NewServeMux()
 	api.HandleFunc("GET /audit/connections/{ref}", HandleAuditConnectionsDetail(cfg, nil, st))
@@ -163,15 +190,22 @@ func TestAuditConnectionsDetail_HTTP(t *testing.T) {
 		t.Fatalf("code=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var detail struct {
-		Kind                string          `json:"kind"`
-		ConnID              string          `json:"conn_id"`
-		Subscriptions       int             `json:"subscriptions"`
-		SubscriptionDetails json.RawMessage `json:"subscription_details"`
+		Kind                string                `json:"kind"`
+		ConnID              string                `json:"conn_id"`
+		Subscriptions       int                   `json:"subscriptions"`
+		SubscriptionDetails json.RawMessage       `json:"subscription_details"`
+		AuditEntries        []storage.AuditEntry  `json:"audit_entries"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
 	if detail.Kind != "session" || detail.ConnID != "abc12345" || detail.Subscriptions != 1 {
 		t.Fatalf("detail: %+v", detail)
+	}
+	if len(detail.AuditEntries) != 2 {
+		t.Fatalf("audit_entries: %+v", detail.AuditEntries)
+	}
+	if detail.AuditEntries[0].CreatedAt != 570 || detail.AuditEntries[1].CreatedAt != 550 {
+		t.Fatalf("audit_entries order: %+v", detail.AuditEntries)
 	}
 }
