@@ -118,6 +118,7 @@ func (s *Server) sweepIdleConnections(limitSec int) {
 			Int("subscriptions", c.server.subs.SubCount(c.ID)).
 			Uint64("client_events", c.clientEventTotal.Load()).
 			Uint64("req_messages", c.reqTotal.Load()).
+			Uint64("auth_messages", c.authTotal.Load()).
 			Msg("ws client idle timeout: no events and no subscriptions")
 		c.cancel()
 		_ = c.nc.Close()

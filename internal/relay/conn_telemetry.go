@@ -13,6 +13,7 @@ const connAuditMaxSamples = 200
 // connAuditPoint is one cumulative sample for admin connection charts (t, totals).
 type connAuditPoint struct {
 	TUnix int64 `json:"t"`
+	Auth  int64 `json:"auth,omitempty"`
 	Req   int64 `json:"req"`
 	Ev    int64 `json:"ev"`
 }
@@ -52,6 +53,7 @@ func (c *Conn) appendConnAuditSample() {
 	}
 	c.connAudit.append(connAuditPoint{
 		TUnix: time.Now().Unix(),
+		Auth:  int64(c.authTotal.Load()),
 		Req:   int64(c.reqTotal.Load()),
 		Ev:    int64(c.clientEventTotal.Load()),
 	})
@@ -65,7 +67,7 @@ func (c *Conn) noteInboundAfterParse(msg any) {
 	case *nostr.ReqMessage:
 		c.reqTotal.Add(1)
 	case *nostr.AuthMessage:
-		c.reqTotal.Add(1)
+		c.authTotal.Add(1)
 	}
 }
 

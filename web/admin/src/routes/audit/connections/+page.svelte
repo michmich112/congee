@@ -24,7 +24,7 @@
 		return (CLOSED_PAGE_SIZES as readonly number[]).includes(n);
 	}
 
-	type SeriesPoint = { t: number; req: number; ev: number };
+	type SeriesPoint = { t: number; auth: number; req: number; ev: number };
 
 	type LiveRow = {
 		ref: string;
@@ -33,6 +33,7 @@
 		remote_addr: string;
 		started_unix: number;
 		subscriptions: number;
+		total_auth: number;
 		total_req: number;
 		total_client_event: number;
 		series: unknown;
@@ -71,6 +72,7 @@
 		started_unix: number;
 		ended_unix?: number | null;
 		subscriptions: number;
+		total_auth: number;
 		total_req: number;
 		total_client_event: number;
 		series: unknown;
@@ -121,10 +123,12 @@
 			if (!x || typeof x !== 'object') continue;
 			const o = x as Record<string, unknown>;
 			const t = Number(o.t);
+			const auth = Number(o.auth ?? 0);
 			const req = Number(o.req);
 			const ev = Number(o.ev);
-			if (!Number.isFinite(t) || !Number.isFinite(req) || !Number.isFinite(ev)) continue;
-			out.push({ t, req, ev });
+			if (!Number.isFinite(t) || !Number.isFinite(auth) || !Number.isFinite(req) || !Number.isFinite(ev))
+				continue;
+			out.push({ t, auth, req, ev });
 		}
 		return out;
 	}
@@ -373,7 +377,7 @@
 								<Table.Head>IP</Table.Head>
 								<Table.Head class="text-right">Subs</Table.Head>
 								<Table.Head>Duration</Table.Head>
-								<Table.Head class="w-[7.5rem] min-w-[7.5rem] max-w-[9rem]">REQ / EVENT</Table.Head>
+								<Table.Head class="w-[8.5rem] min-w-[8.5rem] max-w-[10rem]">AUTH / REQ / EVENT</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
@@ -447,7 +451,7 @@
 									<Table.Head class="whitespace-nowrap" title="Time since the connection closed"
 										>Closed</Table.Head
 									>
-									<Table.Head class="w-[7.5rem] min-w-[7.5rem] max-w-[9rem]">REQ / EVENT</Table.Head>
+									<Table.Head class="w-[8.5rem] min-w-[8.5rem] max-w-[10rem]">AUTH / REQ / EVENT</Table.Head>
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
@@ -548,8 +552,12 @@
 						<dd class="text-xs">{detail.peer_ip}</dd>
 						<dt class="text-muted-foreground">Subscriptions</dt>
 						<dd class="tabular-nums">{detail.subscriptions}</dd>
-						<dt class="text-muted-foreground">Totals REQ / EVENT</dt>
-						<dd class="tabular-nums">{detail.total_req} / {detail.total_client_event}</dd>
+						<dt class="text-muted-foreground">AUTH</dt>
+						<dd class="tabular-nums">{detail.total_auth ?? 0}</dd>
+						<dt class="text-muted-foreground">REQ</dt>
+						<dd class="tabular-nums">{detail.total_req}</dd>
+						<dt class="text-muted-foreground">EVENT</dt>
+						<dd class="tabular-nums">{detail.total_client_event}</dd>
 					</dl>
 					<div class="mt-4 space-y-2">
 						<p class="text-sm font-medium">Series (per bucket Δ)</p>

@@ -50,6 +50,7 @@ type Conn struct {
 	startedUnix      int64
 	idleSinceUnix    int64 // 0 = exempt; else unix sec when idle clock started
 	reqTotal         atomic.Uint64
+	authTotal        atomic.Uint64
 	clientEventTotal atomic.Uint64
 	connAudit        connAuditRing
 

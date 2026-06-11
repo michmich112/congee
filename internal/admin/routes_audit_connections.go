@@ -32,6 +32,7 @@ type auditConnClosedRow struct {
 	RemoteAddr       string          `json:"remote_addr"`
 	StartedUnix      int64           `json:"started_unix"`
 	EndedUnix        int64           `json:"ended_unix"`
+	TotalAuth        int64           `json:"total_auth"`
 	TotalReq         int64           `json:"total_req"`
 	TotalClientEvent int64           `json:"total_client_event"`
 	Series           json.RawMessage `json:"series"`
@@ -47,6 +48,7 @@ type auditConnDetailResponse struct {
 	StartedUnix         int64                `json:"started_unix"`
 	EndedUnix           *int64               `json:"ended_unix,omitempty"`
 	Subscriptions       int                  `json:"subscriptions"`
+	TotalAuth           int64                `json:"total_auth"`
 	TotalReq            int64                `json:"total_req"`
 	TotalClientEvent    int64                `json:"total_client_event"`
 	Series              json.RawMessage      `json:"series"`
@@ -97,6 +99,7 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 					RemoteAddr:       c.RemoteAddr,
 					StartedUnix:      c.StartedUnix,
 					EndedUnix:        c.EndedUnix,
+					TotalAuth:        c.TotalAuth,
 					TotalReq:         c.TotalReq,
 					TotalClientEvent: c.TotalClientEvent,
 					Series:           json.RawMessage(c.SeriesJSON),
@@ -159,6 +162,7 @@ func HandleAuditConnectionsDetail(cfg *config.Config, relaySrv *relay.Server, st
 				RemoteAddr:          d.RemoteAddr,
 				StartedUnix:         d.StartedUnix,
 				Subscriptions:       d.SubscriptionCount,
+				TotalAuth:           d.TotalAuth,
 				TotalReq:            d.TotalReq,
 				TotalClientEvent:    d.TotalClientEvent,
 				Series:              d.Series,
@@ -195,6 +199,7 @@ func HandleAuditConnectionsDetail(cfg *config.Config, relaySrv *relay.Server, st
 				StartedUnix:         sess.StartedUnix,
 				EndedUnix:           &ended,
 				Subscriptions:       len(subs),
+				TotalAuth:           sess.TotalAuth,
 				TotalReq:            sess.TotalReq,
 				TotalClientEvent:    sess.TotalClientEvent,
 				Series:              json.RawMessage(sess.SeriesJSON),
