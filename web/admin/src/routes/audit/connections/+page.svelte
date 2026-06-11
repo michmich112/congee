@@ -44,9 +44,14 @@
 		ended_unix: number;
 	};
 
+	type RecentRow = LiveRow & {
+		ended_unix: number;
+	};
+
 	type ConnListResp = {
 		retention_days: number;
 		live: LiveRow[];
+		recent?: RecentRow[];
 		closed: ClosedRow[];
 		closed_total?: number;
 	};
@@ -81,6 +86,7 @@
 
 	let retentionDays = $state(30);
 	let liveRows = $state<LiveRow[]>([]);
+	let recentRows = $state<RecentRow[]>([]);
 	let listErr = $state<string | null>(null);
 	let listLoading = $state(true);
 	let liveBootstrapped = $state(false);
@@ -149,6 +155,7 @@
 			const j = (await res.json()) as ConnListResp;
 			retentionDays = typeof j.retention_days === 'number' ? j.retention_days : 30;
 			liveRows = Array.isArray(j.live) ? j.live : [];
+			recentRows = Array.isArray(j.recent) ? j.recent : [];
 		} catch (e) {
 			listErr = e instanceof Error ? e.message : 'load failed';
 		} finally {
@@ -393,6 +400,62 @@
 									<Table.Cell class="text-xs text-muted-foreground"
 										>{fmtDuration(row.started_unix)}</Table.Cell
 									>
+									<Table.Cell class="py-0.5 align-middle">
+										<ConnectionReqEventDeltaChart {pts} compact />
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header class="pb-2">
+			<Card.Title class="text-base">Recent</Card.Title>
+			<Card.Description
+				>Up to 1000 recently closed connections kept in relay memory (this process).</Card.Description
+			>
+		</Card.Header>
+		<Card.Content class="pt-0">
+			{#if listLoading}
+				<p class="text-muted-foreground py-6 text-sm">Loading…</p>
+			{:else if recentRows.length === 0}
+				<p class="text-muted-foreground py-6 text-sm">No recent disconnects in memory.</p>
+			{:else}
+				<div class="overflow-x-auto">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>Conn</Table.Head>
+								<Table.Head>IP</Table.Head>
+								<Table.Head class="text-right">Subs</Table.Head>
+								<Table.Head>Duration</Table.Head>
+								<Table.Head class="whitespace-nowrap">Closed</Table.Head>
+								<Table.Head class="w-[8.5rem] min-w-[8.5rem] max-w-[10rem]">AUTH / REQ / EVENT</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each recentRows as row (row.ref)}
+								{@const pts = parseSeries(row.series)}
+								<Table.Row
+									class={selectedRef === row.ref ? 'bg-muted/50' : 'cursor-pointer hover:bg-muted/30'}
+									onclick={() => selectRow(row.ref)}
+								>
+									<Table.Cell class="font-mono text-xs">{row.conn_id}</Table.Cell>
+									<Table.Cell class="text-xs">{row.peer_ip}</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">{row.subscriptions}</Table.Cell>
+									<Table.Cell class="text-xs text-muted-foreground"
+										>{fmtDuration(row.started_unix, row.ended_unix)}</Table.Cell
+									>
+									<Table.Cell
+										class="text-xs tabular-nums text-muted-foreground whitespace-nowrap"
+										title={new Date(row.ended_unix * 1000).toISOString()}
+									>
+										{fmtClosedAgo(row.ended_unix)}
+									</Table.Cell>
 									<Table.Cell class="py-0.5 align-middle">
 										<ConnectionReqEventDeltaChart {pts} compact />
 									</Table.Cell>

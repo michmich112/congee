@@ -17,9 +17,10 @@ const auditConnDBTimeout = 5 * time.Second
 
 // auditConnListResponse is GET /audit/connections JSON.
 type auditConnListResponse struct {
-	RetentionDays int                          `json:"retention_days"`
-	Live          []relay.ConnAuditLiveSummary `json:"live"`
-	Closed        []auditConnClosedRow         `json:"closed"`
+	RetentionDays int                            `json:"retention_days"`
+	Live          []relay.ConnAuditLiveSummary   `json:"live"`
+	Recent        []relay.ConnAuditClosedSummary `json:"recent"`
+	Closed        []auditConnClosedRow           `json:"closed"`
 	// ClosedTotal is set only when closed rows are included (include_closed != 0).
 	ClosedTotal *int64 `json:"closed_total,omitempty"`
 }
@@ -63,6 +64,7 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 			return
 		}
 		includeLive := r.URL.Query().Get("include_live") != "0"
+		includeRecent := r.URL.Query().Get("include_recent") != "0"
 		includeClosed := r.URL.Query().Get("include_closed") != "0"
 		limit := atoiDefault(r.URL.Query().Get("limit"), 100, 1, 500)
 		offset := atoiDefault(r.URL.Query().Get("offset"), 0, 0, 1_000_000)
@@ -112,10 +114,19 @@ func HandleAuditConnectionsList(cfg *config.Config, relaySrv *relay.Server, stor
 			live = relaySrv.ConnAuditLiveSummaries()
 		}
 
+		var recent []relay.ConnAuditClosedSummary
+		if includeRecent && relaySrv != nil {
+			recent = relaySrv.ConnAuditRecentClosedSummaries()
+		}
+		if recent == nil {
+			recent = []relay.ConnAuditClosedSummary{}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(auditConnListResponse{
 			RetentionDays: cfg.Audit.RetentionDays,
 			Live:          live,
+			Recent:        recent,
 			Closed:        closedOut,
 			ClosedTotal:   closedTotal,
 		})
@@ -144,6 +155,33 @@ func HandleAuditConnectionsDetail(cfg *config.Config, relaySrv *relay.Server, st
 		w.Header().Set("Content-Type", "application/json")
 
 		switch kind {
+		case "recent":
+			if relaySrv == nil {
+				http.Error(w, "relay not available", http.StatusServiceUnavailable)
+				return
+			}
+			d, ok := relaySrv.ConnAuditRecentClosedDetailByConnID(liveConnID)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			ended := d.EndedUnix
+			_ = json.NewEncoder(w).Encode(auditConnDetailResponse{
+				Kind:                "recent",
+				Ref:                 ref,
+				ConnID:              d.ConnID,
+				PeerIP:              d.PeerIP,
+				RemoteAddr:          d.RemoteAddr,
+				StartedUnix:         d.StartedUnix,
+				EndedUnix:           &ended,
+				Subscriptions:       d.SubscriptionCount,
+				TotalAuth:           d.TotalAuth,
+				TotalReq:            d.TotalReq,
+				TotalClientEvent:    d.TotalClientEvent,
+				Series:              d.Series,
+				SubscriptionDetails: d.SubscriptionDetails,
+			})
+			return
 		case "live":
 			if relaySrv == nil {
 				http.Error(w, "relay not available", http.StatusServiceUnavailable)
@@ -213,6 +251,13 @@ func HandleAuditConnectionsDetail(cfg *config.Config, relaySrv *relay.Server, st
 }
 
 func parseAuditConnRef(ref string) (kind string, liveConnID string, sessionID int64, ok bool) {
+	if strings.HasPrefix(ref, "recent:") {
+		id := strings.TrimSpace(strings.TrimPrefix(ref, "recent:"))
+		if id == "" {
+			return "", "", 0, false
+		}
+		return "recent", id, 0, true
+	}
 	if strings.HasPrefix(ref, "live:") {
 		id := strings.TrimSpace(strings.TrimPrefix(ref, "live:"))
 		if id == "" {

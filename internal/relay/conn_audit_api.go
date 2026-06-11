@@ -78,10 +78,14 @@ func (s *Server) ConnAuditLiveDetailByConnID(connID string) (*ConnAuditLiveDetai
 }
 
 func (s *Server) persistConnAuditSession(c *Conn) {
-	if s.store == nil || c == nil {
+	if c == nil {
 		return
 	}
-	c.appendConnAuditSample()
+	endedUnix := time.Now().Unix()
+	s.recordRecentClosedSession(c, endedUnix)
+	if s.store == nil {
+		return
+	}
 	subs := s.subs.AuditSubscriptionsForConn(c.ID)
 	subsJSON, err := json.Marshal(subs)
 	if err != nil {
@@ -92,7 +96,7 @@ func (s *Server) persistConnAuditSession(c *Conn) {
 		PeerIP:           c.peerIP,
 		RemoteAddr:       c.remoteAddr,
 		StartedUnix:      c.startedUnix,
-		EndedUnix:        time.Now().Unix(),
+		EndedUnix:        endedUnix,
 		TotalAuth:        int64(c.authTotal.Load()),
 		TotalReq:         int64(c.reqTotal.Load()),
 		TotalClientEvent: int64(c.clientEventTotal.Load()),
