@@ -17,6 +17,7 @@ type ConnAuditLiveSummary struct {
 	RemoteAddr          string          `json:"remote_addr"`
 	StartedUnix         int64           `json:"started_unix"`
 	SubscriptionCount   int             `json:"subscriptions"`
+	TotalAuth           int64           `json:"total_auth"`
 	TotalReq            int64           `json:"total_req"`
 	TotalClientEvent    int64           `json:"total_client_event"`
 	Series              json.RawMessage `json:"series"`
@@ -40,6 +41,7 @@ func (s *Server) ConnAuditLiveSummaries() []ConnAuditLiveSummary {
 			RemoteAddr:        c.remoteAddr,
 			StartedUnix:       c.startedUnix,
 			SubscriptionCount: s.subs.SubCount(c.ID),
+			TotalAuth:         int64(c.authTotal.Load()),
 			TotalReq:          int64(c.reqTotal.Load()),
 			TotalClientEvent:  int64(c.clientEventTotal.Load()),
 			Series:            c.connAudit.snapshotJSON(),
@@ -64,6 +66,7 @@ func (s *Server) ConnAuditLiveDetailByConnID(connID string) (*ConnAuditLiveDetai
 		RemoteAddr:        c.remoteAddr,
 		StartedUnix:       c.startedUnix,
 		SubscriptionCount: s.subs.SubCount(c.ID),
+		TotalAuth:         int64(c.authTotal.Load()),
 		TotalReq:          int64(c.reqTotal.Load()),
 		TotalClientEvent:  int64(c.clientEventTotal.Load()),
 		Series:            c.connAudit.snapshotJSON(),
@@ -75,10 +78,14 @@ func (s *Server) ConnAuditLiveDetailByConnID(connID string) (*ConnAuditLiveDetai
 }
 
 func (s *Server) persistConnAuditSession(c *Conn) {
-	if s.store == nil || c == nil {
+	if c == nil {
 		return
 	}
-	c.appendConnAuditSample()
+	endedUnix := time.Now().Unix()
+	s.recordRecentClosedSession(c, endedUnix)
+	if s.store == nil {
+		return
+	}
 	subs := s.subs.AuditSubscriptionsForConn(c.ID)
 	subsJSON, err := json.Marshal(subs)
 	if err != nil {
@@ -89,7 +96,8 @@ func (s *Server) persistConnAuditSession(c *Conn) {
 		PeerIP:           c.peerIP,
 		RemoteAddr:       c.remoteAddr,
 		StartedUnix:      c.startedUnix,
-		EndedUnix:        time.Now().Unix(),
+		EndedUnix:        endedUnix,
+		TotalAuth:        int64(c.authTotal.Load()),
 		TotalReq:         int64(c.reqTotal.Load()),
 		TotalClientEvent: int64(c.clientEventTotal.Load()),
 		SeriesJSON:       c.connAudit.snapshotJSON(),

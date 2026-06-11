@@ -43,6 +43,7 @@ type WSConnectionSession struct {
 	RemoteAddr       string          `json:"remote_addr"`
 	StartedUnix      int64           `json:"started_unix"`
 	EndedUnix        int64           `json:"ended_unix"`
+	TotalAuth        int64           `json:"total_auth"`
 	TotalReq         int64           `json:"total_req"`
 	TotalClientEvent int64           `json:"total_client_event"`
 	SeriesJSON       json.RawMessage `json:"series_json"`

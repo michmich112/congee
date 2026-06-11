@@ -46,6 +46,8 @@ type Server struct {
 	serveOnce     sync.Once
 
 	readQueue *ReaderQueue
+
+	recentClosed connAuditRecentClosed
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).

@@ -77,6 +77,7 @@ type WSConnectionSessionRow struct {
 	RemoteAddr       string `bun:"remote_addr,notnull"`
 	StartedUnix      int64  `bun:"started_unix,notnull"`
 	EndedUnix        int64  `bun:"ended_unix,notnull"`
+	TotalAuth        int64  `bun:"total_auth,notnull"`
 	TotalReq         int64  `bun:"total_req,notnull"`
 	TotalClientEvent int64  `bun:"total_client_event,notnull"`
 	SeriesJSON       string `bun:"series_json,notnull"`

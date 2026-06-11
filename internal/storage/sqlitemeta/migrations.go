@@ -8,27 +8,36 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
 
 func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
-	var version int
-	row := db.QueryRowContext(ctx, "PRAGMA user_version")
-	if err := row.Scan(&version); err != nil {
-		return fmt.Errorf("sqlitemeta: read user_version: %w", err)
+	for {
+		var version int
+		row := db.QueryRowContext(ctx, "PRAGMA user_version")
+		if err := row.Scan(&version); err != nil {
+			return fmt.Errorf("sqlitemeta: read user_version: %w", err)
+		}
+		if version > schemaVersion {
+			return fmt.Errorf("sqlitemeta: unsupported schema version %d (need <= %d)", version, schemaVersion)
+		}
+		if version == schemaVersion {
+			return nil
+		}
+		if version == 0 {
+			return migrateFresh(ctx, db, log)
+		}
+		switch version {
+		case 1:
+			if err := migrateV1ToV2(ctx, db, log); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("sqlitemeta: unsupported schema version %d", version)
+		}
 	}
-	if version > schemaVersion {
-		return fmt.Errorf("sqlitemeta: unsupported schema version %d (need <= %d)", version, schemaVersion)
-	}
-	if version == schemaVersion {
-		return nil
-	}
-	if version != 0 {
-		return fmt.Errorf("sqlitemeta: unsupported schema version %d", version)
-	}
-	return migrateFresh(ctx, db, log)
 }
 
 func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
@@ -68,6 +77,7 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			started_unix INTEGER NOT NULL,
 			ended_unix INTEGER NOT NULL,
 			total_req INTEGER NOT NULL DEFAULT 0,
+			total_auth INTEGER NOT NULL DEFAULT 0,
 			total_client_event INTEGER NOT NULL DEFAULT 0,
 			series_json TEXT NOT NULL DEFAULT '[]',
 			subs_json TEXT NOT NULL DEFAULT '[]'
@@ -78,6 +88,25 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
 			return fmt.Errorf("sqlitemeta: migrate: %w", err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("sqlitemeta: set user_version: %w", err)
+	}
+	return nil
+}
+
+func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	log.Debug().Msg("schema v1->v2: ws_connection_sessions.total_auth")
+	var hasAuth int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('ws_connection_sessions') WHERE name = 'total_auth'`,
+	).Scan(&hasAuth); err != nil {
+		return fmt.Errorf("sqlitemeta: migrate v1->v2 check column: %w", err)
+	}
+	if hasAuth == 0 {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE ws_connection_sessions ADD COLUMN total_auth INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("sqlitemeta: migrate v1->v2: %w", err)
 		}
 	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
