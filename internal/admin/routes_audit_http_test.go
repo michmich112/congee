@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -68,7 +68,7 @@ func getAuditJSON(t *testing.T, h http.Handler, query string) (auditAPIResponse,
 // rows i in [0,26] action event_stored; i in [27,31] action onlyme (5 rows).
 // Rows i in [0,2] use pubkey pkRare; others use pkCommon.
 // Detail matches NIP-01 audit post-hook shape and ends with " kind=(i mod 5)".
-func seedAuditHTTPTestData(ctx context.Context, t *testing.T, st *sqlite.Store) {
+func seedAuditHTTPTestData(ctx context.Context, t *testing.T, st storage.MetaStore) {
 	t.Helper()
 	pkCommon := strings.Repeat("a", 64)
 	pkRare := strings.Repeat("f", 64)
@@ -108,14 +108,14 @@ func TestHandleAudit_HTTP(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit_http.db")
-	st, err := sqlite.Open(ctx, path, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, path, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	seedAuditHTTPTestData(ctx, t, st)
 	h := auditHTTPHandler(st)

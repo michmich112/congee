@@ -225,3 +225,72 @@ func TestEffectiveREQDefaultQueryLimit(t *testing.T) {
 		t.Fatalf("positive: got %d want 42", g)
 	}
 }
+
+func TestValidateAcceptsNegativeQueryPageSize(t *testing.T) {
+	c := minimalValidConfig()
+	neg := -1
+	c.ConnectionLimits.QueryPageSize = &neg
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected negative query_page_size to be valid (paging disabled), got: %v", err)
+	}
+}
+
+func TestValidateAcceptsNilQueryPageSize(t *testing.T) {
+	c := minimalValidConfig()
+	c.ConnectionLimits.QueryPageSize = nil
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected nil query_page_size to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsZeroQueryPageSize(t *testing.T) {
+	c := minimalValidConfig()
+	zero := 0
+	c.ConnectionLimits.QueryPageSize = &zero
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected zero query_page_size to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAcceptsPositiveQueryPageSize(t *testing.T) {
+	c := minimalValidConfig()
+	v := 100
+	c.ConnectionLimits.QueryPageSize = &v
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected positive query_page_size to be valid, got: %v", err)
+	}
+}
+
+func TestValidateRejectsPostgresMetaDSN(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.MetaDSN = "postgres://localhost/meta"
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error for postgres meta_dsn")
+	}
+}
+
+func TestValidateAcceptsSQLiteMetaDSN(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.MetaDSN = "./congee-meta.db"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected sqlite meta_dsn to be valid: %v", err)
+	}
+}
+
+func TestEffectiveQueryPageSize(t *testing.T) {
+	if g, w := EffectiveQueryPageSize(nil), DefaultQueryPageSizeIfUnset; g != w {
+		t.Fatalf("nil: got %d want %d", g, w)
+	}
+	z := 0
+	if g := EffectiveQueryPageSize(&z); g != 0 {
+		t.Fatalf("zero: got %d want 0", g)
+	}
+	n := -3
+	if g := EffectiveQueryPageSize(&n); g != -3 {
+		t.Fatalf("negative: got %d want -3", g)
+	}
+	p := 42
+	if g := EffectiveQueryPageSize(&p); g != 42 {
+		t.Fatalf("positive: got %d want 42", g)
+	}
+}

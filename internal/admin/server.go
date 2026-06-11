@@ -145,7 +145,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
-	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, scheduleRestart, relayID))
+	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart, relayID))
 	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))

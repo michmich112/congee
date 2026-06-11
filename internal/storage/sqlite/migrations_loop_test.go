@@ -13,8 +13,8 @@ import (
 	_ "github.com/uptrace/bun/driver/sqliteshim"
 )
 
-// TestRunMigrationsLoopsV5ToV6 builds a v6 file, downgrades to v5 metadata, and checks one Open converges to v6.
-func TestRunMigrationsLoopsV5ToV6(t *testing.T) {
+// TestRunMigrationsLoopsV6ToV7 builds a v7 file, re-adds ws_connection_sessions with user_version 6, and checks Open drops meta tables.
+func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	ctx := context.Background()
 	log := zerolog.Nop()
 	dir := t.TempDir()
@@ -35,11 +35,32 @@ func TestRunMigrationsLoopsV5ToV6(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sqldb.ExecContext(ctx, `DROP TABLE IF EXISTS ws_connection_sessions`); err != nil {
-		t.Fatal(err)
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			conn_id TEXT NOT NULL,
+			peer_ip TEXT NOT NULL,
+			remote_addr TEXT NOT NULL,
+			started_unix INTEGER NOT NULL,
+			ended_unix INTEGER NOT NULL,
+			total_req INTEGER NOT NULL DEFAULT 0,
+			total_client_event INTEGER NOT NULL DEFAULT 0,
+			series_json TEXT NOT NULL DEFAULT '[]',
+			subs_json TEXT NOT NULL DEFAULT '[]'
+		)`,
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at INTEGER NOT NULL,
+			action TEXT NOT NULL,
+			detail TEXT,
+			pubkey TEXT NOT NULL DEFAULT ''
+		)`,
+		`PRAGMA user_version = 6`,
 	}
-	if _, err := sqldb.ExecContext(ctx, `PRAGMA user_version = 5`); err != nil {
-		t.Fatal(err)
+	for _, q := range stmts {
+		if _, err := sqldb.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := sqldb.Close(); err != nil {
 		t.Fatal(err)
@@ -62,14 +83,13 @@ func TestRunMigrationsLoopsV5ToV6(t *testing.T) {
 	var n int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ws_connection_sessions'`,
-	).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("ws_connection_sessions missing: err=%v n=%d", err, n)
+	).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("ws_connection_sessions should be dropped: err=%v n=%d", err, n)
 	}
 }
 
-// TestRunMigrationsLoopsFakeV3ToV6OnV6Schema keeps a fully migrated database file but sets user_version
-// back to 3. One Open must run v3→v4, v4→v5, and v5→v6 (multiple loop iterations) and land at v6.
-func TestRunMigrationsLoopsFakeV3ToV6OnV6Schema(t *testing.T) {
+// TestRunMigrationsLoopsFakeV5ToV7 keeps a v7 events schema but sets user_version to 5 with legacy meta tables present.
+func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 	ctx := context.Background()
 	log := zerolog.Nop()
 	dir := t.TempDir()
@@ -90,8 +110,48 @@ func TestRunMigrationsLoopsFakeV3ToV6OnV6Schema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sqldb.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
-		t.Fatal(err)
+	legacy := []string{
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at INTEGER NOT NULL,
+			action TEXT NOT NULL,
+			detail TEXT,
+			pubkey TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS config_changelog (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			created_at INTEGER NOT NULL,
+			summary TEXT NOT NULL,
+			json_diff TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
+			bucket_start_unix INTEGER NOT NULL PRIMARY KEY,
+			events_stored INTEGER NOT NULL DEFAULT 0,
+			events_rejected INTEGER NOT NULL DEFAULT 0,
+			req_count INTEGER NOT NULL DEFAULT 0,
+			close_count INTEGER NOT NULL DEFAULT 0,
+			query_ms_sum INTEGER NOT NULL DEFAULT 0,
+			query_ms_count INTEGER NOT NULL DEFAULT 0,
+			subscriptions_open INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			conn_id TEXT NOT NULL,
+			peer_ip TEXT NOT NULL,
+			remote_addr TEXT NOT NULL,
+			started_unix INTEGER NOT NULL,
+			ended_unix INTEGER NOT NULL,
+			total_req INTEGER NOT NULL DEFAULT 0,
+			total_client_event INTEGER NOT NULL DEFAULT 0,
+			series_json TEXT NOT NULL DEFAULT '[]',
+			subs_json TEXT NOT NULL DEFAULT '[]'
+		)`,
+		`PRAGMA user_version = 5`,
+	}
+	for _, q := range legacy {
+		if _, err := sqldb.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := sqldb.Close(); err != nil {
 		t.Fatal(err)
@@ -109,6 +169,12 @@ func TestRunMigrationsLoopsFakeV3ToV6OnV6Schema(t *testing.T) {
 	}
 	if uv != schemaVersion {
 		t.Fatalf("user_version after multi-step migrate: got %d want %d", uv, schemaVersion)
+	}
+	var metaTables int
+	if err := s2.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('audit_log','config_changelog','relay_metric_buckets','ws_connection_sessions')`,
+	).Scan(&metaTables); err != nil || metaTables != 0 {
+		t.Fatalf("meta tables should be dropped: err=%v n=%d", err, metaTables)
 	}
 }
 

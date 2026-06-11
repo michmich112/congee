@@ -8,6 +8,7 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/postgres"
 	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/storage/sqlitemeta"
 	"github.com/rs/zerolog"
 )
 
@@ -32,26 +33,66 @@ func (h *Handle) Close() error {
 func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID string, log zerolog.Logger) (*Handle, error) {
 	switch sec.Type {
 	case "", "sqlite":
-		st, err := sqlite.Open(ctx, sec.DSN, nil, log)
+		return openSQLite(ctx, sec, log)
+	case "postgres":
+		metaDSN := ResolveMetaDSN(sec)
+		meta, err := sqlitemeta.Open(ctx, metaDSN, log)
 		if err != nil {
 			return nil, err
 		}
-		return &Handle{
-			Store:         st,
-			EventNotifier: storage.NoopNotifier{},
-			closeFn:       st.Close,
-		}, nil
-	case "postgres":
+		if err := migrateLegacyMetaPostgres(ctx, sec.DSN, metaDSN, meta, log); err != nil {
+			_ = meta.Close()
+			return nil, fmt.Errorf("db: legacy meta migration: %w", err)
+		}
 		st, err := postgres.Open(ctx, sec.DSN, relayInstanceID, log)
 		if err != nil {
+			_ = meta.Close()
 			return nil, err
 		}
+		store := newCompositeStore(st, meta, st, meta)
 		return &Handle{
-			Store:         st,
+			Store:         store,
 			EventNotifier: st.Notifier(),
-			closeFn:       st.Close,
+			closeFn: func() error {
+				err1 := meta.Close()
+				err2 := st.Close()
+				if err1 != nil {
+					return err1
+				}
+				return err2
+			},
 		}, nil
 	default:
 		return nil, fmt.Errorf("db: unsupported database.type %q", sec.Type)
 	}
+}
+
+func openSQLite(ctx context.Context, sec config.DatabaseSection, log zerolog.Logger) (*Handle, error) {
+	metaDSN := ResolveMetaDSN(sec)
+	meta, err := sqlitemeta.Open(ctx, metaDSN, log)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrateLegacyMetaSQLite(ctx, sec.DSN, metaDSN, meta, log); err != nil {
+		_ = meta.Close()
+		return nil, fmt.Errorf("db: legacy meta migration: %w", err)
+	}
+	ev, err := sqlite.Open(ctx, sec.DSN, nil, log)
+	if err != nil {
+		_ = meta.Close()
+		return nil, err
+	}
+	store := newCompositeStore(ev, meta, ev, meta)
+	return &Handle{
+		Store:         store,
+		EventNotifier: storage.NoopNotifier{},
+		closeFn: func() error {
+			err1 := meta.Close()
+			err2 := ev.Close()
+			if err1 != nil {
+				return err1
+			}
+			return err2
+		},
+	}, nil
 }

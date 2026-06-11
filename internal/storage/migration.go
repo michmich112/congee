@@ -8,10 +8,8 @@ import (
 
 // MigrationCounts are row totals used for progress and verification when copying between stores.
 type MigrationCounts struct {
-	Events    int64 `json:"events"`
-	Tags      int64 `json:"tags"`
-	Audit     int64 `json:"audit"`
-	Changelog int64 `json:"changelog"`
+	Events int64 `json:"events"`
+	Tags   int64 `json:"tags"`
 }
 
 // MigrationProgress is reported during a copy (percent 0–100, human message).
@@ -27,16 +25,11 @@ type MigrationSummary struct {
 	EventsInserted   int64           `json:"events_inserted"`
 	EventsSkipped    int64           `json:"events_skipped"`
 	TagsAdded        int64           `json:"tags_added"`
-	AuditInserted    int64           `json:"audit_inserted"`
-	AuditSkipped     int64           `json:"audit_skipped"`
-	ChangelogCopied  int64           `json:"changelog_copied"`
 }
 
-// MigrationSource is implemented by stores that support bulk export for migration tooling.
+// MigrationSource is implemented by event stores that support bulk export for migration tooling.
 type MigrationSource interface {
-	Store
+	EventStore
 	MigrationRowCounts(ctx context.Context) (MigrationCounts, error)
 	ScanEventsForMigration(ctx context.Context, fn func(ev *nostr.Event) error) error
-	ScanAuditForMigration(ctx context.Context, fn func(AuditEntry) error) error
-	ScanChangelogForMigration(ctx context.Context, fn func(ConfigChange) error) error
 }

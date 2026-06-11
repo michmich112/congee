@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
@@ -62,6 +62,11 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			if err := migrateV5ToV6(ctx, db, log); err != nil {
 				return err
 			}
+		case 6:
+			log.Debug().Msg("schema: migrating v6 to v7")
+			if err := migrateV6ToV7(ctx, db, log); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("sqlite: unsupported schema version %d", version)
 		}
@@ -92,45 +97,6 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id ON event_tags (event_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value ON event_tags (name, value)`,
-		`CREATE TABLE IF NOT EXISTS audit_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			created_at INTEGER NOT NULL,
-			action TEXT NOT NULL,
-			detail TEXT,
-			pubkey TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log (created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS config_changelog (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			created_at INTEGER NOT NULL,
-			summary TEXT NOT NULL,
-			json_diff TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_config_changelog_created_at ON config_changelog (created_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
-			bucket_start_unix INTEGER NOT NULL PRIMARY KEY,
-			events_stored INTEGER NOT NULL DEFAULT 0,
-			events_rejected INTEGER NOT NULL DEFAULT 0,
-			req_count INTEGER NOT NULL DEFAULT 0,
-			close_count INTEGER NOT NULL DEFAULT 0,
-			query_ms_sum INTEGER NOT NULL DEFAULT 0,
-			query_ms_count INTEGER NOT NULL DEFAULT 0,
-			subscriptions_open INTEGER NOT NULL DEFAULT 0
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_relay_metric_buckets_start ON relay_metric_buckets (bucket_start_unix)`,
-		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			conn_id TEXT NOT NULL,
-			peer_ip TEXT NOT NULL,
-			remote_addr TEXT NOT NULL,
-			started_unix INTEGER NOT NULL,
-			ended_unix INTEGER NOT NULL,
-			total_req INTEGER NOT NULL DEFAULT 0,
-			total_client_event INTEGER NOT NULL DEFAULT 0,
-			series_json TEXT NOT NULL DEFAULT '[]',
-			subs_json TEXT NOT NULL DEFAULT '[]'
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_ws_sessions_ended ON ws_connection_sessions (ended_unix DESC)`,
 	}
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
@@ -253,7 +219,32 @@ func migrateV5ToV6(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			return fmt.Errorf("sqlite: migrate v5->v6: %w", err)
 		}
 	}
-	log.Debug().Int("schema_version", schemaVersion).Msg("schema v5->v6: set user_version")
+	log.Debug().Msg("schema v5->v6: set user_version 6")
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 6`); err != nil {
+		return fmt.Errorf("sqlite: set user_version: %w", err)
+	}
+	return nil
+}
+
+func migrateV6ToV7(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+	stmts := []string{
+		`DROP INDEX IF EXISTS idx_ws_sessions_ended`,
+		`DROP TABLE IF EXISTS ws_connection_sessions`,
+		`DROP INDEX IF EXISTS idx_relay_metric_buckets_start`,
+		`DROP TABLE IF EXISTS relay_metric_buckets`,
+		`DROP INDEX IF EXISTS idx_config_changelog_created_at`,
+		`DROP TABLE IF EXISTS config_changelog`,
+		`DROP INDEX IF EXISTS idx_audit_pubkey_created_at`,
+		`DROP INDEX IF EXISTS idx_audit_created_at`,
+		`DROP TABLE IF EXISTS audit_log`,
+	}
+	for i := range stmts {
+		log.Debug().Int("ddl_step", i).Msg("schema v6->v7: drop meta tables")
+		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
+			return fmt.Errorf("sqlite: migrate v6->v7: %w", err)
+		}
+	}
+	log.Debug().Int("schema_version", schemaVersion).Msg("schema v6->v7: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return fmt.Errorf("sqlite: set user_version: %w", err)
 	}

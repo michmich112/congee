@@ -92,6 +92,7 @@ func TestBroadcastRespectsClose(t *testing.T) {
 		ev := &nostr.Event{ID: fmt.Sprintf("%064d", i), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "x"}
 		m.Broadcast(ev, nil)
 	}
+	m.FinishSnapshot("c1", "sub1")
 	close(removeDone)
 	wg.Wait()
 
@@ -185,6 +186,121 @@ func TestCloseThenBroadcastNeverSends(t *testing.T) {
 	<-done
 	if sent.Load() != 0 {
 		t.Fatalf("expected 0 events sent after close, got %d", sent.Load())
+	}
+}
+
+func TestBroadcastBuffersUntilFinishSnapshot(t *testing.T) {
+	cfg := minimalRelayCfg()
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
+
+	var sent atomic.Int64
+	m.RegisterSender("c1", func(b []byte) bool {
+		sent.Add(1)
+		return true
+	})
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	ev1 := &nostr.Event{ID: strings.Repeat("1", 64), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "a"}
+	ev2 := &nostr.Event{ID: strings.Repeat("3", 64), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "b"}
+	m.Broadcast(ev1, nil)
+	m.Broadcast(ev2, nil)
+	if sent.Load() != 0 {
+		t.Fatalf("expected 0 sends before FinishSnapshot, got %d", sent.Load())
+	}
+
+	m.FinishSnapshot("c1", "s1")
+	if sent.Load() != 2 {
+		t.Fatalf("expected 2 flushed events, got %d", sent.Load())
+	}
+
+	ev3 := &nostr.Event{ID: strings.Repeat("5", 64), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "c"}
+	m.Broadcast(ev3, nil)
+	if sent.Load() != 3 {
+		t.Fatalf("expected immediate send after snapshot, got %d", sent.Load())
+	}
+}
+
+func TestBroadcastSnapshotOverflowStopsBuffering(t *testing.T) {
+	cfg := minimalRelayCfg()
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
+
+	var sent atomic.Int64
+	m.RegisterSender("c1", func(b []byte) bool {
+		sent.Add(1)
+		return true
+	})
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < pendingLiveCap+10; i++ {
+		ev := &nostr.Event{ID: fmt.Sprintf("%064d", i), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "x"}
+		m.Broadcast(ev, nil)
+	}
+
+	m.FinishSnapshot("c1", "s1")
+	if sent.Load() != pendingLiveCap {
+		t.Fatalf("expected %d buffered events flushed, got %d", pendingLiveCap, sent.Load())
+	}
+}
+
+func TestAddResetsSnapshotBuffer(t *testing.T) {
+	cfg := minimalRelayCfg()
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
+	m.RegisterSender("c1", func([]byte) bool { return true })
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	ev := &nostr.Event{ID: strings.Repeat("1", 64), PubKey: strings.Repeat("2", 64), Kind: 1, Content: "x"}
+	m.Broadcast(ev, nil)
+
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	e := m.subs["c1"]["s1"]
+	if e.snapshotDone.Load() {
+		t.Fatal("replaced sub should reset snapshotDone")
+	}
+	if len(e.pendingLive) != 0 {
+		t.Fatalf("replaced sub should clear pendingLive, got %d", len(e.pendingLive))
+	}
+	m.mu.Unlock()
+}
+
+func TestIsSameSnapshot(t *testing.T) {
+	cfg := minimalRelayCfg()
+	m := NewSubscriptionManager(cfg, zerolog.Nop())
+	m.RegisterSender("c1", func([]byte) bool { return true })
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	opened, ok := m.SubOpenedUnix("c1", "s1")
+	if !ok {
+		t.Fatal("SubOpenedUnix")
+	}
+	if !m.IsSameSnapshot("c1", "s1", opened) {
+		t.Fatal("expected same snapshot")
+	}
+	if m.IsSameSnapshot("c1", "s1", opened-1) {
+		t.Fatal("expected stale opened_unix to mismatch")
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if err := m.Add("c1", "s1", []nostr.Filter{{Kinds: []int{1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if m.IsSameSnapshot("c1", "s1", opened) {
+		t.Fatal("expected replacement to invalidate stale opened_unix")
+	}
+	reopened, ok := m.SubOpenedUnix("c1", "s1")
+	if !ok || !m.IsSameSnapshot("c1", "s1", reopened) {
+		t.Fatal("expected new snapshot after replacement")
+	}
+	m.Remove("c1", "s1")
+	if m.IsSameSnapshot("c1", "s1", reopened) {
+		t.Fatal("expected closed sub to fail snapshot check")
 	}
 }
 

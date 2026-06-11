@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/rs/zerolog"
 )
 
@@ -17,14 +17,14 @@ func TestHandleGetEvent(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "e.db")
-	st, err := sqlite.Open(ctx, path, nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, path, zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
 		t.Skip(err)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	ev := &nostr.Event{
 		ID:        strings.Repeat("a", 64),

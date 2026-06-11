@@ -80,10 +80,11 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 			"relay_counters":     relayCounters,
 			"recent_query_latency": recentLatency,
 			"storage": map[string]any{
-				"bytes":  snap.Bytes,
-				"events": snap.Events,
-				"tags":   snap.Tags,
-				"audit":  snap.Audit,
+				"bytes":      snap.Bytes,
+				"meta_bytes": snap.MetaBytes,
+				"events":     snap.Events,
+				"tags":       snap.Tags,
+				"audit":      snap.Audit,
 			},
 			"series": map[string]any{
 				"bucket_sec": 60,

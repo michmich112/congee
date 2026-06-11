@@ -10,7 +10,8 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 
 - `cmd/congee/` — entrypoint: config, storage, NIP loader, relay server, optional admin server.
 - `internal/nostr/` — event, filter, message parsing, kind classification (NIP-01).
-- `internal/storage/` — `Store` interface; SQLite and PostgreSQL implementations (Bun ORM).
+- `internal/storage/` — `Store` (`EventStore` + `MetaStore`); SQLite/PostgreSQL event stores and `sqlitemeta` for operational metadata (`congee-meta.db`).
+- `internal/db/` — opens and composes event + meta stores, legacy meta migration, merged `AdminStorageSnapshot`.
 - `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
 - `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).

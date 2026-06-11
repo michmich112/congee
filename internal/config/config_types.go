@@ -29,8 +29,9 @@ type AdminSection struct {
 }
 
 type DatabaseSection struct {
-	Type string `json:"type"`
-	DSN  string `json:"dsn"`
+	Type    string `json:"type"`
+	DSN     string `json:"dsn"`
+	MetaDSN string `json:"meta_dsn,omitempty"`
 }
 
 type LoggingSection struct {
@@ -68,10 +69,14 @@ type ConnectionLimitsSection struct {
 	ReadDeadlineSeconds     int  `json:"read_deadline_seconds"`
 	WriteDeadlineSeconds    int  `json:"write_deadline_seconds"`
 	DefaultQueryLimit       *int `json:"default_query_limit,omitempty"`
+	QueryPageSize           *int `json:"query_page_size,omitempty"`
 }
 
 // DefaultQueryLimitIfUnset caps initial REQ results per filter when default_query_limit is omitted from JSON.
 const DefaultQueryLimitIfUnset = 500
+
+// DefaultQueryPageSizeIfUnset is the internal REQ read chunk size when query_page_size is omitted from JSON.
+const DefaultQueryPageSizeIfUnset = 100
 
 // EffectiveREQDefaultQueryLimit returns the cap applied when a subscription filter omits "limit".
 // A nil config pointer uses DefaultQueryLimitIfUnset. A non-positive configured value disables that cap
@@ -82,6 +87,16 @@ func EffectiveREQDefaultQueryLimit(p *int) int {
 	}
 	if *p <= 0 {
 		return 0
+	}
+	return *p
+}
+
+// EffectiveQueryPageSize returns the internal REQ pagination chunk size.
+// A nil config pointer uses DefaultQueryPageSizeIfUnset. A non-positive configured value disables paging
+// (single query, legacy behavior).
+func EffectiveQueryPageSize(p *int) int {
+	if p == nil {
+		return DefaultQueryPageSizeIfUnset
 	}
 	return *p
 }

@@ -27,8 +27,6 @@
 	type MigrationCounts = {
 		events: number;
 		tags: number;
-		audit: number;
-		changelog: number;
 	};
 
 	type MigrationSummary = {
@@ -37,9 +35,6 @@
 		events_inserted: number;
 		events_skipped: number;
 		tags_added: number;
-		audit_inserted: number;
-		audit_skipped: number;
-		changelog_copied: number;
 	};
 
 	type MigrationOutcome =
@@ -308,7 +303,7 @@
 	}
 
 	function fmtCounts(c: MigrationCounts): string {
-		return `${c.events} events · ${c.tags} tags · ${c.audit} audit · ${c.changelog} changelog`;
+		return `${c.events} events · ${c.tags} tags`;
 	}
 </script>
 
@@ -316,7 +311,7 @@
 	<Card.Header>
 		<Card.Title class="text-base">Database migration</Card.Title>
 		<Card.Description>
-			Copy events, tags, audit log, and config changelog to a different database. Duplicate events will be skipped.
+			Copy events and tags to a different database. Duplicate events will be skipped.
 			The source is always the database from the relay JSON config.
 		</Card.Description>
 	</Card.Header>
@@ -415,10 +410,6 @@
 						Events: {outcome.summary.events_inserted} inserted, {outcome.summary.events_skipped} skipped
 						({outcome.summary.tags_added} tag rows on inserted events)
 					</li>
-					<li>
-						Audit: {outcome.summary.audit_inserted} inserted, {outcome.summary.audit_skipped} skipped
-					</li>
-					<li>Config changelog rows copied: {outcome.summary.changelog_copied}</li>
 				</ul>
 				{#if outcome.config_updated}
 					<p class="text-sm">

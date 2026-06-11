@@ -14,7 +14,6 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
@@ -45,6 +44,8 @@ type Server struct {
 	metricsCancel context.CancelFunc
 	startedUnix   atomic.Int64
 	serveOnce     sync.Once
+
+	readQueue *ReaderQueue
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -72,6 +73,7 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		metricsCtx:    mctx,
 		metricsCancel: mcancel,
 	}
+	s.readQueue = newReaderQueue(s)
 	mux := http.NewServeMux()
 	mux.Handle("/health", &HealthHandler{Store: store})
 	mux.HandleFunc("/", s.handleRoot)
@@ -144,6 +146,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 		go s.connAuditSampler()
 		go s.idleConnSweeper()
+		s.readQueue.start()
 	})
 	s.http.Addr = ln.Addr().String()
 	return s.http.Serve(ln)
@@ -356,20 +359,12 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		Int("max_open_per_ip", s.cfg.ConnectionLimits.MaxOpenPerIP).
 		Int("idle_no_event_no_sub_seconds", s.cfg.ConnectionLimits.IdleNoEventNoSubSeconds).
 		Msg("ws client connected")
-	defer cancel()
 
 	s.conns.Store(id, c)
 	defer s.conns.Delete(id)
 
 	s.subs.RegisterSender(id, func(b []byte) bool {
-		select {
-		case c.send <- b:
-			return true
-		case <-ctx.Done():
-			return false
-		default:
-			return false
-		}
+		return c.enqueue(b) == nil
 	})
 
 	go c.writeLoop()
@@ -387,22 +382,22 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 
 	ids := s.subs.UnregisterSender(id)
 	for _, sid := range ids {
-		b, err := nostr.MarshalRelayClosed(sid, "connection closed")
-		if err != nil {
-			continue
-		}
-		select {
-		case c.send <- b:
-		default:
-		}
+		_ = c.sendClosed(sid, "connection closed")
 	}
+	c.sendMu.Lock()
+	c.outboundClosed = true
 	close(c.send)
+	c.sendMu.Unlock()
+	c.cancel()
 	<-c.writerDone
 	_ = nc.Close()
 }
 
 // Shutdown stops listening and closes active WebSocket connections.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.readQueue != nil {
+		s.readQueue.stop()
+	}
 	if s.metricsCancel != nil {
 		s.metricsCancel()
 	}

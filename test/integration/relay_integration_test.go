@@ -22,7 +22,8 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/db"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -48,7 +49,9 @@ func writeIntegrationConfig(dir, dsn string) string {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -90,7 +93,9 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnCon
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -140,7 +145,9 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -209,7 +216,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 	var (
 		tmpDir   string
 		cfg      *config.Config
-		st       *sqlite.Store
+		st       storage.Store
 		srv      *relay.Server
 		ln       net.Listener
 		baseWS   string
@@ -229,8 +236,10 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err = sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		var closeStore func() error
+		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = closeStore() })
 
 		log = zerolog.Nop()
 		srv, err = relay.NewServer(cfg, st, log, rid)
@@ -250,7 +259,6 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
-		_ = st.Close()
 		_ = ln.Close()
 	})
 
@@ -310,6 +318,51 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(json.Unmarshal(data, &eose)).To(Succeed())
 		Expect(eose[0]).To(Equal("EOSE"))
 		Expect(eose[1]).To(Equal("sub1"))
+	})
+
+	It("paginates REQ snapshot and sends one EOSE after all pages", func() {
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+
+		var pubHex string
+		for i := 0; i < 250; i++ {
+			ev := signedEvent(priv, 1, fmt.Sprintf("note-%d", i), nil)
+			ev.CreatedAt = int64(250 - i)
+			_, _ = ev.ComputeID()
+			Expect(ev.Sign(priv)).To(Succeed())
+			if i == 0 {
+				pubHex = ev.PubKey
+			}
+			Expect(st.SaveEvent(context.Background(), &ev)).To(Succeed())
+		}
+
+		w2, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer w2.Close()
+		pub := pubHex
+		f := map[string]any{"kinds": []int{1}, "authors": []string{pub}, "limit": 250}
+		p2, err := json.Marshal([]any{"REQ", "page-sub", f})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(w2.WriteMessage(websocket.TextMessage, p2)).To(Succeed())
+
+		eventCount := 0
+		for {
+			_, data, err := w2.ReadMessage()
+			Expect(err).NotTo(HaveOccurred())
+			var msg []any
+			Expect(json.Unmarshal(data, &msg)).To(Succeed())
+			switch msg[0] {
+			case "EVENT":
+				Expect(msg[1]).To(Equal("page-sub"))
+				eventCount++
+			case "EOSE":
+				Expect(msg[1]).To(Equal("page-sub"))
+				Expect(eventCount).To(Equal(250))
+				return
+			default:
+				Fail(fmt.Sprintf("unexpected message type %v", msg[0]))
+			}
+		}
 	})
 
 	It("handles CLOSE", func() {
@@ -428,7 +481,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
     "connections_per_minute_per_ip": 60,
     "idle_no_event_no_sub_seconds": 90,
     "read_deadline_seconds": 60,
-    "write_deadline_seconds": 30
+    "write_deadline_seconds": 30,
+    "default_query_limit": 500,
+    "query_page_size": 100
   },
   "websocket": {
     "compression_enabled": false,
@@ -452,9 +507,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsRid, err := relayidentity.Load(corsSec)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
-		corsSt, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		corsSt, closeCors, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer corsSt.Close()
+		defer closeCors()
 		corsSrv, err := relay.NewServer(corsCfg, corsSt, zerolog.Nop(), corsRid)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(nips.LoadEnabled(corsCfg, corsSrv, corsSt, zerolog.Nop())).To(Succeed())
@@ -540,9 +595,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -636,9 +691,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -718,9 +773,9 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)
@@ -798,9 +853,9 @@ var _ = Describe("NIP-29 relay groups", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
-		st, err := sqlite.Open(context.Background(), dbPath, nil, zerolog.Nop())
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
-		defer st.Close()
+		defer closeStore()
 
 		log := zerolog.Nop()
 		srv, err := relay.NewServer(cfg, st, log, rid)

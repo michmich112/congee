@@ -409,6 +409,7 @@ func TestBroadcast_NIP17GiftWrapNotSentToWrongAuthedSubscriber(t *testing.T) {
 	if err := srv.subs.Add("bc1", "sub1", []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}}}); err != nil {
 		t.Fatal(err)
 	}
+	srv.subs.FinishSnapshot("bc1", "sub1")
 	srv.broadcastEvent(wrap)
 	if got != 0 {
 		t.Fatalf("expected 0 live EVENT for wrong recipient, got %d", got)

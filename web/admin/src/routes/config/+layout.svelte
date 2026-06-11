@@ -3,7 +3,7 @@
 	import Code from '@lucide/svelte/icons/code';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
-	import { DEFAULT_QUERY_LIMIT_IF_UNSET, parseConfigJson, type AppConfig } from '$lib/app-config';
+	import { DEFAULT_QUERY_LIMIT_IF_UNSET, DEFAULT_QUERY_PAGE_SIZE_IF_UNSET, parseConfigJson, type AppConfig } from '$lib/app-config';
 	import {
 		ADMIN_CONFIG_CTX,
 		type AdminConfigContext,
@@ -42,6 +42,8 @@
 	let relayInstanceRuntime = $state<{ instance_id: string; env_locked: boolean } | null>(null);
 	let defaultQueryLimitField = $state('');
 	let defaultQueryLimitFieldError = $state<string | null>(null);
+	let queryPageSizeField = $state('');
+	let queryPageSizeFieldError = $state<string | null>(null);
 
 	function syncDefaultQueryLimitFieldFromDraft() {
 		if (!draft?.connection_limits) return;
@@ -49,6 +51,14 @@
 		defaultQueryLimitField =
 			v === undefined || v === null ? String(DEFAULT_QUERY_LIMIT_IF_UNSET) : String(v);
 		defaultQueryLimitFieldError = null;
+	}
+
+	function syncQueryPageSizeFieldFromDraft() {
+		if (!draft?.connection_limits) return;
+		const v = draft.connection_limits.query_page_size;
+		queryPageSizeField =
+			v === undefined || v === null ? String(DEFAULT_QUERY_PAGE_SIZE_IF_UNSET) : String(v);
+		queryPageSizeFieldError = null;
 	}
 
 	function flushDefaultQueryLimitFieldToDraft() {
@@ -64,6 +74,19 @@
 		}
 	}
 
+	function flushQueryPageSizeFieldToDraft() {
+		if (!draft?.connection_limits) return;
+		const t = queryPageSizeField.trim();
+		if (t === '') {
+			draft.connection_limits.query_page_size = null;
+			return;
+		}
+		const n = parseInt(t, 10);
+		if (Number.isFinite(n)) {
+			draft.connection_limits.query_page_size = n;
+		}
+	}
+
 	function updateDefaultQueryLimitFieldFromInput(v: string) {
 		defaultQueryLimitField = v;
 		defaultQueryLimitFieldError = null;
@@ -75,6 +98,22 @@
 			const n = parseInt(t, 10);
 			if (Number.isFinite(n)) {
 				draft.connection_limits.default_query_limit = n;
+			}
+		}
+		markDirty();
+	}
+
+	function updateQueryPageSizeFieldFromInput(v: string) {
+		queryPageSizeField = v;
+		queryPageSizeFieldError = null;
+		if (!draft?.connection_limits) return;
+		const t = v.trim();
+		if (t === '') {
+			draft.connection_limits.query_page_size = null;
+		} else {
+			const n = parseInt(t, 10);
+			if (Number.isFinite(n)) {
+				draft.connection_limits.query_page_size = n;
 			}
 		}
 		markDirty();
@@ -161,6 +200,7 @@
 			const text = await cfgRes.text();
 			draft = parseConfigJson(text);
 			syncDefaultQueryLimitFieldFromDraft();
+			syncQueryPageSizeFieldFromDraft();
 			syncNip11PubkeyFromIdentity();
 			dirty = false;
 			await loadNipCatalog();
@@ -197,6 +237,7 @@
 		if (!draft) return;
 		rawErr = null;
 		flushDefaultQueryLimitFieldToDraft();
+		flushQueryPageSizeFieldToDraft();
 		rawText = JSON.stringify(draft, null, 2);
 		rawOpen = true;
 	}
@@ -207,6 +248,7 @@
 			const next = parseConfigJson(rawText);
 			draft = next;
 			syncDefaultQueryLimitFieldFromDraft();
+			syncQueryPageSizeFieldFromDraft();
 			syncNip11PubkeyFromIdentity();
 			markDirty();
 			rawOpen = false;
@@ -221,6 +263,7 @@
 		saveOk = false;
 		saveMessage = null;
 		defaultQueryLimitFieldError = null;
+		queryPageSizeFieldError = null;
 
 		const dqlTrim = defaultQueryLimitField.trim();
 		if (dqlTrim === '') {
@@ -241,6 +284,26 @@
 		}
 		const dqlNum = parseInt(dqlTrim, 10);
 		draft.connection_limits.default_query_limit = dqlNum;
+
+		const qpsTrim = queryPageSizeField.trim();
+		if (qpsTrim === '') {
+			queryPageSizeFieldError =
+				'Query page size cannot be empty. Enter a whole number (for example 100). Use 0 or a negative value to disable paging.';
+			queueMicrotask(() =>
+				document.getElementById('query-page-size')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+			);
+			return;
+		}
+		if (!/^-?\d+$/.test(qpsTrim)) {
+			queryPageSizeFieldError =
+				'Query page size must be a whole number (optional leading minus, then digits only).';
+			queueMicrotask(() =>
+				document.getElementById('query-page-size')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+			);
+			return;
+		}
+		const qpsNum = parseInt(qpsTrim, 10);
+		draft.connection_limits.query_page_size = qpsNum;
 
 		saving = true;
 		try {
@@ -345,6 +408,15 @@
 		},
 		get defaultQueryLimitFieldError() {
 			return defaultQueryLimitFieldError;
+		},
+		get queryPageSizeField() {
+			return queryPageSizeField;
+		},
+		setQueryPageSizeField(v: string) {
+			updateQueryPageSizeFieldFromInput(v);
+		},
+		get queryPageSizeFieldError() {
+			return queryPageSizeFieldError;
 		}
 	};
 

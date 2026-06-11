@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/rs/zerolog"
 )
 
@@ -93,11 +93,11 @@ func TestHookChainRunStopsAtFirstErrorAndWrapsName(t *testing.T) {
 func TestServerPostHooksDelegateToHookChain(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hooks.db"), nil, zerolog.Nop())
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "hooks.db"), zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer closeStore()
 
 	cfg := config.DefaultConfig()
 	srv, err := NewServer(cfg, st, zerolog.Nop(), nil)
