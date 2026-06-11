@@ -21,14 +21,14 @@ func TestAnalyzeStatsTablesPopulatesStat1(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 
-	if _, err := st.db.ExecContext(ctx, `INSERT INTO audit_log (created_at, action, detail, pubkey) VALUES (1,'test','d','pk')`); err != nil {
+	if _, err := st.db().ExecContext(ctx, `INSERT INTO audit_log (created_at, action, detail, pubkey) VALUES (1,'test','d','pk')`); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.AnalyzeStatsTables(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var statRows int
-	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl = 'audit_log'`).Scan(&statRows); err != nil {
+	if err := st.db().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl = 'audit_log'`).Scan(&statRows); err != nil {
 		t.Fatal(err)
 	}
 	if statRows == 0 {

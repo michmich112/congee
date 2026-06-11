@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error {
-	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	return s.runWrite(ctx, "SaveAuditEntry", func(ctx context.Context, db bun.IDB) error {
 		row := storage.AuditLogRow{
 			CreatedAt: e.CreatedAt,
 			Action:    e.Action,
@@ -24,7 +24,7 @@ func (s *Store) SaveAuditEntry(ctx context.Context, e storage.AuditEntry) error 
 }
 
 func (s *Store) HasAuditDuplicate(ctx context.Context, e storage.AuditEntry) (bool, error) {
-	n, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+	n, err := s.db().NewSelect().Model((*storage.AuditLogRow)(nil)).
 		Where("created_at = ? AND action = ? AND detail = ? AND pubkey = ?",
 			e.CreatedAt, e.Action, e.Detail, e.Pubkey).
 		Limit(1).
@@ -40,7 +40,7 @@ func (s *Store) HasAuditDuplicate(ctx context.Context, e storage.AuditEntry) (bo
 		return false, nil
 	}
 	pat := "%event_id=" + evID + "%"
-	n2, err := s.db.NewSelect().Model((*storage.AuditLogRow)(nil)).
+	n2, err := s.db().NewSelect().Model((*storage.AuditLogRow)(nil)).
 		Where("pubkey = ? AND LOWER(detail) LIKE ?", e.Pubkey, pat).
 		Limit(1).
 		Count(ctx)
@@ -73,7 +73,7 @@ func applyAuditLogFilters(q *bun.SelectQuery, query storage.AuditQuery) *bun.Sel
 
 func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]storage.AuditEntry, error) {
 	var rows []storage.AuditLogRow
-	q := applyAuditLogFilters(s.db.NewSelect().Model(&rows), query).Order("created_at DESC")
+	q := applyAuditLogFilters(s.db().NewSelect().Model(&rows), query).Order("created_at DESC")
 	if query.Limit > 0 {
 		q = q.Limit(query.Limit)
 	}
@@ -96,7 +96,7 @@ func (s *Store) QueryAuditLog(ctx context.Context, query storage.AuditQuery) ([]
 }
 
 func (s *Store) CountAuditLog(ctx context.Context, query storage.AuditQuery) (int64, error) {
-	q := applyAuditLogFilters(s.db.NewSelect().Model((*storage.AuditLogRow)(nil)), query)
+	q := applyAuditLogFilters(s.db().NewSelect().Model((*storage.AuditLogRow)(nil)), query)
 	n, err := q.Count(ctx)
 	return int64(n), err
 }
@@ -111,7 +111,7 @@ func (s *Store) ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]in
 	var rows []struct {
 		Detail string `bun:"detail"`
 	}
-	err := s.db.NewSelect().
+	err := s.db().NewSelect().
 		Model((*storage.AuditLogRow)(nil)).
 		Column("detail").
 		Order("created_at DESC").
@@ -136,7 +136,7 @@ func (s *Store) ListDistinctAuditKinds(ctx context.Context, scanLimit int) ([]in
 
 func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, error) {
 	var n int64
-	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	err := s.runWrite(ctx, "PurgeAuditLog", func(ctx context.Context, db bun.IDB) error {
 		res, err := db.NewDelete().Model((*storage.AuditLogRow)(nil)).
 			Where("created_at < ?", olderThanUnix).
 			Exec(ctx)
@@ -152,7 +152,7 @@ func (s *Store) PurgeAuditLog(ctx context.Context, olderThanUnix int64) (int64, 
 
 func (s *Store) SaveWSConnectionSession(ctx context.Context, e storage.WSConnectionSession) (int64, error) {
 	var insertedID int64
-	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	err := s.runWrite(ctx, "SaveWSConnectionSession", func(ctx context.Context, db bun.IDB) error {
 		row := storage.WSConnectionSessionToRow(e)
 		_, err := db.NewInsert().Model(&row).Returning("id").Exec(ctx)
 		if err != nil {
@@ -177,7 +177,7 @@ func (s *Store) QueryWSConnectionSessions(ctx context.Context, q storage.WSConne
 		offset = 0
 	}
 	var rows []storage.WSConnectionSessionRow
-	err := s.db.NewSelect().Model(&rows).
+	err := s.db().NewSelect().Model(&rows).
 		Order("ended_unix DESC", "id DESC").
 		Limit(limit).
 		Offset(offset).
@@ -193,12 +193,12 @@ func (s *Store) QueryWSConnectionSessions(ctx context.Context, q storage.WSConne
 }
 
 func (s *Store) CountWSConnectionSessions(ctx context.Context) (int64, error) {
-	n, err := s.db.NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).Count(ctx)
+	n, err := s.db().NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).Count(ctx)
 	return int64(n), err
 }
 
 func (s *Store) HasWSConnectionSession(ctx context.Context, connID string, startedUnix int64) (bool, error) {
-	n, err := s.db.NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).
+	n, err := s.db().NewSelect().Model((*storage.WSConnectionSessionRow)(nil)).
 		Where("conn_id = ? AND started_unix = ?", connID, startedUnix).
 		Limit(1).
 		Count(ctx)
@@ -207,7 +207,7 @@ func (s *Store) HasWSConnectionSession(ctx context.Context, connID string, start
 
 func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*storage.WSConnectionSession, error) {
 	var row storage.WSConnectionSessionRow
-	err := s.db.NewSelect().Model(&row).Where("id = ?", id).Scan(ctx)
+	err := s.db().NewSelect().Model(&row).Where("id = ?", id).Scan(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -220,7 +220,7 @@ func (s *Store) GetWSConnectionSessionByID(ctx context.Context, id int64) (*stor
 
 func (s *Store) PurgeWSConnectionSessionsBefore(ctx context.Context, olderThanUnix int64) (int64, error) {
 	var n int64
-	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	err := s.runWrite(ctx, "PurgeWSConnectionSessionsBefore", func(ctx context.Context, db bun.IDB) error {
 		res, err := db.NewDelete().Model((*storage.WSConnectionSessionRow)(nil)).
 			Where("ended_unix < ?", olderThanUnix).
 			Exec(ctx)
@@ -235,7 +235,7 @@ func (s *Store) PurgeWSConnectionSessionsBefore(ctx context.Context, olderThanUn
 }
 
 func (s *Store) SaveConfigChange(ctx context.Context, c storage.ConfigChange) error {
-	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	return s.runWrite(ctx, "SaveConfigChange", func(ctx context.Context, db bun.IDB) error {
 		row := storage.ConfigChangelogRow{
 			CreatedAt: c.CreatedAt,
 			Summary:   c.Summary,
@@ -248,7 +248,7 @@ func (s *Store) SaveConfigChange(ctx context.Context, c storage.ConfigChange) er
 
 func (s *Store) QueryConfigChangelog(ctx context.Context, limit int) ([]storage.ConfigChange, error) {
 	var rows []storage.ConfigChangelogRow
-	q := s.db.NewSelect().Model(&rows).Order("created_at DESC")
+	q := s.db().NewSelect().Model(&rows).Order("created_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -267,7 +267,7 @@ func (s *Store) QueryConfigChangelog(ctx context.Context, limit int) ([]storage.
 }
 
 func (s *Store) UpsertRelayMetricBucket(ctx context.Context, b storage.RelayMetricBucket) error {
-	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	return s.runWrite(ctx, "UpsertRelayMetricBucket", func(ctx context.Context, db bun.IDB) error {
 		_, err := db.ExecContext(ctx, `
 INSERT INTO relay_metric_buckets (
   bucket_start_unix, events_stored, events_rejected, req_count, close_count, query_ms_sum, query_ms_count, subscriptions_open
@@ -294,7 +294,7 @@ func (s *Store) QueryRelayMetricBuckets(ctx context.Context, q storage.RelayMetr
 		lim = 100000
 	}
 	var rows []storage.RelayMetricBucketRow
-	err := s.db.NewSelect().Model(&rows).
+	err := s.db().NewSelect().Model(&rows).
 		Where("bucket_start_unix >= ?", q.MinBucketStartUnix).
 		Order("bucket_start_unix ASC").
 		Limit(lim).
@@ -321,7 +321,7 @@ func (s *Store) QueryRelayMetricBuckets(ctx context.Context, q storage.RelayMetr
 
 func (s *Store) PurgeRelayMetricBucketsBefore(ctx context.Context, cutoffStartUnixExclusive int64) (int64, error) {
 	var n int64
-	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	err := s.runWrite(ctx, "PurgeRelayMetricBucketsBefore", func(ctx context.Context, db bun.IDB) error {
 		res, err := db.ExecContext(ctx, `DELETE FROM relay_metric_buckets WHERE bucket_start_unix < ?`, cutoffStartUnixExclusive)
 		if err != nil {
 			return err
