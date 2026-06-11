@@ -53,17 +53,16 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 		snap := storage.AdminStorageSnapshot{}
 		var persisted []storage.RelayMetricBucket
 		if store != nil {
-			var err error
-			snap, err = store.AdminStorageSnapshot(dbCtx)
-			if err != nil {
-				snap = storage.AdminStorageSnapshot{}
-			}
+			snap, _ = store.AdminStorageSnapshot(dbCtx)
+
+			bucketCtx, bucketCancel := context.WithTimeout(r.Context(), statsDBTimeout)
 			since := time.Now().Add(-24 * time.Hour).Unix()
 			since = (since / 60) * 60
-			persisted, _ = store.QueryRelayMetricBuckets(dbCtx, storage.RelayMetricBucketQuery{
+			persisted, _ = store.QueryRelayMetricBuckets(bucketCtx, storage.RelayMetricBucketQuery{
 				MinBucketStartUnix: since,
 				Limit:              1440,
 			})
+			bucketCancel()
 		}
 
 		bucketsJSON := mergeSeriesBuckets(persisted, partialStart, partialBucket, started > 0)

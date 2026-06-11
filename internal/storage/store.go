@@ -124,6 +124,6 @@ type MetaStore interface {
 type Store interface {
 	EventStore
 	MetaStore
-	// AdminStorageSnapshot returns table row counts and best-effort database bytes on disk (SQLite file+WAL+SHM, Postgres pg_database_size).
+	// AdminStorageSnapshot returns approximate table row counts (sqlite_stat1 / pg stats) and on-disk bytes (SQLite file+WAL+SHM, Postgres pg_database_size).
 	AdminStorageSnapshot(ctx context.Context) (AdminStorageSnapshot, error)
 }

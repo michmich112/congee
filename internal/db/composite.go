@@ -148,22 +148,29 @@ func (c *compositeStore) PurgeRelayMetricBucketsBefore(ctx context.Context, cuto
 
 func (c *compositeStore) AdminStorageSnapshot(ctx context.Context) (storage.AdminStorageSnapshot, error) {
 	var out storage.AdminStorageSnapshot
+	var firstErr error
 	if c.evSnap != nil {
 		ev, err := c.evSnap.AdminStorageSnapshot(ctx)
 		if err != nil {
-			return storage.AdminStorageSnapshot{}, err
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			out.Bytes = ev.Bytes
+			out.Events = ev.Events
+			out.Tags = ev.Tags
 		}
-		out.Bytes = ev.Bytes
-		out.Events = ev.Events
-		out.Tags = ev.Tags
 	}
 	if c.metaSnap != nil {
 		meta, err := c.metaSnap.AdminStorageSnapshot(ctx)
 		if err != nil {
-			return storage.AdminStorageSnapshot{}, err
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			out.MetaBytes = meta.MetaBytes
+			out.Audit = meta.Audit
 		}
-		out.MetaBytes = meta.MetaBytes
-		out.Audit = meta.Audit
 	}
-	return out, nil
+	return out, firstErr
 }

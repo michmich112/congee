@@ -50,10 +50,15 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 			return nil, err
 		}
 		store := newCompositeStore(st, meta, st, meta)
+		analyzeCtx, analyzeCancel := context.WithCancel(context.Background())
+		StartSQLiteAnalyzeLoop(analyzeCtx, []sqliteStatsAnalyzer{
+			{label: "meta", run: meta.AnalyzeStatsTables},
+		}, log)
 		return &Handle{
 			Store:         store,
 			EventNotifier: st.Notifier(),
 			closeFn: func() error {
+				analyzeCancel()
 				err1 := meta.Close()
 				err2 := st.Close()
 				if err1 != nil {
@@ -83,10 +88,16 @@ func openSQLite(ctx context.Context, sec config.DatabaseSection, log zerolog.Log
 		return nil, err
 	}
 	store := newCompositeStore(ev, meta, ev, meta)
+	analyzeCtx, analyzeCancel := context.WithCancel(context.Background())
+	StartSQLiteAnalyzeLoop(analyzeCtx, []sqliteStatsAnalyzer{
+		{label: "events", run: ev.AnalyzeStatsTables},
+		{label: "meta", run: meta.AnalyzeStatsTables},
+	}, log)
 	return &Handle{
 		Store:         store,
 		EventNotifier: storage.NoopNotifier{},
 		closeFn: func() error {
+			analyzeCancel()
 			err1 := meta.Close()
 			err2 := ev.Close()
 			if err1 != nil {

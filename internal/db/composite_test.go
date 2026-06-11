@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
+	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 func TestCompositeAdminStorageSnapshotMerge(t *testing.T) {
@@ -41,6 +43,13 @@ func TestCompositeAdminStorageSnapshotMerge(t *testing.T) {
 	}
 	if err := st.SaveAuditEntry(ctx, storage.AuditEntry{CreatedAt: 2, Action: "x", Detail: "d", Pubkey: ev.PubKey}); err != nil {
 		t.Fatal(err)
+	}
+
+	metaPath := filepath.Join(dir, "congee-meta.db")
+	for _, p := range []string{eventsPath, metaPath} {
+		if err := analyzeSQLiteFile(ctx, p); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	snap, err := st.AdminStorageSnapshot(ctx)
@@ -143,4 +152,17 @@ func TestCompositeConcurrentEventAndAuditWrites(t *testing.T) {
 	if nAudit != int64(workers*perWorker) {
 		t.Fatalf("audit rows: got %d want %d", nAudit, workers*perWorker)
 	}
+}
+
+func analyzeSQLiteFile(ctx context.Context, path string) error {
+	if !sqliteshim.HasDriver() {
+		return nil
+	}
+	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+path+"?cache=shared")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sqldb.Close() }()
+	_, err = sqldb.ExecContext(ctx, `ANALYZE`)
+	return err
 }
