@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
@@ -33,7 +34,7 @@ func PreflightMigrationTarget(ctx context.Context, dsn string, log zerolog.Logge
 		return out
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(dsn))
+	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(dsn))
 	if err != nil {
 		out.Status = storage.MigrationPreflightUnreadable
 		out.Detail = fmt.Sprintf("sqlite: open: %v", err)

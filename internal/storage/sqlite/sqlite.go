@@ -8,37 +8,21 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
-
 	"github.com/uptrace/bun/driver/sqliteshim"
 	_ "github.com/uptrace/bun/driver/sqliteshim"
 )
 
-type writeTask struct {
-	run  func(ctx context.Context, db bun.IDB) error
-	done chan<- error
-}
-
-const writerQueueCapacity = 1024
-
 // Store is a SQLite-backed storage.Store with a single-writer queue and concurrent reads.
 type Store struct {
-	db        *bun.DB
-	notifier  storage.EventNotifier
-	writes    chan writeTask
-	wg        sync.WaitGroup
-	cancel    context.CancelFunc
-	baseCtx   context.Context
-	shutdown  atomic.Bool
-	closedErr error
-	dbPath    string // main database file path (for AdminStorageSnapshot size)
+	wq       *sqlitewriter.Queue
+	notifier storage.EventNotifier
+	dbPath   string // main database file path (for AdminStorageSnapshot size)
 }
 
 var _ storage.EventStore = (*Store)(nil)
@@ -54,41 +38,14 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log z
 		notifier = storage.NoopNotifier{}
 	}
 
+	normDSN := sqlitewriter.NormalizeDSN(dsn)
 	log.Debug().Int("dsn_len", len(strings.TrimSpace(dsn))).Msg("open: sql.Open")
-	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(dsn))
+	sqldb, db, err := sqlitewriter.OpenHandles(ctx, normDSN, log)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: open: %w", err)
+		return nil, fmt.Errorf("sqlite: %w", err)
 	}
-	sqldb.SetMaxOpenConns(64)
-	sqldb.SetMaxIdleConns(64)
+	log.Debug().Msg("open: ping and pragmas ok")
 
-	if err := sqldb.PingContext(ctx); err != nil {
-		_ = sqldb.Close()
-		log.Warn().Err(err).Msg("open: initial ping failed")
-		return nil, fmt.Errorf("sqlite: ping: %w", err)
-	}
-	log.Debug().Msg("open: ping ok")
-
-	log.Debug().Msg("open: pragma foreign_keys")
-	if _, err := sqldb.ExecContext(ctx, `PRAGMA foreign_keys = ON;`); err != nil {
-		_ = sqldb.Close()
-		log.Warn().Err(err).Msg("open: foreign_keys pragma failed")
-		return nil, fmt.Errorf("sqlite: foreign_keys: %w", err)
-	}
-	log.Debug().Msg("open: pragma journal_mode=WAL")
-	if _, err := sqldb.ExecContext(ctx, `PRAGMA journal_mode = WAL;`); err != nil {
-		_ = sqldb.Close()
-		log.Warn().Err(err).Msg("open: journal_mode pragma failed")
-		return nil, fmt.Errorf("sqlite: journal_mode: %w", err)
-	}
-	log.Debug().Msg("open: pragma busy_timeout")
-	if _, err := sqldb.ExecContext(ctx, `PRAGMA busy_timeout = 5000;`); err != nil {
-		_ = sqldb.Close()
-		log.Warn().Err(err).Msg("open: busy_timeout pragma failed")
-		return nil, fmt.Errorf("sqlite: busy_timeout: %w", err)
-	}
-
-	db := bun.NewDB(sqldb, sqlitedialect.New())
 	log.Debug().Msg("open: running schema migrations")
 	if err := runMigrations(ctx, db, log); err != nil {
 		_ = db.Close()
@@ -97,94 +54,37 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log z
 	}
 	log.Debug().Msg("open: schema migrations done")
 
-	baseCtx, cancel := context.WithCancel(context.Background())
 	dbPath, err := sqliteMainFilePath(dsn)
 	if err != nil {
-		cancel()
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: resolve db path: %w", err)
 	}
+	wq := sqlitewriter.New(sqldb, db, sqlitewriter.Options{
+		Engine: "sqlite",
+		Log:    log,
+		DSN:    normDSN,
+	})
 	s := &Store{
-		db:        db,
-		notifier:  notifier,
-		writes:    make(chan writeTask, writerQueueCapacity),
-		cancel:    cancel,
-		baseCtx:   baseCtx,
-		closedErr: errors.New("sqlite: store closed"),
-		dbPath:    dbPath,
+		wq:       wq,
+		notifier: notifier,
+		dbPath:   dbPath,
 	}
-	s.wg.Add(1)
-	go s.writerLoop(baseCtx)
-	log.Debug().Msg("open: writer loop started; store ready")
+	log.Debug().Msg("open: writer queue started; store ready")
 	return s, nil
 }
 
-func normalizeDSN(dsn string) string {
-	dsn = strings.TrimSpace(dsn)
-	if dsn == "" {
-		return "file:congee.db?cache=shared"
-	}
-	if strings.HasPrefix(dsn, "file:") {
-		return dsn
-	}
-	return "file:" + dsn + "?cache=shared"
+func (s *Store) db() *bun.DB {
+	return s.wq.DB()
 }
 
-func (s *Store) writerLoop(ctx context.Context) {
-	defer s.wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			for {
-				select {
-				case task := <-s.writes:
-					task.done <- s.closedErr
-				default:
-					return
-				}
-			}
-		case task := <-s.writes:
-			runCtx := context.Background()
-			err := task.run(runCtx, s.db)
-			task.done <- err
-		}
-	}
-}
-
-func (s *Store) runWrite(ctx context.Context, run func(ctx context.Context, db bun.IDB) error) error {
-	if s.shutdown.Load() {
-		return s.closedErr
-	}
-	done := make(chan error, 1)
-	task := writeTask{run: run, done: done}
-	select {
-	case s.writes <- task:
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.baseCtx.Done():
-		return s.closedErr
-	}
-	// Always wait for the writer to finish once the task is queued. The closure may
-	// capture caller-stack values that the writer mutates during the query (e.g. bun
-	// RETURNING scans into a row struct). Returning early on ctx.Done() would race
-	// with those writes.
-	select {
-	case err := <-done:
-		return err
-	case <-s.baseCtx.Done():
-		err := <-done
-		_ = err
-		return s.closedErr
-	}
+func (s *Store) runWrite(ctx context.Context, label string, run func(ctx context.Context, db bun.IDB) error) error {
+	return s.wq.RunWrite(ctx, label, run)
 }
 
 // Close stops the writer and closes the database.
 func (s *Store) Close() error {
-	s.shutdown.Store(true)
-	s.cancel()
-	s.wg.Wait()
 	_ = s.notifier.Close()
-	return s.db.Close()
+	return s.wq.Close()
 }
 
 func extractDTag(tags [][]string) string {
@@ -204,7 +104,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if nostr.IsEphemeral(ev.Kind) {
 		return errors.New("sqlite: ephemeral events are not stored")
 	}
-	err := s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	err := s.runWrite(ctx, "SaveEvent", func(ctx context.Context, db bun.IDB) error {
 		return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			switch nostr.ClassifyKind(ev.Kind) {
 			case nostr.KindReplaceable:
@@ -273,7 +173,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 
 func (s *Store) rowToEvent(ctx context.Context, row *storage.EventRow) (*nostr.Event, error) {
 	var tagRows []storage.EventTagRow
-	err := s.db.NewSelect().Model(&tagRows).
+	err := s.db().NewSelect().Model(&tagRows).
 		Where("event_id = ?", row.ID).
 		Order("pos ASC").
 		Scan(ctx)
@@ -292,7 +192,7 @@ func (s *Store) tagsByEventID(ctx context.Context, ids []string) (map[string][][
 		return nil, nil
 	}
 	var tagRows []storage.EventTagRow
-	if err := s.db.NewSelect().Model(&tagRows).
+	if err := s.db().NewSelect().Model(&tagRows).
 		Where("event_id IN (?)", bun.In(ids)).
 		Order("event_id ASC", "pos ASC").
 		Scan(ctx); err != nil {
@@ -362,7 +262,7 @@ func (s *Store) selectRows(ctx context.Context, f *nostr.Filter, applyLimits boo
 		return nil, nil
 	}
 	var rows []storage.EventRow
-	q := s.db.NewSelect().Model(&rows)
+	q := s.db().NewSelect().Model(&rows)
 	q = applyFilterQuery(q, f)
 	q = q.Order("created_at DESC", "id ASC")
 	if lim := storage.FilterSQLLimit(f, applyLimits); lim != nil {
@@ -414,7 +314,7 @@ func (s *Store) QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nos
 
 // DeleteEvent removes an event and its tags.
 func (s *Store) DeleteEvent(ctx context.Context, id string) error {
-	return s.runWrite(ctx, func(ctx context.Context, db bun.IDB) error {
+	return s.runWrite(ctx, "DeleteEvent", func(ctx context.Context, db bun.IDB) error {
 		return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			if _, err := tx.NewDelete().Model((*storage.EventTagRow)(nil)).Where("event_id = ?", id).Exec(ctx); err != nil {
 				return err
@@ -429,7 +329,7 @@ func (s *Store) DeleteEvent(ctx context.Context, id string) error {
 func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, error) {
 	if filters == nil || len(filters) == 0 {
 		var count int
-		err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&count)
+		err := s.db().QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&count)
 		return count, err
 	}
 
@@ -455,13 +355,13 @@ func (s *Store) CountEvents(ctx context.Context, filters []nostr.Filter) (int, e
 	}
 
 	var count int
-	err := s.db.QueryRowContext(ctx, fullSQL, allArgs...).Scan(&count)
+	err := s.db().QueryRowContext(ctx, fullSQL, allArgs...).Scan(&count)
 	return count, err
 }
 
 // HasEventID implements storage.Store.
 func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
-	n, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Where("id = ?", id).Limit(1).Count(ctx)
+	n, err := s.db().NewSelect().Model((*storage.EventRow)(nil)).Where("id = ?", id).Limit(1).Count(ctx)
 	return n > 0, err
 }
 
@@ -489,7 +389,7 @@ WHERE event_fts MATCH ?`)
 		sb.WriteString(fmt.Sprintf(" LIMIT %d", *lim))
 	}
 
-	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
+	rows, err := s.db().QueryContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +506,7 @@ func (s *Store) EventIDPrefixExists(ctx context.Context, prefix string, groupID 
 	if p == "" {
 		return false, nil
 	}
-	q := s.db.NewSelect().Model((*storage.EventRow)(nil)).
+	q := s.db().NewSelect().Model((*storage.EventRow)(nil)).
 		Where("id LIKE ?", p+"%")
 	if requireSameH && groupID != "" {
 		q = q.Where("id IN (SELECT event_id FROM event_tags WHERE name = 'h' AND value = ?)", groupID)
@@ -617,7 +517,7 @@ func (s *Store) EventIDPrefixExists(ctx context.Context, prefix string, groupID 
 // GetLatestGroupMetadata39000 implements storage.Store (NIP-29).
 func (s *Store) GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error) {
 	var row storage.EventRow
-	err := s.db.NewSelect().Model(&row).
+	err := s.db().NewSelect().Model(&row).
 		Where("pubkey = ? AND kind = ? AND d_tag = ?", relayPubkey, 39000, groupID).
 		Order("created_at DESC", "id ASC").
 		Limit(1).
@@ -634,7 +534,7 @@ func (s *Store) GetLatestGroupMetadata39000(ctx context.Context, relayPubkey, gr
 // GetLatestGroupAdmins39001 implements storage.Store (NIP-29).
 func (s *Store) GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, groupID string) (*nostr.Event, error) {
 	var row storage.EventRow
-	err := s.db.NewSelect().Model(&row).
+	err := s.db().NewSelect().Model(&row).
 		Where("pubkey = ? AND kind = ? AND d_tag = ?", relayPubkey, nostr.NIP29KindGroupAdmins, groupID).
 		Order("created_at DESC", "id ASC").
 		Limit(1).
@@ -651,7 +551,7 @@ func (s *Store) GetLatestGroupAdmins39001(ctx context.Context, relayPubkey, grou
 // IsGroupMember implements storage.Store (NIP-29).
 func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberPubkey string) (bool, error) {
 	var row storage.EventRow
-	err := s.db.NewSelect().Model(&row).
+	err := s.db().NewSelect().Model(&row).
 		TableExpr("events e").
 		Column("e.id", "e.pubkey", "e.created_at", "e.kind", "e.content", "e.sig", "e.d_tag").
 		Join("INNER JOIN event_tags et_h ON et_h.event_id = e.id AND et_h.name = 'h' AND et_h.value = ?", groupID).

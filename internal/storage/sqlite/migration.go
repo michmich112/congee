@@ -11,11 +11,11 @@ var _ storage.MigrationSource = (*Store)(nil)
 
 // MigrationRowCounts returns table row totals for migration verification.
 func (s *Store) MigrationRowCounts(ctx context.Context) (storage.MigrationCounts, error) {
-	ev, err := s.db.NewSelect().Model((*storage.EventRow)(nil)).Count(ctx)
+	ev, err := s.db().NewSelect().Model((*storage.EventRow)(nil)).Count(ctx)
 	if err != nil {
 		return storage.MigrationCounts{}, err
 	}
-	tags, err := s.db.NewSelect().Model((*storage.EventTagRow)(nil)).
+	tags, err := s.db().NewSelect().Model((*storage.EventTagRow)(nil)).
 		Where("event_id IN (SELECT id FROM events)").
 		Count(ctx)
 	if err != nil {
@@ -35,7 +35,7 @@ func (s *Store) ScanEventsForMigration(ctx context.Context, fn func(ev *nostr.Ev
 	var started bool
 	for {
 		var rows []storage.EventRow
-		q := s.db.NewSelect().Model(&rows).Order("created_at ASC", "id ASC").Limit(page)
+		q := s.db().NewSelect().Model(&rows).Order("created_at ASC", "id ASC").Limit(page)
 		if started {
 			q = q.Where("(created_at > ?) OR (created_at = ? AND id > ?)", lastCA, lastCA, lastID)
 		}

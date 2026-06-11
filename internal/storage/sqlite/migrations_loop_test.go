@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 
 	"github.com/uptrace/bun/driver/sqliteshim"
@@ -31,7 +32,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(path))
+	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	}
 	defer func() { _ = s2.Close() }()
 
-	db := s2.db
+	db := s2.db()
 	var uv int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
 		t.Fatal(err)
@@ -106,7 +107,7 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeDSN(path))
+	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,14 +165,14 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 	defer func() { _ = s2.Close() }()
 
 	var uv int
-	if err := s2.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
+	if err := s2.db().QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
 		t.Fatal(err)
 	}
 	if uv != schemaVersion {
 		t.Fatalf("user_version after multi-step migrate: got %d want %d", uv, schemaVersion)
 	}
 	var metaTables int
-	if err := s2.db.QueryRowContext(ctx,
+	if err := s2.db().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('audit_log','config_changelog','relay_metric_buckets','ws_connection_sessions')`,
 	).Scan(&metaTables); err != nil || metaTables != 0 {
 		t.Fatalf("meta tables should be dropped: err=%v n=%d", err, metaTables)

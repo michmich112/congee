@@ -13,7 +13,7 @@ func (s *Store) AdminStorageSnapshot(ctx context.Context) (storage.AdminStorageS
 	var out storage.AdminStorageSnapshot
 	out.MetaBytes = onDiskBytes(s.dbPath)
 	var err error
-	out.Audit, err = approxrows.SQLiteTable(ctx, s.db, "audit_log")
+	out.Audit, err = approxrows.SQLiteTable(ctx, s.db(), "audit_log")
 	if err != nil {
 		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlitemeta: admin snapshot audit count: %w", err)
 	}

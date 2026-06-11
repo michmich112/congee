@@ -10,10 +10,11 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/approxrows"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 )
 
 func sqliteMainFilePath(rawDSN string) (string, error) {
-	s := normalizeDSN(rawDSN)
+	s := sqlitewriter.NormalizeDSN(rawDSN)
 	u, err := url.Parse(s)
 	if err != nil {
 		return "", fmt.Errorf("sqlite: parse dsn: %w", err)
@@ -58,11 +59,11 @@ func (s *Store) AdminStorageSnapshot(ctx context.Context) (storage.AdminStorageS
 	var out storage.AdminStorageSnapshot
 	out.Bytes = sqliteOnDiskBytes(s.dbPath)
 	var err error
-	out.Events, err = approxrows.SQLiteTable(ctx, s.db, "events")
+	out.Events, err = approxrows.SQLiteTable(ctx, s.db(), "events")
 	if err != nil {
 		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlite: admin snapshot events count: %w", err)
 	}
-	out.Tags, err = approxrows.SQLiteTable(ctx, s.db, "event_tags")
+	out.Tags, err = approxrows.SQLiteTable(ctx, s.db(), "event_tags")
 	if err != nil {
 		return storage.AdminStorageSnapshot{}, fmt.Errorf("sqlite: admin snapshot tags count: %w", err)
 	}
