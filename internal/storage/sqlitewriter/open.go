@@ -39,8 +39,8 @@ func openHandles(ctx context.Context, dsn string, log zerolog.Logger) (*sql.DB, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("sql.Open: %w", err)
 	}
-	sqldb.SetMaxOpenConns(64)
-	sqldb.SetMaxIdleConns(64)
+	sqldb.SetMaxOpenConns(8)
+	sqldb.SetMaxIdleConns(8)
 
 	if err := sqldb.PingContext(ctx); err != nil {
 		_ = sqldb.Close()
