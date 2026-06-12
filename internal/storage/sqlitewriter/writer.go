@@ -21,6 +21,8 @@ const (
 	// DefaultTaskTimeout bounds one writer task; callers blocked on RunWrite are released on timeout.
 	DefaultTaskTimeout = 2 * time.Minute
 	writerRestartDelay = 250 * time.Millisecond
+	// reconnectTimeout caps forced reconnect after a hard task timeout (stuck sqlite call).
+	reconnectTimeout = 30 * time.Second
 )
 
 // Options configures a writer queue.
@@ -32,8 +34,9 @@ type Options struct {
 	TaskTimeout   time.Duration
 }
 
-// Queue serializes mutating SQLite work on one goroutine with panic recovery, timeouts,
-// optional reconnect on I/O errors, and debug tracing.
+// Queue serializes mutating SQLite work on one goroutine with panic recovery, hard timeouts
+// (forced reconnect when sqlite ignores context cancel), optional reconnect on I/O errors,
+// and debug tracing.
 type Queue struct {
 	engine    string
 	log       zerolog.Logger
@@ -323,7 +326,49 @@ func (q *Queue) runTaskOnce(t *task) error {
 		Str("writer_label", t.label).
 		Uint64("task_id", t.id).
 		Msg("writer task executing sqlite operation")
-	return t.run(runCtx, db)
+
+	type taskResult struct {
+		err error
+	}
+	done := make(chan taskResult, 1)
+	go func() {
+		var res taskResult
+		defer func() {
+			if r := recover(); r != nil {
+				res.err = fmt.Errorf("%s: writer task panic: %v", q.engine, r)
+				q.log.Error().
+					Str("writer_label", t.label).
+					Uint64("task_id", t.id).
+					Interface("panic", r).
+					Bytes("stack", debug.Stack()).
+					Msg("writer task panic recovered")
+			}
+			done <- res
+		}()
+		res.err = t.run(runCtx, db)
+	}()
+
+	select {
+	case res := <-done:
+		return res.err
+	case <-runCtx.Done():
+		q.log.Warn().
+			Str("writer_label", t.label).
+			Uint64("task_id", t.id).
+			Dur("task_timeout", q.taskTimeout).
+			Msg("writer task hard timeout; forcing reconnect to interrupt stuck sqlite")
+		reconnCtx, reconnCancel := context.WithTimeout(context.Background(), reconnectTimeout)
+		defer reconnCancel()
+		if reconnErr := q.reconnect(reconnCtx); reconnErr != nil {
+			return fmt.Errorf("%s: hard timeout and reconnect failed: %w", q.engine, reconnErr)
+		}
+		// Orphaned task goroutine may still finish; drain without blocking the writer loop.
+		select {
+		case <-done:
+		default:
+		}
+		return context.DeadlineExceeded
+	}
 }
 
 func (q *Queue) ping() error {
