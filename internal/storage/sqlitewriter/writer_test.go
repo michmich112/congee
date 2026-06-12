@@ -71,6 +71,55 @@ func TestRunWritePanicRecovered(t *testing.T) {
 	}
 }
 
+func TestRunWriteHardTimeoutUnblocksWriter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+	sqldb, db, err := OpenHandles(ctx, dir+"/hard-timeout.db", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := New(sqldb, db, Options{
+		Engine:      "test",
+		Log:         zerolog.Nop(),
+		DSN:         dir + "/hard-timeout.db",
+		TaskTimeout: 50 * time.Millisecond,
+	})
+	defer func() { _ = q.Close() }()
+
+	inTx := make(chan struct{})
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- q.RunWrite(ctx, "stuck-in-tx", func(ctx context.Context, db bun.IDB) error {
+			return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+				close(inTx)
+				<-release
+				return nil
+			})
+		})
+	}()
+	<-inTx
+
+	select {
+	case err := <-firstDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("want DeadlineExceeded, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("hard timeout did not return")
+	}
+
+	err = q.RunWrite(ctx, "after-hard-timeout", func(ctx context.Context, db bun.IDB) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("writer not healthy after hard timeout: %v", err)
+	}
+
+	close(release)
+}
+
 func TestRunWriteTimeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
