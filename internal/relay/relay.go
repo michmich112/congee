@@ -384,13 +384,11 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	for _, sid := range ids {
 		_ = c.sendClosed(sid, "connection closed")
 	}
-	c.sendMu.Lock()
-	c.outboundClosed = true
-	close(c.send)
-	c.sendMu.Unlock()
-	c.cancel()
-	<-c.writerDone
-	_ = nc.Close()
+	c.initiateShutdown()
+	if !c.waitWriterDone(connShutdownWriterWait) {
+		c.log.Warn().Dur("wait_seconds", connShutdownWriterWait).
+			Msg("ws client write loop did not exit after shutdown; continuing teardown")
+	}
 }
 
 // Shutdown stops listening and closes active WebSocket connections.
@@ -407,9 +405,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		})
 	}
 	s.conns.Range(func(_, v any) bool {
-		c := v.(*Conn)
-		c.cancel()
-		_ = c.nc.Close()
+		v.(*Conn).initiateShutdown()
 		return true
 	})
 	return s.http.Shutdown(ctx)
