@@ -61,6 +61,8 @@ type Conn struct {
 
 	sendMu         sync.Mutex
 	outboundClosed bool
+
+	shutdownOnce sync.Once
 }
 
 func newConnID() string {
