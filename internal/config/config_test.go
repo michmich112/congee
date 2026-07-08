@@ -277,6 +277,15 @@ func TestValidateAcceptsSQLiteMetaDSN(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsTursoDatabaseType(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.Type = "turso"
+	c.Database.DSN = "./congee-turso.db"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected turso database type to be valid: %v", err)
+	}
+}
+
 func TestEffectiveQueryPageSize(t *testing.T) {
 	if g, w := EffectiveQueryPageSize(nil), DefaultQueryPageSizeIfUnset; g != w {
 		t.Fatalf("nil: got %d want %d", g, w)

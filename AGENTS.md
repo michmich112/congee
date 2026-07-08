@@ -2,7 +2,7 @@
 
 ## What this project is
 
-**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in **SQLite** by default, with optional **PostgreSQL** for larger or multi-instance deployments. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`.
+**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in **SQLite** by default, with optional **Turso/libSQL** (local on-disk) or **PostgreSQL** for larger or multi-instance deployments. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`.
 
 Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `REQ`, `CLOSE`, and relay replies such as `OK`, `EOSE`, `CLOSED`, `NOTICE`.
 
@@ -10,7 +10,7 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 
 - `cmd/congee/` — entrypoint: config, storage, NIP loader, relay server, optional admin server.
 - `internal/nostr/` — event, filter, message parsing, kind classification (NIP-01).
-- `internal/storage/` — `Store` (`EventStore` + `MetaStore`); SQLite/PostgreSQL event stores and `sqlitemeta` for operational metadata (`congee-meta.db`).
+- `internal/storage/` — `Store` (`EventStore` + `MetaStore`); SQLite/Turso/PostgreSQL event stores and `sqlitemeta` for operational metadata (`congee-meta.db`).
 - `internal/db/` — opens and composes event + meta stores, legacy meta migration, merged `AdminStorageSnapshot`.
 - `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.

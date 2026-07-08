@@ -9,6 +9,7 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/driver/sqliteshim"
@@ -32,6 +33,38 @@ func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN, metaPath string, me
 		return errors.New("legacy meta: sqliteshim driver not available")
 	}
 	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeLegacyDSN(eventsDSN))
+	if err != nil {
+		return fmt.Errorf("legacy meta: open events db: %w", err)
+	}
+	defer func() { _ = sqldb.Close() }()
+
+	if err := sqldb.PingContext(ctx); err != nil {
+		return fmt.Errorf("legacy meta: ping events db: %w", err)
+	}
+
+	var userVer int
+	if err := sqldb.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
+		return fmt.Errorf("legacy meta: read user_version: %w", err)
+	}
+	if userVer >= 7 {
+		return nil
+	}
+
+	stats := &legacyCopyStats{}
+	if err := copyAllLegacyMeta(ctx, sqldb, meta, false, stats); err != nil {
+		return err
+	}
+	logLegacyCopySummary(log, metaPath, stats)
+	return nil
+}
+
+// migrateLegacyMetaTurso copies operational metadata from a pre-v7 Turso/libSQL events file
+// into the meta store before the event store runs schema v7 (which drops meta tables).
+func migrateLegacyMetaTurso(ctx context.Context, eventsDSN, metaPath string, meta *sqlitemeta.Store, log zerolog.Logger) error {
+	if !sqlitewriter.HasLibsqlDriver() {
+		return errors.New("legacy meta: libsql driver not available")
+	}
+	sqldb, err := sql.Open("libsql", sqlitewriter.NormalizeLibsqlDSN(eventsDSN))
 	if err != nil {
 		return fmt.Errorf("legacy meta: open events db: %w", err)
 	}

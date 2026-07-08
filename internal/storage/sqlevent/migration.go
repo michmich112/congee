@@ -1,4 +1,4 @@
-package sqlite
+package sqlevent
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 )
+
+var _ storage.MigrationSource = (*Store)(nil)
 
 var _ storage.MigrationSource = (*Store)(nil)
 

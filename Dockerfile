@@ -9,11 +9,14 @@ RUN npm run build
 
 FROM golang:1.24-bookworm AS go-build
 WORKDIR /src
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends gcc \
+	&& rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=admin-ui /src/web/admin/build ./web/admin/build
-ENV CGO_ENABLED=0
+ENV CGO_ENABLED=1
 ARG VERSION=0.0.0-dev
 RUN go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=${VERSION}" -o /out/congee ./cmd/congee
 

@@ -30,7 +30,7 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="text-base">Database</Card.Title>
-				<Card.Description>SQLite for single-node; PostgreSQL for larger deployments.</Card.Description>
+				<Card.Description>SQLite or Turso for single-node; PostgreSQL for larger deployments.</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4 md:grid-cols-2">
 				<div class="space-y-2 md:col-span-1">
@@ -45,6 +45,7 @@
 						}}
 					>
 						<option value="sqlite">sqlite</option>
+						<option value="turso">turso</option>
 						<option value="postgres">postgres</option>
 					</select>
 				</div>

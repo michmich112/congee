@@ -28,7 +28,7 @@ func ApplyBootstrapEnvOverrides(c *Config) error {
 	}
 	if dir := strings.TrimSpace(os.Getenv("CONGEE_DATA_DIR")); dir != "" {
 		switch strings.TrimSpace(c.Database.Type) {
-		case "", "sqlite":
+		case "", "sqlite", "turso":
 			c.Database.Type = strings.TrimSpace(c.Database.Type)
 			if c.Database.Type == "" {
 				c.Database.Type = "sqlite"

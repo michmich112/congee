@@ -1,4 +1,4 @@
-package sqlite
+package sqlevent
 
 import (
 	"context"
@@ -13,16 +13,21 @@ const schemaVersion = 7
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
 
-func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+// RunMigrations applies schema DDL until PRAGMA user_version reaches CurrentSchemaVersion.
+func RunMigrations(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
+	return runMigrations(ctx, db, engine, log)
+}
+
+func runMigrations(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	for {
 		var version int
 		row := db.QueryRowContext(ctx, "PRAGMA user_version")
 		if err := row.Scan(&version); err != nil {
-			return fmt.Errorf("sqlite: read user_version: %w", err)
+			return fmt.Errorf("%s: read user_version: %w", engine, err)
 		}
 		log.Debug().Int("user_version", version).Msg("schema: read user_version")
 		if version > schemaVersion {
-			return fmt.Errorf("sqlite: unsupported schema version %d (need <= %d)", version, schemaVersion)
+			return fmt.Errorf("%s: unsupported schema version %d (need <= %d)", engine, version, schemaVersion)
 		}
 		if version == schemaVersion {
 			log.Debug().Msg("schema: already at current version")
@@ -30,7 +35,7 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		}
 		if version == 0 {
 			log.Debug().Msg("schema: user_version 0; applying fresh schema")
-			if err := migrateFresh(ctx, db, log); err != nil {
+			if err := migrateFresh(ctx, db, engine, log); err != nil {
 				return err
 			}
 			log.Debug().Msg("schema: fresh schema applied")
@@ -39,41 +44,41 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		switch version {
 		case 1:
 			log.Debug().Msg("schema: migrating v1 to v2")
-			if err := migrateV1ToV2(ctx, db, log); err != nil {
+			if err := migrateV1ToV2(ctx, db, engine, log); err != nil {
 				return err
 			}
 		case 2:
 			log.Debug().Msg("schema: migrating v2 to v3")
-			if err := migrateV2ToV3(ctx, db, log); err != nil {
+			if err := migrateV2ToV3(ctx, db, engine, log); err != nil {
 				return err
 			}
 		case 3:
 			log.Debug().Msg("schema: migrating v3 to v4")
-			if err := migrateV3ToV4(ctx, db, log); err != nil {
+			if err := migrateV3ToV4(ctx, db, engine, log); err != nil {
 				return err
 			}
 		case 4:
 			log.Debug().Msg("schema: migrating v4 to v5")
-			if err := migrateV4ToV5(ctx, db, log); err != nil {
+			if err := migrateV4ToV5(ctx, db, engine, log); err != nil {
 				return err
 			}
 		case 5:
 			log.Debug().Msg("schema: migrating v5 to v6")
-			if err := migrateV5ToV6(ctx, db, log); err != nil {
+			if err := migrateV5ToV6(ctx, db, engine, log); err != nil {
 				return err
 			}
 		case 6:
 			log.Debug().Msg("schema: migrating v6 to v7")
-			if err := migrateV6ToV7(ctx, db, log); err != nil {
+			if err := migrateV6ToV7(ctx, db, engine, log); err != nil {
 				return err
 			}
 		default:
-			return fmt.Errorf("sqlite: unsupported schema version %d", version)
+			return fmt.Errorf("%s: unsupported schema version %d", engine, version)
 		}
 	}
 }
 
-func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateFresh(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL PRIMARY KEY,
@@ -101,34 +106,34 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
-			return fmt.Errorf("sqlite: migrate: %w", err)
+			return fmt.Errorf("%s: migrate: %w", engine, err)
 		}
 	}
 	log.Debug().Msg("schema: creating fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
+	if err := createFTS5AndTriggers(ctx, db, engine, log); err != nil {
 		return err
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func migrateV1ToV2(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV1ToV2(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	log.Debug().Msg("schema v1->v2: fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db, log); err != nil {
+	if err := createFTS5AndTriggers(ctx, db, engine, log); err != nil {
 		return err
 	}
 	log.Debug().Msg("schema v1->v2: backfill event_fts")
 	if _, err := db.ExecContext(ctx, `INSERT INTO event_fts(event_id, content) SELECT id, content FROM events`); err != nil {
-		return fmt.Errorf("sqlite: backfill event_fts: %w", err)
+		return fmt.Errorf("%s: backfill event_fts: %w", engine, err)
 	}
 	log.Debug().Msg("schema v1->v2: chain v2->v3")
-	return migrateV2ToV3(ctx, db, log)
+	return migrateV2ToV3(ctx, db, engine, log)
 }
 
-func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV2ToV3(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS relay_metric_buckets (
 			bucket_start_unix INTEGER NOT NULL PRIMARY KEY,
@@ -144,40 +149,40 @@ func migrateV2ToV3(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema v2->v3: relay_metric_buckets")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
-			return fmt.Errorf("sqlite: migrate v2->v3: %w", err)
+			return fmt.Errorf("%s: migrate v2->v3: %w", engine, err)
 		}
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema v2->v3: set user_version 3 (chain v3->v4)")
 	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	log.Debug().Msg("schema v2->v3: chain v3->v4")
-	return migrateV3ToV4(ctx, db, log)
+	return migrateV3ToV4(ctx, db, engine, log)
 }
 
-func migrateV3ToV4(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV3ToV4(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	var colCount int
 	if err := db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pragma_table_info('relay_metric_buckets') WHERE name = 'subscriptions_open'`,
 	).Scan(&colCount); err != nil {
-		return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
+		return fmt.Errorf("%s: migrate v3->v4: %w", engine, err)
 	}
 	if colCount == 0 {
 		log.Debug().Msg("schema v3->v4: subscriptions_open on relay_metric_buckets")
 		if _, err := db.ExecContext(ctx, `ALTER TABLE relay_metric_buckets ADD COLUMN subscriptions_open INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return fmt.Errorf("sqlite: migrate v3->v4: %w", err)
+			return fmt.Errorf("%s: migrate v3->v4: %w", engine, err)
 		}
 	} else {
 		log.Debug().Msg("schema v3->v4: subscriptions_open already present; skipping alter")
 	}
 	log.Debug().Msg("schema v3->v4: set user_version 4")
 	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 4`); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func migrateV4ToV5(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV4ToV5(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value_event_id ON event_tags (name, value, event_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id_pos ON event_tags (event_id, pos)`,
@@ -187,17 +192,17 @@ func migrateV4ToV5(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema v4->v5: exec ddl statement")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
-			return fmt.Errorf("sqlite: migrate v4->v5: %w", err)
+			return fmt.Errorf("%s: migrate v4->v5: %w", engine, err)
 		}
 	}
 	log.Debug().Msg("schema v4->v5: set user_version 5")
 	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 5`); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func migrateV5ToV6(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV5ToV6(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -216,17 +221,17 @@ func migrateV5ToV6(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema v5->v6: ws_connection_sessions")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
-			return fmt.Errorf("sqlite: migrate v5->v6: %w", err)
+			return fmt.Errorf("%s: migrate v5->v6: %w", engine, err)
 		}
 	}
 	log.Debug().Msg("schema v5->v6: set user_version 6")
 	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 6`); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func migrateV6ToV7(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func migrateV6ToV7(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	stmts := []string{
 		`DROP INDEX IF EXISTS idx_ws_sessions_ended`,
 		`DROP TABLE IF EXISTS ws_connection_sessions`,
@@ -241,17 +246,17 @@ func migrateV6ToV7(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema v6->v7: drop meta tables")
 		if _, err := db.ExecContext(ctx, stmts[i]); err != nil {
-			return fmt.Errorf("sqlite: migrate v6->v7: %w", err)
+			return fmt.Errorf("%s: migrate v6->v7: %w", engine, err)
 		}
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema v6->v7: set user_version")
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
-		return fmt.Errorf("sqlite: set user_version: %w", err)
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func createFTS5AndTriggers(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
+func createFTS5AndTriggers(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
 	fts := []string{
 		`CREATE VIRTUAL TABLE IF NOT EXISTS event_fts USING fts5(
 			event_id UNINDEXED,
@@ -275,7 +280,7 @@ func createFTS5AndTriggers(ctx context.Context, db *bun.DB, log zerolog.Logger) 
 	for i := range fts {
 		log.Debug().Int("fts_step", i).Msg("schema: fts5/trigger ddl")
 		if _, err := db.ExecContext(ctx, fts[i]); err != nil {
-			return fmt.Errorf("sqlite: fts5: %w", err)
+			return fmt.Errorf("%s: fts5: %w", engine, err)
 		}
 	}
 	return nil

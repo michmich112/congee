@@ -20,7 +20,7 @@
 	import { cn } from '$lib/utils';
 
 	type Endpoint = {
-		type: 'sqlite' | 'postgres' | '';
+		type: 'sqlite' | 'postgres' | 'turso' | '';
 		dsn: string;
 	};
 
@@ -72,9 +72,11 @@
 	let schemaMismatchBody = $state('');
 	let pendingMakeTargetPrimary = $state(false);
 
-	function canonicalDbType(t: string): 'sqlite' | 'postgres' {
+	function canonicalDbType(t: string): 'sqlite' | 'postgres' | 'turso' {
 		const x = (t || '').trim().toLowerCase();
-		return x === 'postgres' ? 'postgres' : 'sqlite';
+		if (x === 'postgres') return 'postgres';
+		if (x === 'turso') return 'turso';
+		return 'sqlite';
 	}
 
 	onMount(() => {
@@ -337,6 +339,7 @@
 						disabled
 					>
 						<option value="sqlite">sqlite</option>
+						<option value="turso">turso</option>
 						<option value="postgres">postgres</option>
 					</select>
 					<Label for="src-dsn" class="shrink-0">DSN or path</Label>
@@ -359,12 +362,21 @@
 						bind:value={target.type}
 					>
 						<option value="sqlite">sqlite</option>
+						<option value="turso">turso</option>
 						<option value="postgres">postgres</option>
 					</select>
 					<Label for="dst-dsn" class="shrink-0">DSN or path</Label>
 					<Input id="dst-dsn" bind:value={target.dsn} placeholder="postgres://... or ./new.db" />
 				</div>
-				{#if canonicalDbType(target.type) === 'postgres'}
+				{#if canonicalDbType(source.type) === 'sqlite' && canonicalDbType(target.type) === 'turso'}
+					<Alert.Root class="border-sky-500/40 bg-sky-500/5">
+						<Alert.Title>SQLite → Turso</Alert.Title>
+						<Alert.Description>
+							This migration uses SQLite's native <code class="text-xs">VACUUM INTO</code> backup to copy
+							the database file. The target path must not exist yet.
+						</Alert.Description>
+					</Alert.Root>
+				{:else if canonicalDbType(target.type) === 'postgres'}
 					<Alert.Root class="border-amber-500/40 bg-amber-500/5">
 						<Alert.Title>Postgres target</Alert.Title>
 						<Alert.Description>

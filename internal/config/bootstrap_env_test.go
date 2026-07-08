@@ -70,6 +70,23 @@ func TestApplyBootstrapEnvOverrides_sqliteEmptyTypeUsesDataDir(t *testing.T) {
 	}
 }
 
+func TestApplyBootstrapEnvOverrides_tursoDataDir(t *testing.T) {
+	c := minimalValidConfig()
+	c.Database.Type = "turso"
+	dir := t.TempDir()
+	t.Setenv("CONGEE_DATA_DIR", dir)
+	if err := ApplyBootstrapEnvOverrides(c); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "congee.db")
+	if c.Database.Type != "turso" {
+		t.Fatalf("type: %q", c.Database.Type)
+	}
+	if c.Database.DSN != want {
+		t.Fatalf("dsn: got %q want %q", c.Database.DSN, want)
+	}
+}
+
 func TestApplyBootstrapEnvOverrides_invalidRelayPort(t *testing.T) {
 	c := minimalValidConfig()
 	t.Setenv("CONGEE_RELAY_PORT", "99999")
