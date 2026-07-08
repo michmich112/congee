@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlevent"
@@ -39,7 +40,33 @@ func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log z
 }
 
 // PreflightMigrationTarget inspects a Turso/libSQL DSN without running migrations.
+// Missing files are reported as empty without opening libSQL (which would create the file
+// and break a later VACUUM INTO into that path).
 func PreflightMigrationTarget(ctx context.Context, dsn string, log zerolog.Logger) storage.MigrationTargetPreflight {
+	exp := CurrentSchemaVersion()
+	path, err := sqlitewriter.ResolveMainFilePath(dsn)
+	if err != nil {
+		return storage.MigrationTargetPreflight{
+			Status:          storage.MigrationPreflightUnreadable,
+			ExpectedVersion: exp,
+			Detail:          "turso: resolve path: " + err.Error(),
+		}
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return storage.MigrationTargetPreflight{
+				Status:          storage.MigrationPreflightEmpty,
+				ExpectedVersion: exp,
+				Detail:          "destination file does not exist; native sqlite→turso copy will create it",
+			}
+		}
+		return storage.MigrationTargetPreflight{
+			Status:          storage.MigrationPreflightUnreadable,
+			ExpectedVersion: exp,
+			Detail:          "turso: stat destination: " + err.Error(),
+		}
+	}
+
 	cfg := sqlevent.DefaultTursoPreflightConfig(dsn, log)
 	cfg.OpenDB = func(dsn string) (*sql.DB, error) {
 		return sql.Open("libsql", dsn)

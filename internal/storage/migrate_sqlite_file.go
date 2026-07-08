@@ -22,9 +22,22 @@ func MigrateSQLiteFileViaVacuumInto(ctx context.Context, srcDSN, dstPath string)
 	if err != nil {
 		return fmt.Errorf("migration: resolve destination path: %w", err)
 	}
-	if _, err := os.Stat(dstPath); err == nil {
-		return fmt.Errorf("migration: destination file already exists: %s", dstPath)
-	} else if !os.IsNotExist(err) {
+	st, err := os.Stat(dstPath)
+	switch {
+	case err == nil:
+		// Admin target-preflight used to open libSQL against a missing path and create an
+		// empty shell DB. Remove empty leftovers so VACUUM INTO can write the native copy.
+		if st.Size() > 0 {
+			return fmt.Errorf("migration: destination file already exists: %s", dstPath)
+		}
+		if err := os.Remove(dstPath); err != nil {
+			return fmt.Errorf("migration: remove empty destination: %w", err)
+		}
+		_ = os.Remove(dstPath + "-wal")
+		_ = os.Remove(dstPath + "-shm")
+	case os.IsNotExist(err):
+		// ok
+	default:
 		return fmt.Errorf("migration: stat destination: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
