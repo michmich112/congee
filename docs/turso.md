@@ -27,7 +27,7 @@ SQLite and libSQL share the same on-disk format for Congee's schema. When migrat
 Requirements:
 
 - Source must match the running relay's configured `database.type` and `database.dsn`.
-- Target path must **not** exist yet (pick a new file path).
+- Target path should not already contain a populated database. Admin target preflight does **not** open/create a missing Turso path (opening libSQL would create an empty shell file and break `VACUUM INTO`). Empty zero-byte leftovers from an older preflight are removed automatically.
 - Other migration pairs (e.g. postgres → turso) use the row-by-row admin migration tool.
 
 ## Out of scope (v1)
