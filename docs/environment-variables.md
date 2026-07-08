@@ -19,7 +19,7 @@ If a file named **`.env`** exists in the **current working directory** when the 
 | `RELAY_SECRETS_PATH` | Relay secp256k1 secrets file | Optional. Overrides the default path for `relay.secrets.json` (32-byte secret hex JSON). When unset, the file is `relay.secrets.json` **next to** the config file — with the default `CONFIG_PATH`, that is `/data/config/relay.secrets.json`. Created on first run if missing. |
 | `CONGEE_RELAY_PORT` | Relay HTTP/WebSocket listen port | Optional. Default 3334. When set (decimal integer), overrides `relay.port` from JSON after load. Must be between 1 and 65535. |
 | `CONGEE_ADMIN_PORT` | Admin HTTP listen port | Optional. Default 3335. When set, overrides `admin.port` from JSON after load. Must be between 1 and 65535. Ignored for binding when `ENABLE_ADMIN_UI` is not enabled, but the value still overrides the in-memory config. |
-| `CONGEE_DATA_DIR` | SQLite database directory | Optional. When set and `database.type` is empty or `sqlite`, sets `database.dsn` to `<dir>/congee.db` and `database.meta_dsn` to `<dir>/congee-meta.db` (after path cleaning). Ignored when `database.type` is `postgres`. The official container image sets this to `/data` by default; mount a volume there for persistence. |
+| `CONGEE_DATA_DIR` | SQLite/Turso database directory | Optional. When set and `database.type` is empty, `sqlite`, or `turso`, sets `database.dsn` to `<dir>/congee.db` and `database.meta_dsn` to `<dir>/congee-meta.db` (after path cleaning). Ignored when `database.type` is `postgres`. The official container image sets this to `/data` by default; mount a volume there for persistence. |
 | `CONGEE_INSTANCE_ID` | PostgreSQL multi-instance identity | Optional. When `database.type` is `postgres`, identifies this process in `LISTEN`/`NOTIFY` payloads so the relay does not re-broadcast its own writes. If unset, Congee generates a UUID on first start, writes it to `relay.instance_id` in the JSON config, and reuses it on later boots. Setting this variable overrides the config value for the running process and locks it from edits in the admin UI under **Config → Storage** (restart still applies after config changes elsewhere). |
 | `TEST_POSTGRES_DSN` | Integration tests only | If set, enables PostgreSQL store/notifier tests (`go test`). Not used at runtime. |
 
@@ -27,6 +27,6 @@ Most relay behavior — logging level, audit retention, rate limits, connection 
 
 JSON `database.meta_dsn` (optional) points at the SQLite file for operational metadata (`audit_log`, `config_changelog`, `relay_metric_buckets`, `ws_connection_sessions`). When omitted, Congee uses `congee-meta.db` beside `database.dsn` (or `./congee-meta.db` when `database.type` is `postgres`).
 
-For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md).
+For PostgreSQL-specific settings and local Docker setup, see [docs/postgres.md](./postgres.md). For Turso/libSQL local storage, see [docs/turso.md](./turso.md).
 
 See `config.example.json` for the full schema of JSON fields and sensible defaults.

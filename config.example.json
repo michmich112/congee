@@ -10,6 +10,7 @@
     "dsn": "./congee.db",
     "meta_dsn": "./congee-meta.db"
   },
+  "_comment_database_turso": "For Turso/libSQL local files use type turso with the same dsn/meta_dsn shape; see docs/turso.md",
   "logging": {
     "level": "info",
     "format": "json"

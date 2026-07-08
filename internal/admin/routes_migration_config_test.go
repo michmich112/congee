@@ -16,6 +16,9 @@ func TestMigrationCanonicalDBType(t *testing.T) {
 	if g, w := migrationCanonicalDBType("postgres"), "postgres"; g != w {
 		t.Fatalf("postgres: got %q want %q", g, w)
 	}
+	if g, w := migrationCanonicalDBType("turso"), "turso"; g != w {
+		t.Fatalf("turso: got %q want %q", g, w)
+	}
 }
 
 func TestMigrationSourceMatchesConfig(t *testing.T) {

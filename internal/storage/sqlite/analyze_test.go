@@ -21,10 +21,10 @@ func TestAnalyzeStatsTablesPopulatesStat1(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 
-	if _, err := st.db().ExecContext(ctx, `INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES ('a','b',1,1,'c','d')`); err != nil {
+	if _, err := st.DB().ExecContext(ctx, `INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES ('a','b',1,1,'c','d')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db().ExecContext(ctx, `INSERT INTO event_tags (event_id, pos, name, value, full_json) VALUES ('a',0,'p','b','[]')`); err != nil {
+	if _, err := st.DB().ExecContext(ctx, `INSERT INTO event_tags (event_id, pos, name, value, full_json) VALUES ('a',0,'p','b','[]')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,7 +32,7 @@ func TestAnalyzeStatsTablesPopulatesStat1(t *testing.T) {
 		t.Fatal(err)
 	}
 	var statRows int
-	if err := st.db().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl IN ('events', 'event_tags')`).Scan(&statRows); err != nil {
+	if err := st.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl IN ('events', 'event_tags')`).Scan(&statRows); err != nil {
 		t.Fatal(err)
 	}
 	if statRows == 0 {

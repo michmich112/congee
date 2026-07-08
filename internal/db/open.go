@@ -9,6 +9,7 @@ import (
 	"github.com/michmich112/congee/internal/storage/postgres"
 	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 
@@ -27,7 +28,7 @@ func (h *Handle) Close() error {
 	return h.closeFn()
 }
 
-// Open opens the database from JSON config (SQLite or PostgreSQL).
+// Open opens the database from JSON config (SQLite, Turso, or PostgreSQL).
 // relayInstanceID is the PostgreSQL LISTEN/NOTIFY origin id (ignored for SQLite).
 // log is passed to the store implementation for optional connector debug (use zerolog.Nop() when silent).
 func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID string, log zerolog.Logger) (*Handle, error) {
@@ -67,6 +68,8 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 				return err2
 			},
 		}, nil
+	case "turso":
+		return openTurso(ctx, sec, log)
 	default:
 		return nil, fmt.Errorf("db: unsupported database.type %q", sec.Type)
 	}
@@ -83,6 +86,42 @@ func openSQLite(ctx context.Context, sec config.DatabaseSection, log zerolog.Log
 		return nil, fmt.Errorf("db: legacy meta migration: %w", err)
 	}
 	ev, err := sqlite.Open(ctx, sec.DSN, nil, log)
+	if err != nil {
+		_ = meta.Close()
+		return nil, err
+	}
+	store := newCompositeStore(ev, meta, ev, meta)
+	analyzeCtx, analyzeCancel := context.WithCancel(context.Background())
+	StartSQLiteAnalyzeLoop(analyzeCtx, []sqliteStatsAnalyzer{
+		{label: "events", run: ev.AnalyzeStatsTables},
+		{label: "meta", run: meta.AnalyzeStatsTables},
+	}, log)
+	return &Handle{
+		Store:         store,
+		EventNotifier: storage.NoopNotifier{},
+		closeFn: func() error {
+			analyzeCancel()
+			err1 := meta.Close()
+			err2 := ev.Close()
+			if err1 != nil {
+				return err1
+			}
+			return err2
+		},
+	}, nil
+}
+
+func openTurso(ctx context.Context, sec config.DatabaseSection, log zerolog.Logger) (*Handle, error) {
+	metaDSN := ResolveMetaDSN(sec)
+	meta, err := sqlitemeta.Open(ctx, metaDSN, log)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrateLegacyMetaTurso(ctx, sec.DSN, metaDSN, meta, log); err != nil {
+		_ = meta.Close()
+		return nil, fmt.Errorf("db: legacy meta migration: %w", err)
+	}
+	ev, err := turso.Open(ctx, sec.DSN, nil, log)
 	if err != nil {
 		_ = meta.Close()
 		return nil, err

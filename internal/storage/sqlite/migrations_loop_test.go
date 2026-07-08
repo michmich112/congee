@@ -73,13 +73,13 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	}
 	defer func() { _ = s2.Close() }()
 
-	db := s2.db()
+	db := s2.DB()
 	var uv int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
 		t.Fatal(err)
 	}
-	if uv != schemaVersion {
-		t.Fatalf("user_version: got %d want %d", uv, schemaVersion)
+	if uv != CurrentSchemaVersion() {
+		t.Fatalf("user_version: got %d want %d", uv, CurrentSchemaVersion())
 	}
 	var n int
 	if err := db.QueryRowContext(ctx,
@@ -165,14 +165,14 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 	defer func() { _ = s2.Close() }()
 
 	var uv int
-	if err := s2.db().QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
+	if err := s2.DB().QueryRowContext(ctx, "PRAGMA user_version").Scan(&uv); err != nil {
 		t.Fatal(err)
 	}
-	if uv != schemaVersion {
-		t.Fatalf("user_version after multi-step migrate: got %d want %d", uv, schemaVersion)
+	if uv != CurrentSchemaVersion() {
+		t.Fatalf("user_version after multi-step migrate: got %d want %d", uv, CurrentSchemaVersion())
 	}
 	var metaTables int
-	if err := s2.db().QueryRowContext(ctx,
+	if err := s2.DB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('audit_log','config_changelog','relay_metric_buckets','ws_connection_sessions')`,
 	).Scan(&metaTables); err != nil || metaTables != 0 {
 		t.Fatalf("meta tables should be dropped: err=%v n=%d", err, metaTables)

@@ -1,4 +1,4 @@
-package sqlite
+package sqlevent
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 func (s *Store) AnalyzeStatsTables(ctx context.Context) error {
 	for _, q := range []string{`ANALYZE events`, `ANALYZE event_tags`} {
 		if _, err := s.db().ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("sqlite: %s: %w", q, err)
+			return fmt.Errorf("%s: %s: %w", s.engine, q, err)
 		}
 	}
 	return nil
