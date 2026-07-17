@@ -2,7 +2,7 @@
 
 ## What this project is
 
-**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in **SQLite** by default, with optional **Turso/libSQL** (local on-disk) or **PostgreSQL** for larger or multi-instance deployments. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`.
+**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in **Turso/libSQL** by default, with optional **SQLite** or **PostgreSQL** for deployments that prefer those backends. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`.
 
 Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `REQ`, `CLOSE`, and relay replies such as `OK`, `EOSE`, `CLOSED`, `NOTICE`.
 

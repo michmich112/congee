@@ -31,7 +31,7 @@ func ApplyBootstrapEnvOverrides(c *Config) error {
 		case "", "sqlite", "turso":
 			c.Database.Type = strings.TrimSpace(c.Database.Type)
 			if c.Database.Type == "" {
-				c.Database.Type = "sqlite"
+				c.Database.Type = DefaultDatabaseType
 			}
 			clean := filepath.Clean(dir)
 			c.Database.DSN = filepath.Join(clean, "congee.db")
