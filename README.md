@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/congee-logo.svg" alt="Congee logo" width="120" height="141" />
+</p>
+
 # Congee
 
 Congee is a Nostr relay written in Go with Turso/libSQL (default), optional SQLite, or PostgreSQL storage, plus an optional Svelte 5 admin UI.

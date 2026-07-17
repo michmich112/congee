@@ -2,6 +2,20 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<script>
+			(function () {
+				var mode = localStorage.getItem('mode-watcher-mode') || 'system';
+				var dark =
+					mode === 'dark' ||
+					(mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				var link = document.createElement('link');
+				link.rel = 'icon';
+				link.type = 'image/svg+xml';
+				link.href = dark ? '/favicon-dark.svg' : '/favicon-light.svg';
+				link.setAttribute('data-congee-favicon', 'true');
+				document.head.appendChild(link);
+			})();
+		</script>
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
 		%sveltekit.head%

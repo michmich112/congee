@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 87 102" role="img" aria-label="Congee">
+  <g fill="#0e0f16" stroke="none">
+    <circle cx="29.2" cy="11.2" r="1.15"/>
+    <circle cx="58" cy="11.2" r="1.15"/>
+    <circle cx="33.2" cy="19.2" r="1.15"/>
+    <circle cx="53.8" cy="19.2" r="1.15"/>
+    <circle cx="12.1" cy="22.1" r="1.15"/>
+    <circle cx="74.6" cy="22.2" r="1.15"/>
+    <circle cx="51" cy="27.4" r="1.15"/>
+    <circle cx="36" cy="27.5" r="1.15"/>
+    <circle cx="19.6" cy="28.3" r="1.15"/>
+    <circle cx="67.2" cy="28.3" r="1.15"/>
+    <circle cx="25.5" cy="35.7" r="1.15"/>
+    <circle cx="37.9" cy="35.7" r="1.15"/>
+    <circle cx="48.9" cy="35.7" r="1.15"/>
+    <circle cx="61.3" cy="35.7" r="1.15"/>
+    <circle cx="29.3" cy="43.5" r="1.15"/>
+    <circle cx="39.1" cy="43.5" r="1.15"/>
+    <circle cx="47.5" cy="43.5" r="1.15"/>
+    <circle cx="57.4" cy="43.5" r="1.15"/>
+    <circle cx="32.2" cy="50.9" r="1.15"/>
+    <circle cx="40" cy="50.9" r="1.15"/>
+    <circle cx="46.6" cy="50.9" r="1.15"/>
+    <circle cx="54.4" cy="50.9" r="1.15"/>
+    <circle cx="43.3" cy="57.6" r="1.15"/>
+    <circle cx="52.5" cy="57.9" r="1.15"/>
+    <circle cx="34.2" cy="58" r="1.15"/>
+    <circle cx="43.3" cy="63.6" r="1.15"/>
+    <circle cx="35.6" cy="63.7" r="1.15"/>
+    <circle cx="51" cy="63.7" r="1.15"/>
+    <circle cx="43.4" cy="70.4" r="1.15"/>
+    <circle cx="37.3" cy="70.5" r="1.15"/>
+    <circle cx="49.3" cy="70.5" r="1.15"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 14.2 73 L 15 74 L 15.8 75 L 16.8 76 L 17.7 77 L 18.9 78 L 20.1 79 L 21.4 80 L 22.9 81 L 24.6 82 L 26.8 83 L 30 84 L 56.7 84 L 59.7 83 L 62 82 L 63.8 81 L 65.3 80 L 66.7 79 L 67.9 78 L 69 77 L 70 76 L 70.9 75 L 71.8 74 L 72.5 73"/>
+    <path d="M 27.2 91 H 59.3"/>
+  </g>
+</svg>

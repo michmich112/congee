@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import CongeeLogo from '$lib/components/CongeeLogo.svelte';
 	import Menu from '@lucide/svelte/icons/menu';
 	import { browser } from '$app/environment';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -28,6 +28,7 @@
 		verifyAdminToken
 	} from '$lib/admin-api';
 	import { initTimestampDisplayFromStorage } from '$lib/admin-timestamp-preference.svelte';
+	import { syncAdminFavicon } from '$lib/admin-favicon';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as Collapsible from '$lib/components/ui/collapsible';
@@ -36,7 +37,7 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { buttonVariants } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
-	import { ModeWatcher } from 'mode-watcher';
+	import { ModeWatcher, mode } from 'mode-watcher';
 
 	let { children } = $props();
 
@@ -129,6 +130,18 @@
 		}
 	});
 
+	$effect(() => {
+		void mode.current;
+		syncAdminFavicon();
+
+		if (!browser) return;
+
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		const onChange = () => syncAdminFavicon();
+		media.addEventListener('change', onChange);
+		return () => media.removeEventListener('change', onChange);
+	});
+
 	onMount(() => {
 		sidebarCollapsed = readSidebarCollapsedFromStorage();
 		initTimestampDisplayFromStorage();
@@ -189,7 +202,6 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
 	<meta name="color-scheme" content="dark light" />
 	<title>Congee admin</title>
 </svelte:head>
@@ -199,10 +211,15 @@
 		<div class="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">Loading…</div>
 	{:else if !tokenOk}
 		<main class="mx-auto flex max-w-md flex-col gap-6 px-6 py-16">
+			<div class="flex items-start gap-3">
+				<CongeeLogo class="mt-0.5 size-10 shrink-0" />
+				<div>
+					<p class="text-sm font-medium tracking-tight text-muted-foreground">Congee</p>
+					<h1 class="text-xl font-semibold">Admin sign in</h1>
+				</div>
+			</div>
 			<div>
-				<p class="text-sm font-medium tracking-tight text-muted-foreground">Congee</p>
-				<h1 class="text-xl font-semibold">Admin sign in</h1>
-				<p class="mt-2 text-sm text-muted-foreground">
+				<p class="text-sm text-muted-foreground">
 					Use the same value as <code class="rounded bg-muted px-1">ADMIN_PASSWORD</code>. Appearance follows
 					<code class="rounded bg-muted px-1 text-xs">prefers-color-scheme</code>.
 				</p>
@@ -247,12 +264,20 @@
 							sidebarCollapsed ? 'flex-col gap-2' : 'justify-between gap-2'
 						)}
 					>
-						{#if !sidebarCollapsed}
-							<div class="min-w-0 flex-1">
-								<p class="text-xs font-medium tracking-tight text-muted-foreground">Congee</p>
-								<p class="text-sm font-semibold">Relay admin</p>
-							</div>
-						{/if}
+						<div
+							class={cn(
+								'flex min-w-0 items-center',
+								sidebarCollapsed ? 'justify-center' : 'flex-1 gap-2.5'
+							)}
+						>
+							<CongeeLogo class={cn('shrink-0', sidebarCollapsed ? 'size-7' : 'size-8')} />
+							{#if !sidebarCollapsed}
+								<div class="min-w-0">
+									<p class="text-xs font-medium tracking-tight text-muted-foreground">Congee</p>
+									<p class="text-sm font-semibold">Relay admin</p>
+								</div>
+							{/if}
+						</div>
 						<Button
 							variant="ghost"
 							size="icon"
@@ -401,8 +426,13 @@
 						</Sheet.Trigger>
 						<Sheet.Content side="left" class="flex w-[min(100vw-2rem,18rem)] flex-col gap-0 p-0">
 							<Sheet.Header class="border-border border-b px-4 py-4 text-left">
-								<Sheet.Title class="text-base">Congee admin</Sheet.Title>
-								<Sheet.Description class="text-xs text-muted-foreground">Navigation</Sheet.Description>
+								<div class="flex items-center gap-2.5">
+									<CongeeLogo class="size-7 shrink-0" />
+									<div>
+										<Sheet.Title class="text-base">Congee admin</Sheet.Title>
+										<Sheet.Description class="text-xs text-muted-foreground">Navigation</Sheet.Description>
+									</div>
+								</div>
 							</Sheet.Header>
 							<div class="flex flex-1 flex-col gap-6 overflow-y-auto p-4">
 								<nav class="flex flex-col gap-1">
@@ -465,9 +495,12 @@
 							</div>
 						</Sheet.Content>
 					</Sheet.Root>
-					<div class="min-w-0 flex-1">
-						<p class="text-xs text-muted-foreground">Congee</p>
-						<p class="truncate text-sm font-semibold">Relay admin</p>
+					<div class="flex min-w-0 flex-1 items-center gap-2.5">
+						<CongeeLogo class="size-7 shrink-0" />
+						<div class="min-w-0">
+							<p class="text-xs text-muted-foreground">Congee</p>
+							<p class="truncate text-sm font-semibold">Relay admin</p>
+						</div>
 					</div>
 				</header>
 
