@@ -28,6 +28,7 @@
 		verifyAdminToken
 	} from '$lib/admin-api';
 	import { initTimestampDisplayFromStorage } from '$lib/admin-timestamp-preference.svelte';
+	import { syncAdminFavicon } from '$lib/admin-favicon';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as Collapsible from '$lib/components/ui/collapsible';
@@ -36,7 +37,7 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { buttonVariants } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
-	import { ModeWatcher } from 'mode-watcher';
+	import { ModeWatcher, mode } from 'mode-watcher';
 
 	let { children } = $props();
 
@@ -129,6 +130,18 @@
 		}
 	});
 
+	$effect(() => {
+		void mode.current;
+		syncAdminFavicon();
+
+		if (!browser) return;
+
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		const onChange = () => syncAdminFavicon();
+		media.addEventListener('change', onChange);
+		return () => media.removeEventListener('change', onChange);
+	});
+
 	onMount(() => {
 		sidebarCollapsed = readSidebarCollapsedFromStorage();
 		initTimestampDisplayFromStorage();
@@ -189,7 +202,6 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 	<meta name="color-scheme" content="dark light" />
 	<title>Congee admin</title>
 </svelte:head>
