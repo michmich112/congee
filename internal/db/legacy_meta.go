@@ -9,7 +9,6 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
-	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
 	"github.com/uptrace/bun/driver/sqliteshim"
@@ -58,13 +57,15 @@ func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN, metaPath string, me
 	return nil
 }
 
-// migrateLegacyMetaTurso copies operational metadata from a pre-v7 Turso/libSQL events file
+// migrateLegacyMetaTurso copies operational metadata from a pre-v7 Turso events file
 // into the meta store before the event store runs schema v7 (which drops meta tables).
+// Local Turso files are SQLite-compatible; use sqliteshim so we do not open libSQL
+// before the event store's primary libSQL handle.
 func migrateLegacyMetaTurso(ctx context.Context, eventsDSN, metaPath string, meta *sqlitemeta.Store, log zerolog.Logger) error {
-	if !sqlitewriter.HasLibsqlDriver() {
-		return errors.New("legacy meta: libsql driver not available")
+	if !sqliteshim.HasDriver() {
+		return errors.New("legacy meta: sqliteshim driver not available")
 	}
-	sqldb, err := sql.Open("libsql", sqlitewriter.NormalizeLibsqlDSN(eventsDSN))
+	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeLegacyDSN(eventsDSN))
 	if err != nil {
 		return fmt.Errorf("legacy meta: open events db: %w", err)
 	}

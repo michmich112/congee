@@ -403,7 +403,14 @@ func (q *Queue) reconnect(ctx context.Context) error {
 		return errors.New("reconnect: empty dsn")
 	}
 
-	sqldb, bunDB, err := openHandles(ctx, q.dsn, q.log)
+	var sqldb *sql.DB
+	var bunDB *bun.DB
+	var err error
+	if q.engine == "turso" {
+		sqldb, bunDB, err = OpenLibsqlHandles(ctx, q.dsn, q.log)
+	} else {
+		sqldb, bunDB, err = openHandles(ctx, q.dsn, q.log)
+	}
 	if err != nil {
 		return err
 	}

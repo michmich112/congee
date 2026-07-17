@@ -80,7 +80,9 @@ func MigrateSQLiteToTursoNative(ctx context.Context, srcDSN, dstDSN string) (Mig
 	if err := MigrateSQLiteFileViaVacuumInto(ctx, srcDSN, dstDSN); err != nil {
 		return MigrationSummary{}, err
 	}
-	dst, err := openTursoMigrationCounts(ctx, dstDSN)
+	// VACUUM INTO writes a standard SQLite file; verify with sqliteshim so we do
+	// not open libSQL on the path before the relay's first Turso open.
+	dst, err := openSQLiteMigrationCounts(ctx, dstDSN)
 	if err != nil {
 		return MigrationSummary{}, err
 	}
@@ -102,22 +104,6 @@ func openSQLiteMigrationCounts(ctx context.Context, dsn string) (MigrationCounts
 	}
 	norm := sqlitewriter.NormalizeDSN(dsn)
 	sqldb, err := sql.Open(sqliteshim.ShimName, norm)
-	if err != nil {
-		return MigrationCounts{}, err
-	}
-	defer func() { _ = sqldb.Close() }()
-	if err := sqldb.PingContext(ctx); err != nil {
-		return MigrationCounts{}, err
-	}
-	return sqliteFileCounts(ctx, sqldb)
-}
-
-func openTursoMigrationCounts(ctx context.Context, dsn string) (MigrationCounts, error) {
-	if !sqlitewriter.HasLibsqlDriver() {
-		return MigrationCounts{}, fmt.Errorf("migration: turso driver not available")
-	}
-	norm := sqlitewriter.NormalizeLibsqlDSN(dsn)
-	sqldb, err := sql.Open("libsql", norm)
 	if err != nil {
 		return MigrationCounts{}, err
 	}
