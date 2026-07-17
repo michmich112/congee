@@ -1,6 +1,6 @@
 # PostgreSQL storage
 
-Congee can use **SQLite** (default) or **PostgreSQL** for persistence. Set this in the JSON config:
+Congee can use **SQLite** or **PostgreSQL** for persistence. Set this in the JSON config:
 
 ```json
 "database": {
@@ -9,7 +9,7 @@ Congee can use **SQLite** (default) or **PostgreSQL** for persistence. Set this 
 }
 ```
 
-- `database.type` must be `"postgres"` (or omit/`"sqlite"` for SQLite).
+- `database.type` must be `"postgres"` (or omit/`"turso"` for the default local backend; use `"sqlite"` for modernc SQLite without CGO).
 - `database.dsn` is a standard PostgreSQL URL understood by the Bun `pgdriver` (TLS/query params as supported by the driver).
 
 ## Multi-instance fan-out

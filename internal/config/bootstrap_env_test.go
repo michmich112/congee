@@ -50,7 +50,7 @@ func TestApplyBootstrapEnvOverrides_dataDirPostgresIgnored(t *testing.T) {
 	}
 }
 
-func TestApplyBootstrapEnvOverrides_sqliteEmptyTypeUsesDataDir(t *testing.T) {
+func TestApplyBootstrapEnvOverrides_emptyTypeDefaultsToTursoWithDataDir(t *testing.T) {
 	c := minimalValidConfig()
 	c.Database.Type = ""
 	dir := filepath.Join(t.TempDir(), "nested")
@@ -61,7 +61,7 @@ func TestApplyBootstrapEnvOverrides_sqliteEmptyTypeUsesDataDir(t *testing.T) {
 	if err := ApplyBootstrapEnvOverrides(c); err != nil {
 		t.Fatal(err)
 	}
-	if c.Database.Type != "sqlite" {
+	if c.Database.Type != DefaultDatabaseType {
 		t.Fatalf("type: %q", c.Database.Type)
 	}
 	want := filepath.Join(dir, "congee.db")

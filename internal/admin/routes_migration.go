@@ -115,7 +115,9 @@ func migrationCanonicalDBType(typ string) string {
 	switch strings.TrimSpace(strings.ToLower(typ)) {
 	case "postgres":
 		return "postgres"
-	case "turso":
+	case "sqlite":
+		return "sqlite"
+	case "", "turso":
 		return "turso"
 	default:
 		return "sqlite"

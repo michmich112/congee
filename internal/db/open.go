@@ -33,7 +33,9 @@ func (h *Handle) Close() error {
 // log is passed to the store implementation for optional connector debug (use zerolog.Nop() when silent).
 func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID string, log zerolog.Logger) (*Handle, error) {
 	switch sec.Type {
-	case "", "sqlite":
+	case "", config.DefaultDatabaseType:
+		return openTurso(ctx, sec, log)
+	case "sqlite":
 		return openSQLite(ctx, sec, log)
 	case "postgres":
 		metaDSN := ResolveMetaDSN(sec)
@@ -68,8 +70,6 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 				return err2
 			},
 		}, nil
-	case "turso":
-		return openTurso(ctx, sec, log)
 	default:
 		return nil, fmt.Errorf("db: unsupported database.type %q", sec.Type)
 	}

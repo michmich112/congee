@@ -6,11 +6,11 @@
     "port": 3335
   },
   "database": {
-    "type": "sqlite",
+    "type": "turso",
     "dsn": "./congee.db",
     "meta_dsn": "./congee-meta.db"
   },
-  "_comment_database_turso": "For Turso/libSQL local files use type turso with the same dsn/meta_dsn shape; see docs/turso.md",
+  "_comment_database_sqlite": "Use type sqlite for modernc.org/sqlite without CGO; see docs/turso.md for Turso/libSQL (default)",
   "logging": {
     "level": "info",
     "format": "json"

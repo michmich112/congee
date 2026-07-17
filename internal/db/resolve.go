@@ -19,13 +19,16 @@ func ResolveMetaDSN(sec config.DatabaseSection) string {
 	}
 	if dir := strings.TrimSpace(os.Getenv("CONGEE_DATA_DIR")); dir != "" {
 		dbType := strings.TrimSpace(sec.Type)
-		if dbType == "" || dbType == "sqlite" {
+		if dbType == "" {
+			dbType = config.DefaultDatabaseType
+		}
+		if dbType == "sqlite" || dbType == config.DefaultDatabaseType {
 			return filepath.Join(filepath.Clean(dir), "congee-meta.db")
 		}
 	}
 	dbType := strings.TrimSpace(sec.Type)
 	if dbType == "" {
-		dbType = "sqlite"
+		dbType = config.DefaultDatabaseType
 	}
 	if dbType == "postgres" {
 		return "./congee-meta.db"

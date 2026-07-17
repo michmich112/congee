@@ -28,6 +28,9 @@ type AdminSection struct {
 	Port int `json:"port"`
 }
 
+// DefaultDatabaseType is used when database.type is empty in JSON config.
+const DefaultDatabaseType = "turso"
+
 type DatabaseSection struct {
 	Type    string `json:"type"`
 	DSN     string `json:"dsn"`

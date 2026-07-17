@@ -1,6 +1,6 @@
 # Turso (libSQL) storage
 
-Congee can use **Turso/libSQL** for local on-disk event storage via [go-libsql](https://github.com/tursodatabase/go-libsql). Set this in the JSON config:
+Congee uses **Turso/libSQL** for local on-disk event storage by default via [go-libsql](https://github.com/tursodatabase/go-libsql). The stock config sets:
 
 ```json
 "database": {
@@ -10,7 +10,7 @@ Congee can use **Turso/libSQL** for local on-disk event storage via [go-libsql](
 }
 ```
 
-- `database.type` must be `"turso"`.
+- `database.type` must be `"turso"` (or omit for the same default).
 - `database.dsn` is a **local file path** for the libSQL database (same layout as SQLite events schema).
 - Operational metadata (`audit_log`, `config_changelog`, metrics, WS sessions) stays in the **SQLite meta sidecar** (`meta_dsn`), like PostgreSQL.
 

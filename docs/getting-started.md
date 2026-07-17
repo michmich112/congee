@@ -88,4 +88,4 @@ make lint
 make docker-build
 ```
 
-Mount a single **`/data`** volume for SQLite (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`.
+Mount a single **`/data`** volume for the database (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`.

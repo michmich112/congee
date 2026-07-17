@@ -21,7 +21,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Relay:    RelaySection{Port: 3334},
 		Admin:    AdminSection{Port: 3335},
-		Database: DatabaseSection{Type: "sqlite", DSN: "./congee.db"},
+		Database: DatabaseSection{Type: DefaultDatabaseType, DSN: "./congee.db"},
 		Logging:  LoggingSection{Level: "info", Format: "json"},
 		Audit:    AuditSection{RetentionDays: 30},
 		Metrics:  MetricsSection{RelayBucketRetentionDays: 30},

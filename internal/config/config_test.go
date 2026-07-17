@@ -120,6 +120,9 @@ func TestEnsureConfigFileCreatesDefault(t *testing.T) {
 	if cfg.Relay.Port != 3334 {
 		t.Fatalf("relay.port: got %d", cfg.Relay.Port)
 	}
+	if cfg.Database.Type != DefaultDatabaseType {
+		t.Fatalf("database.type: got %q want %q", cfg.Database.Type, DefaultDatabaseType)
+	}
 	if cfg.Database.DSN != "./congee.db" {
 		t.Fatalf("database.dsn: got %q", cfg.Database.DSN)
 	}
