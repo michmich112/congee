@@ -41,6 +41,12 @@ func (r *Registry) Dispatch(ctx context.Context, c *Conn, msg any) error {
 		typ = "CLOSE"
 	case *nostr.AuthMessage:
 		typ = "AUTH"
+	case *nostr.NegOpenMessage:
+		typ = "NEG-OPEN"
+	case *nostr.NegMsgMessage:
+		typ = "NEG-MSG"
+	case *nostr.NegCloseMessage:
+		typ = "NEG-CLOSE"
 	default:
 		return fmt.Errorf("relay: unknown message type %T", msg)
 	}

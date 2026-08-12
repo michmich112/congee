@@ -52,6 +52,12 @@ var KnownNIPs = map[int]Meta{
 		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/17.md",
 		Mandatory: false,
 	},
+	77: {
+		Number:    77,
+		Title:     "Negentropy Syncing",
+		GitHubURL: "https://github.com/nostr-protocol/nips/blob/master/77.md",
+		Mandatory: false,
+	},
 }
 
 // IsKnown reports whether n is present in the registry.

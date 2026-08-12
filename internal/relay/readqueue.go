@@ -65,6 +65,11 @@ func (q *ReaderQueue) Enqueue(job *reqPageJob) bool {
 	}
 }
 
+// PendingDepth returns the number of REQ page jobs waiting in the queue.
+func (q *ReaderQueue) PendingDepth() int {
+	return len(q.jobs)
+}
+
 func (q *ReaderQueue) worker() {
 	defer q.wg.Done()
 	for {

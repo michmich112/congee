@@ -50,6 +50,10 @@ func (c *compositeStore) QueryEvents(ctx context.Context, filters []nostr.Filter
 	return c.events.QueryEvents(ctx, filters)
 }
 
+func (c *compositeStore) QueryEventSyncItems(ctx context.Context, filter nostr.Filter) ([]storage.SyncItem, error) {
+	return c.events.QueryEventSyncItems(ctx, filter)
+}
+
 func (c *compositeStore) DeleteEvent(ctx context.Context, id string) error {
 	return c.events.DeleteEvent(ctx, id)
 }

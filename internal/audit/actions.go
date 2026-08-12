@@ -7,6 +7,13 @@ const (
 	ActionEventRejected  = "event_rejected"
 	ActionEventStored    = "event_stored"
 	ActionEventEphemeral = "event_ephemeral"
+
+	ActionNegOpen                 = "neg_open"
+	ActionNegComplete             = "neg_complete"
+	ActionNegBlocked              = "neg_blocked"
+	ActionNegErr                  = "neg_err"
+	ActionNegUpstreamSyncComplete = "neg_upstream_sync_complete"
+	ActionNegUpstreamSyncFailed   = "neg_upstream_sync_failed"
 )
 
 // SanitizeAuditDetailFragment collapses whitespace so a reason (or fragment) fits one logical line
