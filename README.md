@@ -10,6 +10,7 @@ Congee is a Nostr relay written in Go with Turso/libSQL (default), optional SQLi
 
 - [Getting started](docs/getting-started.md) — prerequisites, build, run (`make dev`), and connecting a client
 - [Environment variables](docs/environment-variables.md) — env-only settings, optional `.env` file, and JSON config
+- [NIP-77 negentropy syncing](docs/nip77.md) — enable, limits, upstream pull, observability
 - [AGENTS.md](AGENTS.md) — project context and conventions for contributors and automation
 
 Phase implementation checklists live in [`docs/plans/`](docs/plans/).

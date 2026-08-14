@@ -58,10 +58,19 @@ type WSConnectionSessionQuery struct {
 	Offset int
 }
 
+// SyncItem is a minimal (created_at, id) pair for NIP-77 negentropy reconciliation.
+type SyncItem struct {
+	ID        string
+	CreatedAt int64
+}
+
 // EventStore persists and queries Nostr events (and related relay data such as NIP-29 lookups).
 type EventStore interface {
 	SaveEvent(ctx context.Context, ev *nostr.Event) error
 	QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error)
+	// QueryEventSyncItems returns matching events as ascending (created_at, id) pairs for NIP-77.
+	// No SQL LIMIT is applied; callers enforce max_records_per_query before invoking.
+	QueryEventSyncItems(ctx context.Context, filter nostr.Filter) ([]SyncItem, error)
 	DeleteEvent(ctx context.Context, id string) error
 	// CountEvents returns the number of distinct stored events matching any of the filters (OR).
 	// When filters is nil or empty, implementations run COUNT(*) over all events (used by health

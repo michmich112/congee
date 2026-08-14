@@ -25,6 +25,7 @@ import (
 // wsInboundDebugTypes are client commands logged at debug (logging.level=debug).
 var wsInboundDebugTypes = map[string]struct{}{
 	"REQ": {}, "EVENT": {}, "AUTH": {}, "INFO": {}, "COUNT": {},
+	"NEG-OPEN": {}, "NEG-MSG": {}, "NEG-CLOSE": {},
 }
 
 // ErrSlowConsumer indicates the outbound buffer is full.
@@ -52,7 +53,11 @@ type Conn struct {
 	reqTotal         atomic.Uint64
 	authTotal        atomic.Uint64
 	clientEventTotal atomic.Uint64
+	negOpenTotal     atomic.Uint64
+	negMsgTotal      atomic.Uint64
 	connAudit        connAuditRing
+
+	negSessions *negSessionMap
 
 	authMu         sync.RWMutex
 	nip42Challenge string
@@ -300,6 +305,24 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			}
 			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: subscription requests (auth)")
 			_ = c.sendNotice("rate limited: subscription requests")
+			return
+		}
+	case *nostr.NegOpenMessage:
+		if !c.limiter.AllowNegOpen() {
+			if c.server.metrics != nil {
+				c.server.metrics.IncNegBlocked()
+			}
+			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: neg-open")
+			_ = c.sendNotice("rate limited: negentropy")
+			return
+		}
+	case *nostr.NegMsgMessage:
+		if !c.limiter.AllowNegMsg() {
+			if c.server.metrics != nil {
+				c.server.metrics.IncNegBlocked()
+			}
+			c.log.Warn().Str("peer_ip", c.peerIP).Msg("rate limited: neg-msg")
+			_ = c.sendNotice("rate limited: negentropy")
 			return
 		}
 	}

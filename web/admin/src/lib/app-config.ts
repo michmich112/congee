@@ -61,7 +61,29 @@ export type AppConfig = {
 	nip17: {
 		reject_gift_wrap_when_disabled: boolean;
 	};
+	/** NIP-77 negentropy syncing; used when NIP 77 is enabled. */
+	nip77: {
+		max_records_per_query: number;
+		session_idle_timeout_seconds: number;
+		frame_size_limit_bytes: number;
+		max_concurrent_sessions: number;
+		max_concurrent_loads: number;
+		neg_open_per_minute_per_connection: number;
+		neg_msg_per_minute_per_connection: number;
+		backpressure_req_queue_depth: number;
+		upstream_enabled: boolean;
+		upstream_pause_when_busy: boolean;
+		upstreams: Nip77Upstream[];
+	};
 	nips: { enabled: number[] };
+};
+
+export type Nip77Upstream = {
+	name: string;
+	url: string;
+	filters: unknown[];
+	interval_seconds: number;
+	enabled: boolean;
 };
 
 /** Matches `internal/config.DefaultConfig` connection_limits defaults. */
@@ -96,6 +118,20 @@ const defaultNip29 = (): AppConfig['nip29'] => ({
 
 const defaultNip17 = (): AppConfig['nip17'] => ({
 	reject_gift_wrap_when_disabled: true
+});
+
+const defaultNip77 = (): AppConfig['nip77'] => ({
+	max_records_per_query: 100_000,
+	session_idle_timeout_seconds: 7,
+	frame_size_limit_bytes: 1_048_576,
+	max_concurrent_sessions: 8,
+	max_concurrent_loads: 2,
+	neg_open_per_minute_per_connection: 6,
+	neg_msg_per_minute_per_connection: 120,
+	backpressure_req_queue_depth: 64,
+	upstream_enabled: true,
+	upstream_pause_when_busy: true,
+	upstreams: []
 });
 
 /** Ensures nip42 exists for older config files and the config form. */
@@ -141,6 +177,14 @@ export function ensureNip17Draft(cfg: AppConfig): void {
 	}
 }
 
+/** Ensures nip77 exists for older config files and the config form. */
+export function ensureNip77Draft(cfg: AppConfig): void {
+	cfg.nip77 ??= defaultNip77();
+	if (!Array.isArray(cfg.nip77.upstreams)) {
+		cfg.nip77.upstreams = [];
+	}
+}
+
 function finiteNumber(v: unknown): v is number {
 	return typeof v === 'number' && Number.isFinite(v);
 }
@@ -178,6 +222,7 @@ export function parseConfigJson(text: string): AppConfig {
 	ensureNip42Draft(cfg);
 	ensureNip29Draft(cfg);
 	ensureNip17Draft(cfg);
+	ensureNip77Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
 	ensureConnectionLimitsDraft(cfg);

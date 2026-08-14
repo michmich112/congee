@@ -20,6 +20,7 @@ import (
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nips"
+	"github.com/michmich112/congee/internal/nip77/upstream"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/version"
@@ -84,6 +85,13 @@ func main() {
 	go relay.RunImportedEventFanout(ctx, srv, storeDB, storeDB.EventNotifier, log)
 	if err := nips.LoadEnabled(cfg, srv, storeDB, log); err != nil {
 		log.Fatal().Err(err).Msg("nips load failed")
+	}
+
+	var upstreamSched *upstream.Scheduler
+	if config.NIP77Enabled(cfg) && cfg.NIP77.UpstreamEnabled && len(cfg.NIP77.Upstreams) > 0 {
+		upstreamSched = upstream.NewScheduler(cfg, storeDB, srv, log)
+		upstreamSched.Start(ctx)
+		defer upstreamSched.Stop()
 	}
 
 	audit.StartRetentionLoop(ctx, storeDB, cfg.Audit.RetentionDays, log)

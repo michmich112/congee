@@ -60,6 +60,18 @@ func DefaultConfig() *Config {
 		NIP17: NIP17Section{
 			RejectGiftWrapWhenDisabled: ptrBool(true),
 		},
+		NIP77: NIP77Section{
+			MaxRecordsPerQuery:            DefaultNIP77MaxRecordsPerQuery,
+			SessionIdleTimeoutSeconds:     DefaultNIP77SessionIdleTimeoutSeconds,
+			FrameSizeLimitBytes:           DefaultNIP77FrameSizeLimitBytes,
+			MaxConcurrentSessions:         DefaultNIP77MaxConcurrentSessions,
+			MaxConcurrentLoads:            DefaultNIP77MaxConcurrentLoads,
+			NegOpenPerMinutePerConnection: DefaultNIP77NegOpenPerMinutePerConnection,
+			NegMsgPerMinutePerConnection:  DefaultNIP77NegMsgPerMinutePerConnection,
+			BackpressureReqQueueDepth:     DefaultNIP77BackpressureReqQueueDepth,
+			UpstreamEnabled:               true,
+			UpstreamPauseWhenBusy:         true,
+		},
 	}
 }
 
@@ -222,6 +234,9 @@ func (c *Config) Validate() error {
 	}
 	if slices.Contains(c.NIPs.Enabled, 17) && !slices.Contains(c.NIPs.Enabled, 42) {
 		return errors.New("config: NIP 17 requires NIP 42 to be enabled in nips.enabled")
+	}
+	if err := validateNIP77(c); err != nil {
+		return err
 	}
 	return nil
 }

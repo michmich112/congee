@@ -30,6 +30,8 @@ func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log z
 			relay.RegisterNIP50(s, store)
 		case 29:
 			relay.RegisterNIP29(s, store)
+		case 77:
+			relay.RegisterNIP77(s, store)
 		case 17:
 			// NIP-17 registration (enabled features + reject policy) runs once after the loop.
 		default:
@@ -43,7 +45,7 @@ func LoadEnabled(cfg *config.Config, s *relay.Server, store storage.Store, log z
 // IsImplemented reports whether the relay loader can register this NIP today.
 func IsImplemented(n int) bool {
 	switch n {
-	case 1, 2, 11, 17, 29, 42, 50:
+	case 1, 2, 11, 17, 29, 42, 50, 77:
 		return true
 	default:
 		return false

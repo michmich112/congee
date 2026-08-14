@@ -322,6 +322,29 @@ func (s *Store) QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nos
 	return out, nil
 }
 
+// QueryEventSyncItems returns id+created_at rows matching filter, ascending for NIP-77.
+func (s *Store) QueryEventSyncItems(ctx context.Context, filter nostr.Filter) ([]storage.SyncItem, error) {
+	if filter.HasSearch() {
+		return nil, nil
+	}
+	type row struct {
+		ID        string `bun:"id"`
+		CreatedAt int64  `bun:"created_at"`
+	}
+	var rows []row
+	q := s.db.NewSelect().Model((*storage.EventRow)(nil)).Column("id", "created_at")
+	q = applyFilterQuery(q, &filter)
+	q = q.Order("created_at ASC", "id ASC")
+	if err := q.Scan(ctx, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]storage.SyncItem, len(rows))
+	for i, r := range rows {
+		out[i] = storage.SyncItem{ID: r.ID, CreatedAt: r.CreatedAt}
+	}
+	return out, nil
+}
+
 // DeleteEvent removes an event and its tags.
 func (s *Store) DeleteEvent(ctx context.Context, id string) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {

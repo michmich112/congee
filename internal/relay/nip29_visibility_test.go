@@ -30,6 +30,10 @@ func (s *visibilityStoreStub) QueryEvents(ctx context.Context, filters []nostr.F
 	_, _ = ctx, filters
 	return nil, nil
 }
+func (s *visibilityStoreStub) QueryEventSyncItems(ctx context.Context, filter nostr.Filter) ([]storage.SyncItem, error) {
+	_, _ = ctx, filter
+	return nil, nil
+}
 func (s *visibilityStoreStub) DeleteEvent(ctx context.Context, id string) error {
 	_, _ = ctx, id
 	return nil
