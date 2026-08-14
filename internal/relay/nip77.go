@@ -111,12 +111,6 @@ func handleNEGOpen(ctx context.Context, s *Server, c *Conn, msg *nostr.NegOpenMe
 	if len(subID) > s.cfg.MaxSubscriptionIDLength {
 		return s.sendNegBlocked(c, subID, fmt.Sprintf("blocked: %v", ErrSubscriptionIDTooLong))
 	}
-	if !c.limiter.AllowNegOpen() {
-		if s.metrics != nil {
-			s.metrics.IncNegBlocked()
-		}
-		return s.sendNegBlocked(c, subID, "blocked: rate limited")
-	}
 	if s.RelayBusyForNeg() {
 		return s.sendNegBlocked(c, subID, "blocked: relay busy")
 	}
@@ -263,7 +257,7 @@ func (s *Server) scheduleNegIdle(c *Conn, sess *negSession) {
 		case <-ctx.Done():
 			return
 		case <-time.After(timeout):
-			if _, ok := c.negSessions.remove(sess.subID); ok {
+			if ok := c.negSessions.removeIf(sess.subID, sess); ok {
 				s.negActiveSessions.Add(-1)
 				c.log.Info().Str("sub_id", sess.subID).Msg("nip77 session idle closed")
 				_ = s.sendNegErr(c, sess.subID, "closed: you took too long to respond!")
@@ -276,9 +270,6 @@ func handleNEGMsg(ctx context.Context, s *Server, c *Conn, msg *nostr.NegMsgMess
 	log := relayLogger(c, ctx)
 	if !relayNIP77Enabled(s.cfg) {
 		return s.sendNegBlocked(c, msg.SubID, "blocked: NIP-77 is not enabled")
-	}
-	if !c.limiter.AllowNegMsg() {
-		return s.sendNegBlocked(c, msg.SubID, "blocked: rate limited")
 	}
 	if s.metrics != nil {
 		s.metrics.IncNegMsg()
@@ -295,8 +286,9 @@ func handleNEGMsg(ctx context.Context, s *Server, c *Conn, msg *nostr.NegMsgMess
 	out, err := sess.neg.Reconcile(msg.MessageHex)
 	if err != nil {
 		log.Warn().Err(err).Str("sub_id", msg.SubID).Msg("nip77 neg-msg reconcile failed")
-		c.negSessions.remove(msg.SubID)
-		s.negActiveSessions.Add(-1)
+		if ok := c.negSessions.removeIf(msg.SubID, sess); ok {
+			s.negActiveSessions.Add(-1)
+		}
 		return s.sendNegErr(c, msg.SubID, "error: "+err.Error())
 	}
 	if s.metrics != nil {

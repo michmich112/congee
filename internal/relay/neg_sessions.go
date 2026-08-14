@@ -82,6 +82,24 @@ func (m *negSessionMap) remove(subID string) (*negSession, bool) {
 	return s, ok
 }
 
+// removeIf removes the entry for subID only when it is still the same
+// session instance s. This prevents a stale goroutine (idle timer) or a
+// reconcile error path from deleting a newer session that reused the subID
+// and releasing that session's counter.
+func (m *negSessionMap) removeIf(subID string, s *negSession) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.byID[subID]
+	if !ok || cur != s {
+		return false
+	}
+	if s.idleCancel != nil {
+		s.idleCancel()
+	}
+	delete(m.byID, subID)
+	return true
+}
+
 func (m *negSessionMap) count() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
