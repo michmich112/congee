@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,9 +16,19 @@ type wsClient struct {
 	conn *websocket.Conn
 }
 
-func dialUpstream(ctx context.Context, url string) (*wsClient, error) {
+func dialUpstream(ctx context.Context, rawURL string) (*wsClient, error) {
 	d := websocket.Dialer{HandshakeTimeout: 15 * time.Second}
-	conn, resp, err := d.DialContext(ctx, url, http.Header{})
+
+	// Many relay-facing nginx/caddy configs reject WebSocket upgrades that
+	// lack an Origin header (RFC 6455 §10.2; browsers always send it).
+	// Derive an https:// Origin from the wss:// URL so the upgrade is accepted.
+	origin := originFromWSURL(rawURL)
+	hdr := http.Header{}
+	if origin != "" {
+		hdr.Set("Origin", origin)
+	}
+
+	conn, resp, err := d.DialContext(ctx, rawURL, hdr)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
@@ -25,6 +36,28 @@ func dialUpstream(ctx context.Context, url string) (*wsClient, error) {
 		return nil, fmt.Errorf("dial: %w", err)
 	}
 	return &wsClient{conn: conn}, nil
+}
+
+// originFromWSURL converts ws:// → http:// and wss:// → https:// for the
+// Origin header, keeping only scheme+host (no path/query).
+// Returns empty string if the URL scheme is unrecognised.
+func originFromWSURL(rawURL string) string {
+	var httpScheme, rest string
+	switch {
+	case strings.HasPrefix(rawURL, "wss://"):
+		httpScheme = "https://"
+		rest = strings.TrimPrefix(rawURL, "wss://")
+	case strings.HasPrefix(rawURL, "ws://"):
+		httpScheme = "http://"
+		rest = strings.TrimPrefix(rawURL, "ws://")
+	default:
+		return ""
+	}
+	// Drop any path/query so Origin is scheme+host only.
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	return httpScheme + rest
 }
 
 func (c *wsClient) Close() error {

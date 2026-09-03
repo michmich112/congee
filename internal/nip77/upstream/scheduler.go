@@ -190,22 +190,29 @@ func (sch *Scheduler) runOnce(ctx context.Context, u config.NIP77Upstream) {
 }
 
 func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) (needTotal, imported int, err error) {
+	log := sch.log.With().Str("upstream", u.Name).Logger()
+
 	filters, err := parseUpstreamFilters(u.Filters)
 	if err != nil {
 		return 0, 0, err
 	}
+
+	log.Debug().Str("url", u.URL).Msg("upstream dialing")
 	c, err := dialUpstream(ctx, u.URL)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer c.Close()
+	log.Debug().Str("url", u.URL).Int("filters", len(filters)).Msg("upstream connected")
 
 	frameLimit := config.EffectiveNIP77FrameSizeLimit(sch.cfg)
-	for _, f := range filters {
-		need, imp, err := syncFilter(ctx, sch, c, f, frameLimit)
+	for i, f := range filters {
+		log.Debug().Int("filter_index", i).Interface("filter", f).Msg("upstream syncing filter")
+		need, imp, err := syncFilter(ctx, sch, log, c, f, frameLimit)
 		if err != nil {
 			return needTotal, imported, err
 		}
+		log.Debug().Int("filter_index", i).Int("need", need).Int("imported", imp).Msg("upstream filter synced")
 		needTotal += need
 		imported += imp
 	}
@@ -230,11 +237,13 @@ func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
 	return out, nil
 }
 
-func syncFilter(ctx context.Context, sch *Scheduler, c *wsClient, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
+func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsClient, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
 	local, err := sch.store.QueryEventSyncItems(ctx, filter)
 	if err != nil {
 		return 0, 0, err
 	}
+	log.Debug().Int("local_events", len(local)).Msg("upstream local vector built")
+
 	clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(local), frameLimit)
 	subID := fmt.Sprintf("up-%d", time.Now().UnixNano())
 	initial := clientNeg.Start()
@@ -242,7 +251,9 @@ func syncFilter(ctx context.Context, sch *Scheduler, c *wsClient, filter nostr.F
 	if err := c.sendJSON([]any{"NEG-OPEN", subID, filter, initial}); err != nil {
 		return 0, 0, err
 	}
+	log.Debug().Str("sub_id", subID).Msg("upstream NEG-OPEN sent")
 
+	round := 0
 	for {
 		typ, payload, err := c.readMessage(ctx)
 		if err != nil {
@@ -256,6 +267,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, c *wsClient, filter nostr.F
 			}
 			return needCount, imported, fmt.Errorf("upstream neg-err: %s", reason)
 		case "NEG-MSG":
+			round++
 			var msgHex string
 			if len(payload) >= 3 {
 				_ = json.Unmarshal(payload[2], &msgHex)
@@ -264,6 +276,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, c *wsClient, filter nostr.F
 			if err != nil {
 				return needCount, imported, err
 			}
+			log.Debug().Str("sub_id", subID).Int("round", round).Msg("upstream NEG-MSG round")
 			if out == "" {
 				_ = c.sendJSON([]any{"NEG-CLOSE", subID})
 				goto fetch
@@ -277,12 +290,16 @@ func syncFilter(ctx context.Context, sch *Scheduler, c *wsClient, filter nostr.F
 fetch:
 	needIDs := collectNeedIDs(clientNeg)
 	needCount = len(needIDs)
+	log.Debug().Str("sub_id", subID).Int("need", needCount).Int("rounds", round).Msg("upstream reconcile complete")
+
 	for _, id := range needIDs {
 		ev, err := c.reqEventByID(ctx, id)
 		if err != nil {
+			log.Debug().Str("id", id).Err(err).Msg("upstream fetch event failed")
 			continue
 		}
 		if err := ev.VerifySig(); err != nil {
+			log.Debug().Str("id", id).Err(err).Msg("upstream event sig invalid")
 			continue
 		}
 		has, err := sch.store.HasEventID(ctx, ev.ID)
@@ -290,8 +307,10 @@ fetch:
 			continue
 		}
 		if err := sch.store.SaveEvent(ctx, ev); err != nil {
+			log.Debug().Str("id", id).Err(err).Msg("upstream save event failed")
 			continue
 		}
+		log.Debug().Str("id", id).Int("kind", ev.Kind).Msg("upstream event imported")
 		imported++
 	}
 	return needCount, imported, nil
