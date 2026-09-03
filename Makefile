@@ -6,9 +6,10 @@ build:
 	mkdir -p bin && go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=$(VERSION)" -o bin/congee ./cmd/congee
 	# Turso/libSQL requires CGO_ENABLED=1 (default on macOS/Linux with gcc).
 
-# Run relay from source (no bin/congee). Loads ./.env automatically if present — see cmd/congee/main.go.
+# Run relay from source plus Vite admin UI (HMR) in one terminal, with colored [relay]/[admin] prefixes.
+# Loads ./.env automatically if present — see cmd/congee/main.go. Use CONGEE_ENV=dev so admin proxies to Vite.
 dev:
-	go run ./cmd/congee
+	bash scripts/dev.sh
 
 run: build
 	./bin/congee

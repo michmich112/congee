@@ -113,7 +113,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 				s.static.ServeHTTP(w, r)
 				return
 			}
-			http.Error(w, "Vite dev server is not running ("+target.Host+"). In another terminal run: cd web/admin && npm run dev\nOr build once with: make ui-build — then either keep CONGEE_ENV=development (fallback) or use production mode to serve only static files.", http.StatusBadGateway)
+			http.Error(w, "Vite dev server is not running ("+target.Host+"). make dev starts it automatically, or run: make ui-dev\nOr build once with: make ui-build — then either keep CONGEE_ENV=development (fallback) or use production mode to serve only static files.", http.StatusBadGateway)
 		}
 		s.devProxy = p
 	}

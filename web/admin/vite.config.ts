@@ -19,6 +19,12 @@ export default defineConfig({
 	},
 	plugins: [tailwindcss(), sveltekit()],
 	server: {
+		// Go admin proxies to http://127.0.0.1:5173. Vite's default `localhost` can
+		// bind IPv6 [::1] only, which makes that proxy fail and fall back to a stale
+		// web/admin/build (no NIP-77 settings row).
+		host: '127.0.0.1',
+		port: 5173,
+		strictPort: true,
 		proxy: {
 			'/api': { target: adminBackend, changeOrigin: true }
 		}
