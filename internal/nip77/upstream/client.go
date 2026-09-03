@@ -3,8 +3,11 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -71,10 +74,13 @@ func (c *wsClient) sendJSON(v any) error {
 	return c.conn.WriteJSON(v)
 }
 
-func (c *wsClient) readMessage(ctx context.Context) (typ string, raw []json.RawMessage, err error) {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(60 * time.Second)
+func (c *wsClient) readMessage(ctx context.Context, timeout time.Duration) (typ string, raw []json.RawMessage, err error) {
+	if timeout <= 0 {
+		timeout = time.Duration(60) * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
 	}
 	_ = c.conn.SetReadDeadline(deadline)
 	_, data, err := c.conn.ReadMessage()
@@ -104,7 +110,7 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, e
 		deadline = time.Now().Add(30 * time.Second)
 	}
 	for time.Now().Before(deadline) {
-		typ, raw, err := c.readMessage(ctx)
+		typ, raw, err := c.readMessage(ctx, 30*time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -127,4 +133,15 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, e
 		}
 	}
 	return nil, context.DeadlineExceeded
+}
+
+func isTimeoutErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }

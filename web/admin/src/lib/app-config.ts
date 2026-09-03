@@ -73,6 +73,7 @@ export type AppConfig = {
 		backpressure_req_queue_depth: number;
 		upstream_enabled: boolean;
 		upstream_pause_when_busy: boolean;
+		upstream_message_timeout_seconds: number;
 		upstreams: Nip77Upstream[];
 	};
 	nips: { enabled: number[] };
@@ -131,6 +132,7 @@ const defaultNip77 = (): AppConfig['nip77'] => ({
 	backpressure_req_queue_depth: 64,
 	upstream_enabled: true,
 	upstream_pause_when_busy: true,
+	upstream_message_timeout_seconds: 60,
 	upstreams: []
 });
 
@@ -182,6 +184,9 @@ export function ensureNip77Draft(cfg: AppConfig): void {
 	cfg.nip77 ??= defaultNip77();
 	if (!Array.isArray(cfg.nip77.upstreams)) {
 		cfg.nip77.upstreams = [];
+	}
+	if (!finiteNumber(cfg.nip77.upstream_message_timeout_seconds) || cfg.nip77.upstream_message_timeout_seconds <= 0) {
+		cfg.nip77.upstream_message_timeout_seconds = 60;
 	}
 }
 

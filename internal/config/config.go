@@ -71,6 +71,7 @@ func DefaultConfig() *Config {
 			BackpressureReqQueueDepth:     DefaultNIP77BackpressureReqQueueDepth,
 			UpstreamEnabled:               true,
 			UpstreamPauseWhenBusy:         true,
+			UpstreamMessageTimeoutSeconds: DefaultNIP77UpstreamMessageTimeoutSeconds,
 		},
 	}
 }

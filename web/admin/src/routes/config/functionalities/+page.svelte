@@ -468,6 +468,23 @@
 													}}
 												/>
 											</div>
+											<div class="space-y-2">
+												<Label for="nip77-up-msg-timeout">Upstream NEG message timeout (seconds)</Label>
+												<Input
+													id="nip77-up-msg-timeout"
+													type="number"
+													min="0"
+													disabled={!nip77Enabled}
+													value={String(draft().nip77.upstream_message_timeout_seconds)}
+													oninput={(e) => {
+														draft().nip77.upstream_message_timeout_seconds = parseIntSafe(
+															e.currentTarget.value,
+															draft().nip77.upstream_message_timeout_seconds
+														);
+														ctx.markDirty();
+													}}
+												/>
+											</div>
 										</div>
 										<div class="flex flex-wrap gap-6">
 											<div class="flex items-center gap-2">

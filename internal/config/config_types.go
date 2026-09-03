@@ -60,12 +60,12 @@ type RateLimitsSection struct {
 }
 
 type ConnectionLimitsSection struct {
-	MaxOpen                       int  `json:"max_open"`
+	MaxOpen int `json:"max_open"`
 	// MaxOpenPerIP caps concurrent WebSockets per peer IP. Zero disables the cap.
-	MaxOpenPerIP int `json:"max_open_per_ip"`
-	MaxSubscriptionsPerConnection int  `json:"max_subscriptions_per_connection"`
-	MaxFiltersPerReq              int  `json:"max_filters_per_req"`
-	ConnectionsPerMinutePerIP     int  `json:"connections_per_minute_per_ip"`
+	MaxOpenPerIP                  int `json:"max_open_per_ip"`
+	MaxSubscriptionsPerConnection int `json:"max_subscriptions_per_connection"`
+	MaxFiltersPerReq              int `json:"max_filters_per_req"`
+	ConnectionsPerMinutePerIP     int `json:"connections_per_minute_per_ip"`
 	// IdleNoEventNoSubSeconds closes connections with no client EVENT and no open REQ
 	// subscriptions after this many seconds. Zero disables the idle sweeper.
 	IdleNoEventNoSubSeconds int  `json:"idle_no_event_no_sub_seconds"`
@@ -176,17 +176,18 @@ type NIP77Upstream struct {
 
 // NIP77Section configures NIP-77 negentropy syncing (optional NIP).
 type NIP77Section struct {
-	MaxRecordsPerQuery              int             `json:"max_records_per_query"`
-	SessionIdleTimeoutSeconds       int             `json:"session_idle_timeout_seconds"`
-	FrameSizeLimitBytes             int             `json:"frame_size_limit_bytes"`
-	MaxConcurrentSessions           int             `json:"max_concurrent_sessions"`
-	MaxConcurrentLoads              int             `json:"max_concurrent_loads"`
-	NegOpenPerMinutePerConnection   int             `json:"neg_open_per_minute_per_connection"`
-	NegMsgPerMinutePerConnection    int             `json:"neg_msg_per_minute_per_connection"`
-	BackpressureReqQueueDepth       int             `json:"backpressure_req_queue_depth"`
-	UpstreamEnabled                 bool            `json:"upstream_enabled"`
-	UpstreamPauseWhenBusy           bool            `json:"upstream_pause_when_busy"`
-	Upstreams                       []NIP77Upstream `json:"upstreams"`
+	MaxRecordsPerQuery            int             `json:"max_records_per_query"`
+	SessionIdleTimeoutSeconds     int             `json:"session_idle_timeout_seconds"`
+	FrameSizeLimitBytes           int             `json:"frame_size_limit_bytes"`
+	MaxConcurrentSessions         int             `json:"max_concurrent_sessions"`
+	MaxConcurrentLoads            int             `json:"max_concurrent_loads"`
+	NegOpenPerMinutePerConnection int             `json:"neg_open_per_minute_per_connection"`
+	NegMsgPerMinutePerConnection  int             `json:"neg_msg_per_minute_per_connection"`
+	BackpressureReqQueueDepth     int             `json:"backpressure_req_queue_depth"`
+	UpstreamEnabled               bool            `json:"upstream_enabled"`
+	UpstreamPauseWhenBusy         bool            `json:"upstream_pause_when_busy"`
+	UpstreamMessageTimeoutSeconds int             `json:"upstream_message_timeout_seconds"`
+	Upstreams                     []NIP77Upstream `json:"upstreams"`
 }
 
 const (
@@ -198,4 +199,5 @@ const (
 	DefaultNIP77NegOpenPerMinutePerConnection = 6
 	DefaultNIP77NegMsgPerMinutePerConnection  = 120
 	DefaultNIP77BackpressureReqQueueDepth     = 64
+	DefaultNIP77UpstreamMessageTimeoutSeconds = 60
 )

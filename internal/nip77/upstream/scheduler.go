@@ -13,6 +13,7 @@ import (
 	"github.com/michmich112/congee/internal/nip77"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/relay"
+	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/nbd-wtf/go-nostr/nip77/negentropy"
 	"github.com/rs/zerolog"
@@ -20,15 +21,15 @@ import (
 
 // JobStatus is the last run snapshot for one upstream entry.
 type JobStatus struct {
-	Name           string `json:"name"`
-	URL            string `json:"url"`
-	Enabled        bool   `json:"enabled"`
-	LastRunUnix    int64  `json:"last_run_unix,omitempty"`
-	NextRunUnix    int64  `json:"next_run_unix,omitempty"`
-	LastError      string `json:"last_error,omitempty"`
-	LastNeedCount  int    `json:"last_need_count,omitempty"`
-	LastImported   int    `json:"last_imported,omitempty"`
-	Running        bool   `json:"running"`
+	Name          string `json:"name"`
+	URL           string `json:"url"`
+	Enabled       bool   `json:"enabled"`
+	LastRunUnix   int64  `json:"last_run_unix,omitempty"`
+	NextRunUnix   int64  `json:"next_run_unix,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+	LastNeedCount int    `json:"last_need_count,omitempty"`
+	LastImported  int    `json:"last_imported,omitempty"`
+	Running       bool   `json:"running"`
 }
 
 // Scheduler runs configured upstream pull jobs.
@@ -36,6 +37,7 @@ type Scheduler struct {
 	cfg    *config.Config
 	store  storage.Store
 	srv    *relay.Server
+	id     *relayidentity.Identity
 	log    zerolog.Logger
 	cancel context.CancelFunc
 
@@ -45,11 +47,12 @@ type Scheduler struct {
 }
 
 // NewScheduler constructs an upstream sync scheduler.
-func NewScheduler(cfg *config.Config, store storage.Store, srv *relay.Server, log zerolog.Logger) *Scheduler {
+func NewScheduler(cfg *config.Config, store storage.Store, srv *relay.Server, id *relayidentity.Identity, log zerolog.Logger) *Scheduler {
 	return &Scheduler{
 		cfg:     cfg,
 		store:   store,
 		srv:     srv,
+		id:      id,
 		log:     log.With().Str("component", "nip77-upstream").Logger(),
 		status:  make(map[string]*JobStatus),
 		running: make(map[string]bool),
@@ -203,12 +206,17 @@ func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) 
 		return 0, 0, err
 	}
 	defer c.Close()
-	log.Debug().Str("url", u.URL).Int("filters", len(filters)).Msg("upstream connected")
+	log.Info().Str("url", u.URL).Int("filters", len(filters)).Msg("upstream connected")
+
+	msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
+	if err := sch.handshakeAuth(ctx, log, c, u.URL, msgTimeout); err != nil {
+		return 0, 0, err
+	}
 
 	frameLimit := config.EffectiveNIP77FrameSizeLimit(sch.cfg)
 	for i, f := range filters {
 		log.Debug().Int("filter_index", i).Interface("filter", f).Msg("upstream syncing filter")
-		need, imp, err := syncFilter(ctx, sch, log, c, f, frameLimit)
+		need, imp, err := syncFilter(ctx, sch, log, c, u.URL, f, frameLimit)
 		if err != nil {
 			return needTotal, imported, err
 		}
@@ -237,7 +245,7 @@ func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
 	return out, nil
 }
 
-func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsClient, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
+func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsClient, relayURL string, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
 	local, err := sch.store.QueryEventSyncItems(ctx, filter)
 	if err != nil {
 		return 0, 0, err
@@ -251,12 +259,32 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 	if err := c.sendJSON([]any{"NEG-OPEN", subID, filter, initial}); err != nil {
 		return 0, 0, err
 	}
-	log.Debug().Str("sub_id", subID).Msg("upstream NEG-OPEN sent")
+	log.Info().Str("sub_id", subID).Msg("upstream NEG-OPEN sent")
 
+	msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
 	round := 0
 	for {
-		typ, payload, err := c.readMessage(ctx)
+		nextRound := round + 1
+		log.Info().
+			Str("sub_id", subID).
+			Int("waiting_for_round", nextRound).
+			Int("timeout_seconds", int(msgTimeout.Seconds())).
+			Msg("upstream waiting for NEG-MSG")
+		waitStart := time.Now()
+		typ, payload, err := c.readMessage(ctx, msgTimeout)
+		waitMS := time.Since(waitStart).Milliseconds()
 		if err != nil {
+			if isTimeoutErr(err) {
+				log.Warn().
+					Err(err).
+					Str("sub_id", subID).
+					Int("round", round).
+					Int("waiting_for_round", nextRound).
+					Int("timeout_seconds", int(msgTimeout.Seconds())).
+					Int64("waited_ms", waitMS).
+					Msg("upstream negentropy message timeout")
+				return needCount, imported, fmt.Errorf("negentropy message timeout after %s waiting for NEG-MSG (completed rounds %d)", msgTimeout, round)
+			}
 			return needCount, imported, err
 		}
 		switch typ {
@@ -265,6 +293,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 			if len(payload) >= 3 {
 				_ = json.Unmarshal(payload[2], &reason)
 			}
+			log.Warn().Str("sub_id", subID).Str("reason", reason).Int64("waited_ms", waitMS).Msg("upstream NEG-ERR")
 			return needCount, imported, fmt.Errorf("upstream neg-err: %s", reason)
 		case "NEG-MSG":
 			round++
@@ -276,7 +305,13 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 			if err != nil {
 				return needCount, imported, err
 			}
-			log.Debug().Str("sub_id", subID).Int("round", round).Msg("upstream NEG-MSG round")
+			log.Info().
+				Str("sub_id", subID).
+				Int("round", round).
+				Int("payload_hex_len", len(msgHex)).
+				Int64("waited_ms", waitMS).
+				Bool("done", out == "").
+				Msg("upstream NEG-MSG round")
 			if out == "" {
 				_ = c.sendJSON([]any{"NEG-CLOSE", subID})
 				goto fetch
@@ -284,6 +319,29 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 			if err := c.sendJSON([]any{"NEG-MSG", subID, out}); err != nil {
 				return needCount, imported, err
 			}
+			log.Info().Str("sub_id", subID).Int("round", round).Msg("upstream NEG-MSG reply sent")
+		case "AUTH":
+			challenge := jsonStringAt(payload, 1)
+			log.Info().Str("sub_id", subID).Str("challenge", challenge).Int64("waited_ms", waitMS).Msg("upstream AUTH challenge")
+			if err := sch.answerAuth(c, log, relayURL, challenge); err != nil {
+				return needCount, imported, err
+			}
+		case "OK":
+			log.Info().
+				Str("sub_id", subID).
+				Str("event_id", jsonStringAt(payload, 1)).
+				Bool("accepted", jsonBoolAt(payload, 2)).
+				Str("msg", jsonStringAt(payload, 3)).
+				Int64("waited_ms", waitMS).
+				Msg("upstream OK")
+		case "NOTICE":
+			log.Info().Str("sub_id", subID).Str("notice", jsonStringAt(payload, 1)).Int64("waited_ms", waitMS).Msg("upstream NOTICE")
+		default:
+			log.Info().
+				Str("sub_id", subID).
+				Str("typ", typ).
+				Int64("waited_ms", waitMS).
+				Msg("upstream ignored non-negentropy message")
 		}
 	}
 

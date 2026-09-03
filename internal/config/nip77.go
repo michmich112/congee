@@ -66,6 +66,10 @@ func EffectiveNIP77BackpressureReqQueueDepth(cfg *Config) int {
 	return cfg.NIP77.BackpressureReqQueueDepth
 }
 
+func EffectiveNIP77UpstreamMessageTimeout(cfg *Config) int {
+	return effectiveNIP77Int(cfgValue(cfg).NIP77.UpstreamMessageTimeoutSeconds, DefaultNIP77UpstreamMessageTimeoutSeconds)
+}
+
 func cfgValue(cfg *Config) Config {
 	if cfg == nil {
 		return Config{}
@@ -101,6 +105,9 @@ func validateNIP77(cfg *Config) error {
 	}
 	if n.BackpressureReqQueueDepth < 0 {
 		return errors.New("config: nip77.backpressure_req_queue_depth must be >= 0")
+	}
+	if n.UpstreamMessageTimeoutSeconds < 0 {
+		return errors.New("config: nip77.upstream_message_timeout_seconds must be >= 0")
 	}
 	names := make(map[string]struct{})
 	for i, u := range n.Upstreams {

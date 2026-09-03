@@ -78,6 +78,7 @@
     "backpressure_req_queue_depth": 64,
     "upstream_enabled": true,
     "upstream_pause_when_busy": true,
+    "upstream_message_timeout_seconds": 60,
     "upstreams": []
   },
   "nips": {

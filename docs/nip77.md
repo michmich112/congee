@@ -26,6 +26,7 @@ Restart the relay after changing NIPs.
 | `backpressure_req_queue_depth` | `64` | Reject NEG-OPEN when REQ queue depth exceeds (`0` = off) |
 | `upstream_enabled` | `true` | Master switch for scheduled upstream pull |
 | `upstream_pause_when_busy` | `true` | Skip upstream jobs when relay is under REQ backpressure |
+| `upstream_message_timeout_seconds` | `60` | How long to wait for each upstream `NEG-MSG` (including the first after `NEG-OPEN`). `0` = default 60. Does not apply to inbound sessions (`session_idle_timeout_seconds`) or post-sync `REQ` fetches. |
 | `upstreams[]` | `[]` | Scheduled pull from other relays |
 
 ## Protocol (inbound)
@@ -50,11 +51,11 @@ NIP-77 is **best-effort background work**:
 
 Configure `nip77.upstreams` with `wss://` URLs, JSON filters, and `interval_seconds` (minimum 60). Congee connects as a negentropy client, reconciles ID sets, and imports missing events via `REQ`.
 
-NIP-42-authenticated upstream relays are not supported in v1.
+If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 pubkey) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
 
 ## Observability
 
-- **Logs**: `nip77 neg-open complete`, blocked sessions, upstream job results (`conn_id`, `sub_id`, `record_count`, `duration_ms`)
+- **Logs**: `nip77 neg-open complete`, blocked sessions, upstream job results (`conn_id`, `sub_id`, `record_count`, `duration_ms`). Upstream NEG wait timeouts log `upstream negentropy message timeout` (`timeout_seconds`, `round`) then `upstream sync failed`.
 - **Audit log**: `neg_open`, `neg_complete`, `neg_blocked`, `neg_err`, `neg_upstream_sync_*`
 - **Metrics** (`GET /api/stats`): `neg_open_total`, `neg_msg_total`, `neg_blocked_total`, upstream import counters
 - **Live connections** (`GET /api/audit/connections`): `total_neg_open`, `total_neg_msg`, open `neg_sessions`

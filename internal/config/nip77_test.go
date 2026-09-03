@@ -18,6 +18,21 @@ func TestValidateNIP77Upstream(t *testing.T) {
 	}
 }
 
+func TestEffectiveNIP77UpstreamMessageTimeout(t *testing.T) {
+	if got := config.EffectiveNIP77UpstreamMessageTimeout(nil); got != config.DefaultNIP77UpstreamMessageTimeoutSeconds {
+		t.Fatalf("nil cfg: got %d", got)
+	}
+	c := config.DefaultConfig()
+	c.NIP77.UpstreamMessageTimeoutSeconds = 0
+	if got := config.EffectiveNIP77UpstreamMessageTimeout(c); got != 60 {
+		t.Fatalf("zero: got %d want 60", got)
+	}
+	c.NIP77.UpstreamMessageTimeoutSeconds = 120
+	if got := config.EffectiveNIP77UpstreamMessageTimeout(c); got != 120 {
+		t.Fatalf("explicit: got %d want 120", got)
+	}
+}
+
 func TestNIP77Enabled(t *testing.T) {
 	c := config.DefaultConfig()
 	if config.NIP77Enabled(c) {
