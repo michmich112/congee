@@ -11,9 +11,9 @@ import (
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 func testPostgresDSN(t *testing.T) string {
@@ -25,18 +25,42 @@ func testPostgresDSN(t *testing.T) string {
 	return d
 }
 
-func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
-	if !sqliteshim.HasDriver() {
-		t.Skip("sqliteshim not available")
+func openLibsqlTestDB(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
 	}
+	db, err := sql.Open("libsql", sqlitewriter.NormalizeLibsqlDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func execLibsqlTest(t *testing.T, db *sql.DB, q string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, q); err == nil {
+		return
+	} else if !strings.Contains(err.Error(), "Execute returned rows") {
+		t.Fatalf("legacy ddl: %v", err)
+	}
+	var ignored string
+	if err := db.QueryRowContext(ctx, q).Scan(&ignored); err != nil && err != sql.ErrNoRows {
+		t.Fatalf("legacy ddl: %v", err)
+	}
+}
+
+func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	eventsPath := filepath.Join(dir, "legacy-events.db")
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+eventsPath+"?cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	sqldb := openLibsqlTestDB(t, eventsPath)
 	legacyDDL := []string{
 		`CREATE TABLE audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,9 +105,7 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 		`PRAGMA user_version = 6`,
 	}
 	for _, q := range legacyDDL {
-		if _, err := sqldb.ExecContext(ctx, q); err != nil {
-			t.Fatalf("legacy ddl: %v", err)
-		}
+		execLibsqlTest(t, sqldb, q)
 	}
 	_ = sqldb.Close()
 
@@ -116,10 +138,7 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	}
 
 	var userVer int
-	checkDB, err := sql.Open(sqliteshim.ShimName, "file:"+eventsPath+"?cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkDB := openLibsqlTestDB(t, eventsPath)
 	defer checkDB.Close()
 	if err := checkDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
 		t.Fatal(err)
@@ -139,10 +158,7 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 
 	metaPath := filepath.Join(dir, "congee-meta.db")
 	var metaAudit int
-	metaDB, err := sql.Open(sqliteshim.ShimName, "file:"+metaPath+"?cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	metaDB := openLibsqlTestDB(t, metaPath)
 	defer metaDB.Close()
 	if err := metaDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_log`).Scan(&metaAudit); err != nil {
 		t.Fatalf("meta db: %v", err)
@@ -160,18 +176,12 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 }
 
 func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
-	if !sqliteshim.HasDriver() {
-		t.Skip("sqliteshim not available")
-	}
 	ctx := context.Background()
 	dir := t.TempDir()
 	eventsPath := filepath.Join(dir, "legacy-events.db")
 	metaPath := filepath.Join(dir, "congee-meta.db")
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+eventsPath+"?cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	sqldb := openLibsqlTestDB(t, eventsPath)
 	legacyDDL := []string{
 		`CREATE TABLE audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,9 +201,7 @@ func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
 		`PRAGMA user_version = 6`,
 	}
 	for _, q := range legacyDDL {
-		if _, err := sqldb.ExecContext(ctx, q); err != nil {
-			t.Fatalf("legacy ddl: %v", err)
-		}
+		execLibsqlTest(t, sqldb, q)
 	}
 	_ = sqldb.Close()
 

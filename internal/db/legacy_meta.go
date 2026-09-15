@@ -12,7 +12,6 @@ import (
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 type legacyCopyStats struct {
@@ -26,36 +25,10 @@ func (s legacyCopyStats) copied() bool {
 	return s.audit > 0 || s.changelog > 0 || s.buckets > 0 || s.wsSessions > 0
 }
 
-// migrateLegacyMetaSQLite copies operational metadata from a pre-v7 events SQLite file
+// migrateLegacyMetaSQLite copies operational metadata from a pre-v7 events file
 // into the meta store before the event store runs schema v7 (which drops meta tables).
 func migrateLegacyMetaSQLite(ctx context.Context, eventsDSN, metaPath string, meta *sqlitemeta.Store, log zerolog.Logger) error {
-	if !sqliteshim.HasDriver() {
-		return errors.New("legacy meta: sqliteshim driver not available")
-	}
-	sqldb, err := sql.Open(sqliteshim.ShimName, normalizeLegacyDSN(eventsDSN))
-	if err != nil {
-		return fmt.Errorf("legacy meta: open events db: %w", err)
-	}
-	defer func() { _ = sqldb.Close() }()
-
-	if err := sqldb.PingContext(ctx); err != nil {
-		return fmt.Errorf("legacy meta: ping events db: %w", err)
-	}
-
-	var userVer int
-	if err := sqldb.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
-		return fmt.Errorf("legacy meta: read user_version: %w", err)
-	}
-	if userVer >= 7 {
-		return nil
-	}
-
-	stats := &legacyCopyStats{}
-	if err := copyAllLegacyMeta(ctx, sqldb, meta, false, stats); err != nil {
-		return err
-	}
-	logLegacyCopySummary(log, metaPath, stats)
-	return nil
+	return migrateLegacyMetaTurso(ctx, eventsDSN, metaPath, meta, log)
 }
 
 // migrateLegacyMetaTurso copies operational metadata from a pre-v7 Turso/libSQL events file
@@ -88,17 +61,6 @@ func migrateLegacyMetaTurso(ctx context.Context, eventsDSN, metaPath string, met
 	}
 	logLegacyCopySummary(log, metaPath, stats)
 	return nil
-}
-
-func normalizeLegacyDSN(dsn string) string {
-	dsn = strings.TrimSpace(dsn)
-	if dsn == "" {
-		return "file:congee.db?cache=shared"
-	}
-	if strings.HasPrefix(dsn, "file:") {
-		return dsn
-	}
-	return "file:" + dsn + "?cache=shared"
 }
 
 func legacyTableExists(ctx context.Context, legacy *sql.DB, table string, postgres bool) (bool, error) {

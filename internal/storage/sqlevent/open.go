@@ -2,7 +2,6 @@ package sqlevent
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,11 +9,7 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun"
 )
-
-// HandlesOpener opens a database and returns sql.DB + bun.DB handles.
-type HandlesOpener func(ctx context.Context, dsn string, log zerolog.Logger) (*sql.DB, *bun.DB, error)
 
 // OpenConfig configures opening a SQLite-compatible event store (sqlite or turso/libsql).
 type OpenConfig struct {
@@ -22,7 +17,7 @@ type OpenConfig struct {
 	DSN           string
 	Notifier      storage.EventNotifier
 	Log           zerolog.Logger
-	OpenHandles   HandlesOpener
+	OpenHandles   sqlitewriter.HandlesOpener
 	ResolveDBPath func(dsn string) (string, error)
 }
 
