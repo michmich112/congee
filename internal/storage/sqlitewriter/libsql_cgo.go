@@ -31,8 +31,8 @@ func OpenLibsqlHandles(ctx context.Context, dsn string, log zerolog.Logger) (*sq
 	if err != nil {
 		return nil, nil, fmt.Errorf("sql.Open libsql: %w", err)
 	}
-	sqldb.SetMaxOpenConns(8)
-	sqldb.SetMaxIdleConns(8)
+	sqldb.SetMaxOpenConns(1)
+	sqldb.SetMaxIdleConns(1)
 
 	if err := sqldb.PingContext(ctx); err != nil {
 		_ = sqldb.Close()

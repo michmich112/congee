@@ -2,6 +2,7 @@ package sqlitewriter
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -12,19 +13,34 @@ import (
 	"github.com/uptrace/bun"
 )
 
+func newTestQueue(t *testing.T, dsn string, opts Options) *Queue {
+	t.Helper()
+	sqldb, db, err := OpenHandles(context.Background(), dsn, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Engine == "" {
+		opts.Engine = "test"
+	}
+	if opts.Log.GetLevel() == zerolog.NoLevel {
+		opts.Log = zerolog.Nop()
+	}
+	opts.DSN = dsn
+	if opts.OpenHandles == nil {
+		opts.OpenHandles = OpenHandles
+	}
+	return New(sqldb, db, opts)
+}
+
 func TestRunWriteCompletes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	sqldb, db, err := OpenHandles(ctx, dir+"/test.db", zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := New(sqldb, db, Options{Engine: "test", Log: zerolog.Nop(), DSN: dir + "/test.db"})
+	q := newTestQueue(t, dir+"/test.db", Options{})
 	defer func() { _ = q.Close() }()
 
 	var ran atomic.Bool
-	err = q.RunWrite(ctx, "test-op", func(ctx context.Context, db bun.IDB) error {
+	err := q.RunWrite(ctx, "test-op", func(ctx context.Context, db bun.IDB) error {
 		ran.Store(true)
 		return nil
 	})
@@ -40,19 +56,10 @@ func TestRunWritePanicRecovered(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	sqldb, db, err := OpenHandles(ctx, dir+"/panic.db", zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := New(sqldb, db, Options{
-		Engine:      "test",
-		Log:         zerolog.Nop(),
-		DSN:         dir + "/panic.db",
-		TaskTimeout: 5 * time.Second,
-	})
+	q := newTestQueue(t, dir+"/panic.db", Options{TaskTimeout: 5 * time.Second})
 	defer func() { _ = q.Close() }()
 
-	err = q.RunWrite(ctx, "panic-op", func(ctx context.Context, db bun.IDB) error {
+	err := q.RunWrite(ctx, "panic-op", func(ctx context.Context, db bun.IDB) error {
 		panic("boom")
 	})
 	if err == nil {
@@ -75,16 +82,13 @@ func TestRunWriteHardTimeoutUnblocksWriter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	sqldb, db, err := OpenHandles(ctx, dir+"/hard-timeout.db", zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
+	dsn := dir + "/hard-timeout.db"
+	var reconnects atomic.Int32
+	opener := func(ctx context.Context, dsn string, log zerolog.Logger) (*sql.DB, *bun.DB, error) {
+		reconnects.Add(1)
+		return OpenHandles(ctx, dsn, log)
 	}
-	q := New(sqldb, db, Options{
-		Engine:      "test",
-		Log:         zerolog.Nop(),
-		DSN:         dir + "/hard-timeout.db",
-		TaskTimeout: 50 * time.Millisecond,
-	})
+	q := newTestQueue(t, dsn, Options{TaskTimeout: 50 * time.Millisecond, OpenHandles: opener})
 	defer func() { _ = q.Close() }()
 
 	inTx := make(chan struct{})
@@ -109,35 +113,52 @@ func TestRunWriteHardTimeoutUnblocksWriter(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("hard timeout did not return")
 	}
+	if n := reconnects.Load(); n != 0 {
+		t.Fatalf("reconnect must not run while task is in flight, got %d", n)
+	}
 
-	err = q.RunWrite(ctx, "after-hard-timeout", func(ctx context.Context, db bun.IDB) error {
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("writer not healthy after hard timeout: %v", err)
+	var secondStarted atomic.Bool
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- q.RunWrite(ctx, "after-hard-timeout", func(ctx context.Context, db bun.IDB) error {
+			secondStarted.Store(true)
+			return nil
+		})
+	}()
+
+	select {
+	case err := <-secondDone:
+		t.Fatalf("follow-up write must not start until stuck task is released: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if secondStarted.Load() {
+		t.Fatal("follow-up write ran while stuck task still in flight")
+	}
+	if n := reconnects.Load(); n != 0 {
+		t.Fatalf("reconnect must not run while task is in flight, got %d", n)
 	}
 
 	close(release)
+
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatalf("writer not healthy after hard timeout: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("follow-up write did not run after stuck task released")
+	}
 }
 
 func TestRunWriteTimeout(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	sqldb, db, err := OpenHandles(ctx, dir+"/timeout.db", zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := New(sqldb, db, Options{
-		Engine:      "test",
-		Log:         zerolog.Nop(),
-		DSN:         dir + "/timeout.db",
-		TaskTimeout: 50 * time.Millisecond,
-	})
+	q := newTestQueue(t, dir+"/timeout.db", Options{TaskTimeout: 50 * time.Millisecond})
 	defer func() { _ = q.Close() }()
 
 	start := time.Now()
-	err = q.RunWrite(ctx, "slow-op", func(ctx context.Context, db bun.IDB) error {
+	err := q.RunWrite(ctx, "slow-op", func(ctx context.Context, db bun.IDB) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -160,16 +181,9 @@ func TestEnqueueBlocksUntilSlotFrees(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
-	sqldb, db, err := OpenHandles(ctx, dir+"/full.db", zerolog.Nop())
-	if err != nil {
-		t.Fatal(err)
-	}
 	block := make(chan struct{})
 	writerBusy := make(chan struct{})
-	q := New(sqldb, db, Options{
-		Engine:        "test",
-		Log:           zerolog.Nop(),
-		DSN:           dir + "/full.db",
+	q := newTestQueue(t, dir+"/full.db", Options{
 		QueueCapacity: 1,
 		TaskTimeout:   time.Second,
 	})

@@ -42,9 +42,10 @@ func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 		return nil, fmt.Errorf("sqlitemeta: resolve db path: %w", err)
 	}
 	wq := sqlitewriter.New(sqldb, db, sqlitewriter.Options{
-		Engine: "sqlitemeta",
-		Log:    log,
-		DSN:    normDSN,
+		Engine:      "sqlitemeta",
+		Log:         log,
+		DSN:         normDSN,
+		OpenHandles: sqlitewriter.OpenHandles,
 	})
 	return &Store{wq: wq, dbPath: dbPath}, nil
 }

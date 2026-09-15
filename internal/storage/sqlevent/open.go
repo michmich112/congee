@@ -65,9 +65,10 @@ func Open(ctx context.Context, cfg OpenConfig) (*Store, error) {
 		return nil, fmt.Errorf("%s: resolve db path: %w", engine, err)
 	}
 	wq := sqlitewriter.New(sqldb, db, sqlitewriter.Options{
-		Engine: engine,
-		Log:    log,
-		DSN:    normDSN,
+		Engine:      engine,
+		Log:         log,
+		DSN:         normDSN,
+		OpenHandles: cfg.OpenHandles,
 	})
 	s := &Store{
 		wq:       wq,
