@@ -109,7 +109,7 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	}
 	_ = sqldb.Close()
 
-	sec := config.DatabaseSection{Type: "sqlite", DSN: eventsPath}
+	sec := config.DatabaseSection{Type: "turso", DSN: eventsPath}
 	h, err := Open(ctx, sec, "", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
 	}
 	_ = sqldb.Close()
 
-	sec := config.DatabaseSection{Type: "sqlite", DSN: eventsPath}
+	sec := config.DatabaseSection{Type: "turso", DSN: eventsPath}
 	h, err := Open(ctx, sec, "", zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)

@@ -10,7 +10,7 @@ import (
 )
 
 // ApplyBootstrapEnvOverrides mutates c from process environment after JSON load.
-// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (SQLite events + meta paths),
+// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (Turso events + meta paths),
 // then re-validates c.
 func ApplyBootstrapEnvOverrides(c *Config) error {
 	if c == nil {
@@ -31,7 +31,7 @@ func ApplyBootstrapEnvOverrides(c *Config) error {
 		case "", "sqlite", "turso":
 			c.Database.Type = strings.TrimSpace(c.Database.Type)
 			if c.Database.Type == "" {
-				c.Database.Type = "sqlite"
+				c.Database.Type = "turso"
 			}
 			clean := filepath.Clean(dir)
 			c.Database.DSN = filepath.Join(clean, "congee.db")

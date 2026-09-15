@@ -2,16 +2,21 @@ package db
 
 import (
 	"context"
+	"errors"
 
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 
-// OpenForTest opens a SQLite events database plus meta sidecar for tests.
+// OpenForTest opens a Turso/libSQL events database plus meta sidecar for tests.
 func OpenForTest(ctx context.Context, eventsDSN string, log zerolog.Logger) (*Handle, error) {
-	sec := config.DatabaseSection{Type: "sqlite", DSN: eventsDSN}
-	return openSQLite(ctx, sec, log)
+	if !turso.HasDriver() {
+		return nil, errors.New("turso: libsql driver not available (build with CGO_ENABLED=1)")
+	}
+	sec := config.DatabaseSection{Type: "turso", DSN: eventsDSN}
+	return openTurso(ctx, sec, log)
 }
 
 // OpenTestStore is a convenience wrapper returning the composed Store and close func.

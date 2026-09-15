@@ -61,7 +61,7 @@ func TestApplyBootstrapEnvOverrides_sqliteEmptyTypeUsesDataDir(t *testing.T) {
 	if err := ApplyBootstrapEnvOverrides(c); err != nil {
 		t.Fatal(err)
 	}
-	if c.Database.Type != "sqlite" {
+	if c.Database.Type != "turso" {
 		t.Fatalf("type: %q", c.Database.Type)
 	}
 	want := filepath.Join(dir, "congee.db")

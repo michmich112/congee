@@ -48,6 +48,12 @@ func main() {
 	if err := config.ApplyBootstrapEnvOverrides(cfg); err != nil {
 		panic("config: " + err.Error())
 	}
+	promotedSQLite := config.PromoteLegacySQLite(cfg)
+	if promotedSQLite {
+		if err := config.WriteConfigAtomic(path, cfg); err != nil {
+			panic("config: promote sqlite to turso: " + err.Error())
+		}
+	}
 	if err := config.EnsureRelayInstanceIDFile(cfg, path); err != nil {
 		panic("config: ensure relay instance id: " + err.Error())
 	}
@@ -61,6 +67,9 @@ func main() {
 		panic("relay identity: " + err.Error())
 	}
 	log := setupLogger(cfg)
+	if promotedSQLite {
+		log.Info().Int("dsn_len", len(cfg.Database.DSN)).Msg("sqlite config promoted to turso")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
