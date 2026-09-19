@@ -28,6 +28,9 @@ func TestMigrationSourceMatchesConfig(t *testing.T) {
 	if !migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "turso", DSN: "./congee.db"}) {
 		t.Fatal("expected match for empty type as turso")
 	}
+	if !migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "", DSN: "./congee.db"}) {
+		t.Fatal("expected match for empty source type")
+	}
 	if !migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "sqlite", DSN: "./congee.db"}) {
 		t.Fatal("expected match leftover sqlite as turso")
 	}

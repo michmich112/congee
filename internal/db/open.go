@@ -33,7 +33,7 @@ func (h *Handle) Close() error {
 // log is passed to the store implementation for optional connector debug (use zerolog.Nop() when silent).
 func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID string, log zerolog.Logger) (*Handle, error) {
 	switch sec.Type {
-	case "", "sqlite", "turso":
+	case "", "sqlite", config.DefaultDatabaseType:
 		return openTurso(ctx, sec, log)
 	case "postgres":
 		metaDSN := ResolveMetaDSN(sec)
