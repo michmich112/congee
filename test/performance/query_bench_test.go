@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/michmich112/congee/internal/nostr"
-	sq "github.com/michmich112/congee/internal/storage/sqlite"
+	sq "github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 

@@ -1,4 +1,4 @@
-package sqlite
+package turso
 
 import (
 	"context"
@@ -11,12 +11,10 @@ import (
 )
 
 func TestNIP29StoreQueries(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := Open(ctx, filepath.Join(dir, "nip29.db"), nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}

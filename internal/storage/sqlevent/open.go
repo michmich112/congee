@@ -11,9 +11,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// OpenConfig configures opening a SQLite-compatible event store (sqlite or turso/libsql).
+// OpenConfig configures opening a SQLite-compatible event store (turso/libsql).
 type OpenConfig struct {
-	Engine        string // "sqlite" or "turso"
+	Engine        string // "turso"
 	DSN           string
 	Notifier      storage.EventNotifier
 	Log           zerolog.Logger
@@ -31,7 +31,7 @@ func Open(ctx context.Context, cfg OpenConfig) (*Store, error) {
 	}
 	engine := strings.TrimSpace(cfg.Engine)
 	if engine == "" {
-		engine = "sqlite"
+		engine = "turso"
 	}
 	log := cfg.Log.With().Str("engine", engine).Logger()
 	if cfg.Notifier == nil {

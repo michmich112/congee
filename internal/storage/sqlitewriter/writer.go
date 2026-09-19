@@ -185,6 +185,9 @@ func (q *Queue) Close() error {
 	q.wg.Wait()
 	q.dbMu.Lock()
 	defer q.dbMu.Unlock()
+	if q.sqldb != nil {
+		_ = ExecSQL(context.Background(), q.sqldb, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	}
 	if q.db != nil {
 		_ = q.db.Close()
 		q.db = nil

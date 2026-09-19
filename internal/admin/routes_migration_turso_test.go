@@ -16,7 +16,6 @@ import (
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
 	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
@@ -24,7 +23,7 @@ import (
 
 const migrationTursoHTTPTestPassword = "migration-turso-test-secret"
 
-func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
+func TestHandleMigrationStartTursoToTurso(t *testing.T) {
 	if !turso.HasDriver() {
 		t.Skip("libsql driver not available")
 	}
@@ -35,11 +34,8 @@ func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.json")
 	metaPath := filepath.Join(dir, "meta.db")
 
-	src, err := sqlite.Open(ctx, srcPath, nil, zerolog.Nop())
+	src, err := turso.Open(ctx, srcPath, nil, zerolog.Nop())
 	if err != nil {
-		if strings.Contains(err.Error(), "not available") {
-			t.Skip(err)
-		}
 		t.Fatal(err)
 	}
 	ev := &nostr.Event{
@@ -47,7 +43,7 @@ func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
 		PubKey:    strings.Repeat("b", 64),
 		CreatedAt: 1,
 		Kind:      1,
-		Content:   "via admin native",
+		Content:   "via admin migrate",
 		Sig:       strings.Repeat("c", 128),
 	}
 	if err := src.SaveEvent(ctx, ev); err != nil {
@@ -58,7 +54,7 @@ func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
 	}
 
 	cfg := config.DefaultConfig()
-	cfg.Database.Type = "sqlite"
+	cfg.Database.Type = "turso"
 	cfg.Database.DSN = srcPath
 	cfg.Database.MetaDSN = metaPath
 	if err := config.WriteConfigAtomic(cfgPath, cfg); err != nil {
@@ -77,9 +73,9 @@ func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
 	h := RequireAdminAuth(migrationTursoHTTPTestPassword, http.StripPrefix("/api", api))
 
 	payload := map[string]any{
-		"source":               map[string]string{"type": "sqlite", "dsn": srcPath},
-		"target":               map[string]string{"type": "turso", "dsn": dstPath},
-		"make_target_primary":  false,
+		"source":              map[string]string{"type": "turso", "dsn": srcPath},
+		"target":              map[string]string{"type": "turso", "dsn": dstPath},
+		"make_target_primary": false,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -138,7 +134,7 @@ func TestHandleMigrationStartSQLiteToTursoNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 1 || out[0].Content != "via admin native" {
+	if len(out) != 1 || out[0].Content != "via admin migrate" {
 		t.Fatalf("query dst: %+v", out)
 	}
 }

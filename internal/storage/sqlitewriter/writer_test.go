@@ -15,7 +15,10 @@ import (
 
 func newTestQueue(t *testing.T, dsn string, opts Options) *Queue {
 	t.Helper()
-	sqldb, db, err := OpenHandles(context.Background(), dsn, zerolog.Nop())
+	if !HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
+	}
+	sqldb, db, err := OpenLibsqlHandles(context.Background(), dsn, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +30,7 @@ func newTestQueue(t *testing.T, dsn string, opts Options) *Queue {
 	}
 	opts.DSN = dsn
 	if opts.OpenHandles == nil {
-		opts.OpenHandles = OpenHandles
+		opts.OpenHandles = OpenLibsqlHandles
 	}
 	return New(sqldb, db, opts)
 }
@@ -86,7 +89,7 @@ func TestRunWriteHardTimeoutUnblocksWriter(t *testing.T) {
 	var reconnects atomic.Int32
 	opener := func(ctx context.Context, dsn string, log zerolog.Logger) (*sql.DB, *bun.DB, error) {
 		reconnects.Add(1)
-		return OpenHandles(ctx, dsn, log)
+		return OpenLibsqlHandles(ctx, dsn, log)
 	}
 	q := newTestQueue(t, dsn, Options{TaskTimeout: 50 * time.Millisecond, OpenHandles: opener})
 	defer func() { _ = q.Close() }()

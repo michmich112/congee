@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -72,21 +71,10 @@ func TestPromoteLegacySQLitePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Database.Type != "sqlite" {
-		t.Fatalf("load should keep sqlite until promote, got %q", loaded.Database.Type)
+	if loaded.Database.Type != "turso" {
+		t.Fatalf("write/load should persist turso, got %q", loaded.Database.Type)
 	}
-	if !PromoteLegacySQLite(loaded) {
-		t.Fatal("expected promote")
+	if loaded.Database.DSN != c.Database.DSN {
+		t.Fatalf("dsn rewritten: %q", loaded.Database.DSN)
 	}
-	if err := WriteConfigAtomic(path, loaded); err != nil {
-		t.Fatal(err)
-	}
-	again, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Database.Type != "turso" {
-		t.Fatalf("persisted type: %q", again.Database.Type)
-	}
-	_ = os.Remove(path)
 }

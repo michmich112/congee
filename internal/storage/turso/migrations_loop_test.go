@@ -1,30 +1,37 @@
-package sqlite
+package turso
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
-
-	"github.com/uptrace/bun/driver/sqliteshim"
-	_ "github.com/uptrace/bun/driver/sqliteshim"
 )
+
+func execOnLibsqlFile(t *testing.T, ctx context.Context, path string, stmts []string) {
+	t.Helper()
+	sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sqldb.Close() }()
+	for _, q := range stmts {
+		if err := sqlitewriter.ExecSQL(ctx, sqldb, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 // TestRunMigrationsLoopsV6ToV7 builds a v7 file, re-adds ws_connection_sessions with user_version 6, and checks Open drops meta tables.
 func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	log := zerolog.Nop()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "loop.db")
 
 	s, err := Open(ctx, path, nil, log)
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,11 +39,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stmts := []string{
+	execOnLibsqlFile(t, ctx, path, []string{
 		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			conn_id TEXT NOT NULL,
@@ -57,15 +60,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 			pubkey TEXT NOT NULL DEFAULT ''
 		)`,
 		`PRAGMA user_version = 6`,
-	}
-	for _, q := range stmts {
-		if _, err := sqldb.ExecContext(ctx, q); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := sqldb.Close(); err != nil {
-		t.Fatal(err)
-	}
+	})
 
 	s2, err := Open(ctx, path, nil, log)
 	if err != nil {
@@ -91,15 +86,13 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 
 // TestRunMigrationsLoopsFakeV5ToV7 keeps a v7 events schema but sets user_version to 5 with legacy meta tables present.
 func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	log := zerolog.Nop()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "multistep.db")
 
 	s, err := Open(ctx, path, nil, log)
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,11 +100,7 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := []string{
+	execOnLibsqlFile(t, ctx, path, []string{
 		`CREATE TABLE IF NOT EXISTS audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			created_at INTEGER NOT NULL,
@@ -148,15 +137,7 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 			subs_json TEXT NOT NULL DEFAULT '[]'
 		)`,
 		`PRAGMA user_version = 5`,
-	}
-	for _, q := range legacy {
-		if _, err := sqldb.ExecContext(ctx, q); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := sqldb.Close(); err != nil {
-		t.Fatal(err)
-	}
+	})
 
 	s2, err := Open(ctx, path, nil, log)
 	if err != nil {
@@ -181,15 +162,13 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 
 // TestPreflightMigrationTargetCurrent checks preflight on a fresh Open database.
 func TestPreflightMigrationTargetCurrent(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	log := zerolog.Nop()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pf.db")
 
 	s, err := Open(ctx, path, nil, log)
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}

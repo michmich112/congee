@@ -2,31 +2,30 @@ package turso
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/nostr"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
-func TestTursoCRUD(t *testing.T) {
+func skipNoDriver(t *testing.T) {
+	t.Helper()
 	if !HasDriver() {
 		t.Skip("libsql driver not available")
 	}
+}
+
+func TestTursoCRUD(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "t.db")
 	st, err := Open(ctx, path, nil, zerolog.Nop())
 	if err != nil {
-		if strings.Contains(err.Error(), "not available") {
-			t.Skip(err)
-		}
 		t.Fatal(err)
 	}
 	defer st.Close()
@@ -57,9 +56,7 @@ func nostrRepeat(c string, n int) string {
 }
 
 func TestPreflightEmptyTurso(t *testing.T) {
-	if !HasDriver() {
-		t.Skip("libsql driver not available")
-	}
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new.db")
@@ -70,18 +67,12 @@ func TestPreflightEmptyTurso(t *testing.T) {
 }
 
 func TestPreflightCurrentTurso(t *testing.T) {
-	if !HasDriver() {
-		t.Skip("libsql driver not available")
-	}
+	skipNoDriver(t)
 	ctx := context.Background()
 	log := zerolog.Nop()
 	path := filepath.Join(t.TempDir(), "current.db")
-	// Seed via modernc SQLite then preflight with libSQL (same on-disk schema).
-	src, err := sqlite.Open(ctx, path, nil, log)
+	src, err := Open(ctx, path, nil, log)
 	if err != nil {
-		if strings.Contains(err.Error(), "not available") {
-			t.Skip(err)
-		}
 		t.Fatal(err)
 	}
 	if err := src.Close(); err != nil {
@@ -101,28 +92,23 @@ func TestPreflightCurrentTurso(t *testing.T) {
 }
 
 func TestPreflightBehindTurso(t *testing.T) {
-	if !HasDriver() {
-		t.Skip("libsql driver not available")
-	}
+	skipNoDriver(t)
 	ctx := context.Background()
 	log := zerolog.Nop()
 	path := filepath.Join(t.TempDir(), "behind.db")
-	src, err := sqlite.Open(ctx, path, nil, log)
+	src, err := Open(ctx, path, nil, log)
 	if err != nil {
-		if strings.Contains(err.Error(), "not available") {
-			t.Skip(err)
-		}
 		t.Fatal(err)
 	}
 	if err := src.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, sqlitewriter.NormalizeDSN(path))
+	sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sqldb.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, 6)); err != nil {
+	if err := sqlitewriter.ExecSQL(ctx, sqldb, fmt.Sprintf(`PRAGMA user_version = %d`, 6)); err != nil {
 		_ = sqldb.Close()
 		t.Fatal(err)
 	}

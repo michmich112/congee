@@ -19,6 +19,7 @@ func ParseConfigJSON(data []byte) (*Config, error) {
 
 // WriteConfigAtomic writes validated config as indented JSON using temp file + rename.
 func WriteConfigAtomic(path string, c *Config) error {
+	PromoteLegacySQLite(c)
 	if err := c.Validate(); err != nil {
 		return err
 	}
