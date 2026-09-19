@@ -11,7 +11,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// Store is a SQLite-backed storage.MetaStore with a single-writer queue and concurrent reads.
+// Store is a libSQL-backed storage.MetaStore with a single-writer queue and serialized reads.
 type Store struct {
 	wq     *sqlitewriter.Queue
 	dbPath string
@@ -19,14 +19,14 @@ type Store struct {
 
 var _ storage.MetaStore = (*Store)(nil)
 
-// Open opens the meta SQLite database (WAL, Bun + sqliteshim), runs migrations, and starts the writer loop.
+// Open opens the meta libSQL database (WAL, Bun + go-libsql), runs migrations, and starts the writer loop.
 func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 	log = log.With().Str("engine", "sqlitemeta").Logger()
 
 	normDSN := normalizeDSN(dsn)
 
 	log.Debug().Int("dsn_len", len(strings.TrimSpace(dsn))).Msg("open: sql.Open")
-	sqldb, db, err := sqlitewriter.OpenHandles(ctx, normDSN, log)
+	sqldb, db, err := sqlitewriter.OpenLibsqlHandles(ctx, normDSN, log)
 	if err != nil {
 		return nil, fmt.Errorf("sqlitemeta: %w", err)
 	}
@@ -42,9 +42,10 @@ func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 		return nil, fmt.Errorf("sqlitemeta: resolve db path: %w", err)
 	}
 	wq := sqlitewriter.New(sqldb, db, sqlitewriter.Options{
-		Engine: "sqlitemeta",
-		Log:    log,
-		DSN:    normDSN,
+		Engine:      "sqlitemeta",
+		Log:         log,
+		DSN:         normDSN,
+		OpenHandles: sqlitewriter.OpenLibsqlHandles,
 	})
 	return &Store{wq: wq, dbPath: dbPath}, nil
 }

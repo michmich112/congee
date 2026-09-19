@@ -1,6 +1,6 @@
 # Turso (libSQL) storage
 
-Congee uses **Turso/libSQL** for local on-disk event storage by default via [go-libsql](https://github.com/tursodatabase/go-libsql). The stock config sets:
+Congee stores local files with **Turso/libSQL** via [go-libsql](https://github.com/tursodatabase/go-libsql). This is the default engine (`database.type` is `"turso"`). Set this in the JSON config:
 
 ```json
 "database": {
@@ -10,25 +10,23 @@ Congee uses **Turso/libSQL** for local on-disk event storage by default via [go-
 }
 ```
 
-- `database.type` must be `"turso"` (or omit for the same default).
-- `database.dsn` is a **local file path** for the libSQL database (same layout as SQLite events schema).
-- Operational metadata (`audit_log`, `config_changelog`, metrics, WS sessions) stays in the **SQLite meta sidecar** (`meta_dsn`), like PostgreSQL.
+- `database.type` must be `"turso"` (or leftover `"sqlite"` / empty, which is rewritten to `"turso"` on boot and on admin config writes).
+- `database.dsn` is a **local file path** for the libSQL events database.
+- Operational metadata (`audit_log`, `config_changelog`, metrics, WS sessions) is also libSQL, in `meta_dsn` (`congee-meta.db`).
+
+SQLite (modernc) is no longer a supported engine. Existing on-disk files keep the same path; Congee opens them with go-libsql.
 
 ## Build requirements
 
-The Turso driver uses CGO and links libSQL native libraries. Build with `CGO_ENABLED=1` and a C toolchain (gcc/clang). Supported platforms match go-libsql: linux/darwin amd64 and arm64.
+Every Congee binary requires CGO and a C toolchain (gcc/clang), including PostgreSQL-only hosts, because meta uses go-libsql. Build with `CGO_ENABLED=1`. Supported platforms match go-libsql: linux/darwin amd64 and arm64.
 
-The official Docker image enables CGO in the build stage. Local `make build` uses CGO by default on macOS and Linux when gcc is available.
+The official Docker image enables CGO in the build stage. `make build` and `make test` set `CGO_ENABLED=1`.
 
-## Migrating from SQLite
+## Migrating leftover SQLite configs
 
-SQLite and libSQL share the same on-disk format for Congee's schema. When migrating **sqlite → turso** via the admin UI (**Config → Storage**), Congee uses SQLite's native **`VACUUM INTO`** command to copy the live source database to the target path atomically (WAL-safe). This is faster than row-by-row copy and preserves the full database file.
+SQLite and libSQL share the same on-disk format for Congee's schema. Do **not** copy the file. On first boot of this version, `database.type` of `""` or `"sqlite"` is set to `"turso"` and written back atomically (same DSN). If libsql cannot open a leftover WAL file, boot fails with a clear error.
 
-Requirements:
-
-- Source must match the running relay's configured `database.type` and `database.dsn`.
-- Target path should not already contain a populated database. Admin target preflight does **not** open/create a missing Turso path (opening libSQL would create an empty shell file and break `VACUUM INTO`). Empty zero-byte leftovers from an older preflight are removed automatically.
-- Other migration pairs (e.g. postgres → turso) use the row-by-row admin migration tool.
+Row-by-row `storage.Migrate` remains for **postgres ↔ turso** via the admin UI (**Config → Storage**).
 
 ## Out of scope (v1)
 

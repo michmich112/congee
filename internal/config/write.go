@@ -7,12 +7,19 @@ import (
 )
 
 // ParseConfigJSON unmarshals and validates JSON bytes as Config.
+// Legacy database.type sqlite (or empty) is rewritten to turso with the same DSN.
 func ParseConfigJSON(data []byte) (*Config, error) {
-	return unmarshalConfigJSON(data)
+	c, err := unmarshalConfigJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	PromoteLegacySQLite(c)
+	return c, nil
 }
 
 // WriteConfigAtomic writes validated config as indented JSON using temp file + rename.
 func WriteConfigAtomic(path string, c *Config) error {
+	PromoteLegacySQLite(c)
 	if err := c.Validate(); err != nil {
 		return err
 	}

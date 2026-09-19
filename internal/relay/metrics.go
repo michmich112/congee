@@ -31,6 +31,16 @@ type RelayMetrics struct {
 	rateLimitPerIPOpen      atomic.Int64
 	idleDisconnectTotal     atomic.Int64
 
+	negOpenTotal                    atomic.Int64
+	negMsgTotal                     atomic.Int64
+	negErrTotal                     atomic.Int64
+	negBlockedTotal                 atomic.Int64
+	negUpstreamJobsTotal            atomic.Int64
+	negUpstreamImportedEventsTotal  atomic.Int64
+	negUpstreamFailuresTotal        atomic.Int64
+	curNegOpen                      atomic.Int64
+	curNegBlocked                   atomic.Int64
+
 	// Current UTC minute partial aggregates (reset on flush).
 	curEventsStored   atomic.Int64
 	curEventsRejected atomic.Int64
@@ -89,6 +99,23 @@ func (m *RelayMetrics) IncRateLimitMaxConnections() { m.rateLimitMaxConnections.
 func (m *RelayMetrics) IncRateLimitPerIPOpen()      { m.rateLimitPerIPOpen.Add(1) }
 func (m *RelayMetrics) IncIdleDisconnect()          { m.idleDisconnectTotal.Add(1) }
 
+func (m *RelayMetrics) IncNegOpen() {
+	m.negOpenTotal.Add(1)
+	m.curNegOpen.Add(1)
+}
+func (m *RelayMetrics) IncNegMsg()      { m.negMsgTotal.Add(1) }
+func (m *RelayMetrics) IncNegErr()      { m.negErrTotal.Add(1) }
+func (m *RelayMetrics) IncNegBlocked() {
+	m.negBlockedTotal.Add(1)
+	m.curNegBlocked.Add(1)
+}
+func (m *RelayMetrics) IncNegUpstreamJob()            { m.negUpstreamJobsTotal.Add(1) }
+func (m *RelayMetrics) IncNegUpstreamImported(n int64) { m.negUpstreamImportedEventsTotal.Add(n) }
+func (m *RelayMetrics) IncNegUpstreamFailure()        { m.negUpstreamFailuresTotal.Add(1) }
+
+func (m *RelayMetrics) RecordNegLoadLatency(d time.Duration)     { m.RecordQueryLatency(d) }
+func (m *RelayMetrics) RecordNegReconcileLatency(d time.Duration) { m.RecordQueryLatency(d) }
+
 func (m *RelayMetrics) RecordQueryLatency(d time.Duration) {
 	ms := d.Milliseconds()
 	if ms < 0 {
@@ -143,6 +170,13 @@ func (m *RelayMetrics) CountersJSON() map[string]any {
 		"rate_limit_max_connections": m.rateLimitMaxConnections.Load(),
 		"rate_limit_per_ip_open":     m.rateLimitPerIPOpen.Load(),
 		"idle_disconnect_total":      m.idleDisconnectTotal.Load(),
+		"neg_open_total":             m.negOpenTotal.Load(),
+		"neg_msg_total":              m.negMsgTotal.Load(),
+		"neg_err_total":              m.negErrTotal.Load(),
+		"neg_blocked_total":          m.negBlockedTotal.Load(),
+		"neg_upstream_jobs_total":    m.negUpstreamJobsTotal.Load(),
+		"neg_upstream_imported_total": m.negUpstreamImportedEventsTotal.Load(),
+		"neg_upstream_failures_total": m.negUpstreamFailuresTotal.Load(),
 	}
 }
 

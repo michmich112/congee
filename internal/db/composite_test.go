@@ -2,7 +2,6 @@ package db_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -12,8 +11,8 @@ import (
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 func TestCompositeAdminStorageSnapshotMerge(t *testing.T) {
@@ -155,14 +154,13 @@ func TestCompositeConcurrentEventAndAuditWrites(t *testing.T) {
 }
 
 func analyzeSQLiteFile(ctx context.Context, path string) error {
-	if !sqliteshim.HasDriver() {
+	if !sqlitewriter.HasLibsqlDriver() {
 		return nil
 	}
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+path+"?cache=shared")
+	sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, zerolog.Nop())
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sqldb.Close() }()
-	_, err = sqldb.ExecContext(ctx, `ANALYZE`)
-	return err
+	return sqlitewriter.ExecSQL(ctx, sqldb, `ANALYZE`)
 }

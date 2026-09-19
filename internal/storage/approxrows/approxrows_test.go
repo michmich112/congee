@@ -2,11 +2,11 @@ package approxrows
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 
-	"github.com/uptrace/bun/driver/sqliteshim"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
+	"github.com/rs/zerolog"
 )
 
 func TestParseSQLiteStatFirstInt(t *testing.T) {
@@ -33,23 +33,23 @@ func TestParseSQLiteStatFirstInt(t *testing.T) {
 }
 
 func TestSQLiteTableRequiresAnalyze(t *testing.T) {
-	if !sqliteshim.HasDriver() {
-		t.Skip("sqliteshim not available")
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
 	}
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "approx.db")
-	sqldb, err := sql.Open(sqliteshim.ShimName, "file:"+path+"?cache=shared")
+	sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = sqldb.Close() }()
 
-	if _, err := sqldb.ExecContext(ctx, `CREATE TABLE items (id INTEGER PRIMARY KEY)`); err != nil {
+	if err := sqlitewriter.ExecSQL(ctx, sqldb, `CREATE TABLE items (id INTEGER PRIMARY KEY)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sqldb.ExecContext(ctx, `INSERT INTO items (id) VALUES (1), (2), (3)`); err != nil {
+	if err := sqlitewriter.ExecSQL(ctx, sqldb, `INSERT INTO items (id) VALUES (1), (2), (3)`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,7 +61,7 @@ func TestSQLiteTableRequiresAnalyze(t *testing.T) {
 		t.Fatalf("before ANALYZE: got %d want 0", n)
 	}
 
-	if _, err := sqldb.ExecContext(ctx, `ANALYZE items`); err != nil {
+	if err := sqlitewriter.ExecSQL(ctx, sqldb, `ANALYZE items`); err != nil {
 		t.Fatal(err)
 	}
 	n, err = SQLiteTable(ctx, sqldb, "items")

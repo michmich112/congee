@@ -116,16 +116,28 @@ func (w *ipWindows) connectionWindow(ip string, maxPerMinute int) *slidingEvents
 
 // ConnLimiter is per-WebSocket-connection rate state.
 type ConnLimiter struct {
-	events *slidingEvents
-	reqs   *slidingEvents
-	bytes  *byteWindow
+	events  *slidingEvents
+	reqs    *slidingEvents
+	negOpen *slidingEvents
+	negMsg  *slidingEvents
+	bytes   *byteWindow
 }
 
 func newConnLimiter(cfg *config.Config) *ConnLimiter {
+	negOpenMax := config.EffectiveNIP77NegOpenPerMinute(cfg)
+	negMsgMax := config.EffectiveNIP77NegMsgPerMinute(cfg)
+	if negOpenMax <= 0 {
+		negOpenMax = 1 << 30
+	}
+	if negMsgMax <= 0 {
+		negMsgMax = 1 << 30
+	}
 	return &ConnLimiter{
-		events: newSlidingEvents(time.Minute, cfg.RateLimits.EventsPerMinutePerConnection),
-		reqs:   newSlidingEvents(time.Minute, cfg.RateLimits.ReqsPerMinutePerConnection),
-		bytes:  newByteWindow(time.Second, cfg.RateLimits.BytesPerSecondPerConnection),
+		events:  newSlidingEvents(time.Minute, cfg.RateLimits.EventsPerMinutePerConnection),
+		reqs:    newSlidingEvents(time.Minute, cfg.RateLimits.ReqsPerMinutePerConnection),
+		negOpen: newSlidingEvents(time.Minute, negOpenMax),
+		negMsg:  newSlidingEvents(time.Minute, negMsgMax),
+		bytes:   newByteWindow(time.Second, cfg.RateLimits.BytesPerSecondPerConnection),
 	}
 }
 
@@ -168,4 +180,14 @@ func (cl *ConnLimiter) AllowEvent() bool {
 // AllowReq counts one REQ against the per-minute cap.
 func (cl *ConnLimiter) AllowReq() bool {
 	return cl.reqs.allow()
+}
+
+// AllowNegOpen counts one NEG-OPEN against the NIP-77 per-minute cap.
+func (cl *ConnLimiter) AllowNegOpen() bool {
+	return cl.negOpen.allow()
+}
+
+// AllowNegMsg counts one NEG-MSG against the NIP-77 per-minute cap.
+func (cl *ConnLimiter) AllowNegMsg() bool {
+	return cl.negMsg.allow()
 }

@@ -32,7 +32,7 @@ jobs:
           go-version: ${{ inputs.go-version }}
           cache-dependency-path: go.sum
 
-      - run: go test ./...
+      - run: CGO_ENABLED=1 go test ./...
 
   test-race:
     runs-on: ubuntu-latest
@@ -46,4 +46,4 @@ jobs:
           go-version: ${{ inputs.go-version }}
           cache-dependency-path: go.sum
 
-      - run: go test -race ./...
+      - run: CGO_ENABLED=1 go test -race ./...

@@ -21,33 +21,39 @@ const (
 	// DefaultTaskTimeout bounds one writer task; callers blocked on RunWrite are released on timeout.
 	DefaultTaskTimeout = 2 * time.Minute
 	writerRestartDelay = 250 * time.Millisecond
-	// reconnectTimeout caps forced reconnect after a hard task timeout (stuck sqlite call).
+	// reconnectTimeout caps waiting for an in-flight sqlite/libsql call after a hard
+	// task timeout, and the subsequent reconnect once that call has returned.
 	reconnectTimeout = 30 * time.Second
 )
 
+// HandlesOpener opens a database and returns sql.DB + bun.DB handles.
+type HandlesOpener func(ctx context.Context, dsn string, log zerolog.Logger) (*sql.DB, *bun.DB, error)
+
 // Options configures a writer queue.
 type Options struct {
-	Engine        string // e.g. "sqlite", "sqlitemeta"
+	Engine        string // e.g. "turso", "sqlitemeta"
 	Log           zerolog.Logger
 	DSN           string
+	OpenHandles   HandlesOpener
 	QueueCapacity int
 	TaskTimeout   time.Duration
 }
 
-// Queue serializes mutating SQLite work on one goroutine with panic recovery, hard timeouts
-// (forced reconnect when sqlite ignores context cancel), optional reconnect on I/O errors,
-// and debug tracing.
+// Queue serializes mutating SQLite/libSQL work on one goroutine with panic recovery,
+// hard timeouts (callers unblock; reconnect waits until the native call returns),
+// optional reconnect on I/O errors, and debug tracing.
 type Queue struct {
-	engine    string
-	log       zerolog.Logger
-	dsn       string
-	sqldb     *sql.DB
-	writes    chan *task
-	wg        sync.WaitGroup
-	cancel    context.CancelFunc
-	baseCtx   context.Context
-	shutdown  atomic.Bool
-	closedErr error
+	engine      string
+	log         zerolog.Logger
+	dsn         string
+	openHandles HandlesOpener
+	sqldb       *sql.DB
+	writes      chan *task
+	wg          sync.WaitGroup
+	cancel      context.CancelFunc
+	baseCtx     context.Context
+	shutdown    atomic.Bool
+	closedErr   error
 
 	dbMu sync.RWMutex
 	db   *bun.DB
@@ -83,6 +89,7 @@ func New(sqldb *sql.DB, db *bun.DB, opts Options) *Queue {
 		engine:        opts.Engine,
 		log:           log,
 		dsn:           strings.TrimSpace(opts.DSN),
+		openHandles:   opts.OpenHandles,
 		sqldb:         sqldb,
 		db:            db,
 		writes:        make(chan *task, opts.QueueCapacity),
@@ -178,6 +185,9 @@ func (q *Queue) Close() error {
 	q.wg.Wait()
 	q.dbMu.Lock()
 	defer q.dbMu.Unlock()
+	if q.sqldb != nil {
+		_ = ExecSQL(context.Background(), q.sqldb, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	}
 	if q.db != nil {
 		_ = q.db.Close()
 		q.db = nil
@@ -249,7 +259,17 @@ func (q *Queue) executeTask(t *task) {
 		Int("queue_cap", q.queueCapacity).
 		Msg("writer task dequeued")
 
-	var err error
+	var (
+		err      error
+		notified bool
+	)
+	notifyCaller := func(e error) {
+		if notified {
+			return
+		}
+		notified = true
+		t.done <- e
+	}
 	start := time.Now()
 	defer func() {
 		if r := recover(); r != nil {
@@ -262,7 +282,7 @@ func (q *Queue) executeTask(t *task) {
 				Int64("duration_ms", time.Since(start).Milliseconds()).
 				Msg("writer task panic recovered")
 		}
-		t.done <- err
+		notifyCaller(err)
 	}()
 
 	if pingErr := q.ping(); pingErr != nil {
@@ -278,7 +298,7 @@ func (q *Queue) executeTask(t *task) {
 		}
 	}
 
-	err = q.runTaskOnce(t)
+	err = q.runTaskOnce(t, notifyCaller)
 	if err != nil && isReconnectable(err) {
 		q.log.Warn().
 			Err(err).
@@ -289,7 +309,7 @@ func (q *Queue) executeTask(t *task) {
 			err = fmt.Errorf("%s: %w (reconnect: %v)", q.engine, err, reconnErr)
 			return
 		}
-		err = q.runTaskOnce(t)
+		err = q.runTaskOnce(t, notifyCaller)
 	}
 
 	dur := time.Since(start)
@@ -313,7 +333,7 @@ func (q *Queue) executeTask(t *task) {
 		Msg("writer task completed")
 }
 
-func (q *Queue) runTaskOnce(t *task) error {
+func (q *Queue) runTaskOnce(t *task, notifyCaller func(error)) error {
 	runCtx, cancel := context.WithTimeout(context.Background(), q.taskTimeout)
 	defer cancel()
 	q.dbMu.RLock()
@@ -352,20 +372,33 @@ func (q *Queue) runTaskOnce(t *task) error {
 	case res := <-done:
 		return res.err
 	case <-runCtx.Done():
+		notifyCaller(context.DeadlineExceeded)
 		q.log.Warn().
 			Str("writer_label", t.label).
 			Uint64("task_id", t.id).
 			Dur("task_timeout", q.taskTimeout).
-			Msg("writer task hard timeout; forcing reconnect to interrupt stuck sqlite")
+			Msg("writer task hard timeout; waiting for in-flight sqlite call before reconnect")
+
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), reconnectTimeout)
+		defer waitCancel()
+		select {
+		case <-done:
+		case <-waitCtx.Done():
+			q.log.Error().
+				Str("writer_label", t.label).
+				Uint64("task_id", t.id).
+				Msg("in-flight sqlite call still running after reconnect wait; skip close until it returns")
+			<-done
+		}
+
 		reconnCtx, reconnCancel := context.WithTimeout(context.Background(), reconnectTimeout)
 		defer reconnCancel()
 		if reconnErr := q.reconnect(reconnCtx); reconnErr != nil {
-			return fmt.Errorf("%s: hard timeout and reconnect failed: %w", q.engine, reconnErr)
-		}
-		// Orphaned task goroutine may still finish; drain without blocking the writer loop.
-		select {
-		case <-done:
-		default:
+			q.log.Error().
+				Err(reconnErr).
+				Str("writer_label", t.label).
+				Uint64("task_id", t.id).
+				Msg("writer reconnect after hard timeout failed")
 		}
 		return context.DeadlineExceeded
 	}
@@ -402,8 +435,11 @@ func (q *Queue) reconnect(ctx context.Context) error {
 	if q.dsn == "" {
 		return errors.New("reconnect: empty dsn")
 	}
+	if q.openHandles == nil {
+		return errors.New("reconnect: no opener configured")
+	}
 
-	sqldb, bunDB, err := openHandles(ctx, q.dsn, q.log)
+	sqldb, bunDB, err := q.openHandles(ctx, q.dsn, q.log)
 	if err != nil {
 		return err
 	}

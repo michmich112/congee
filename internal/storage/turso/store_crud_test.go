@@ -1,24 +1,21 @@
-package sqlite
+package turso
 
 import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/rs/zerolog"
 )
 
-func TestSQLiteCRUD(t *testing.T) {
+func TestStoreCRUD(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "t.db")
 	st, err := Open(ctx, path, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,14 +64,12 @@ func TestSQLiteCRUD(t *testing.T) {
 	}
 }
 
-func TestSQLiteReplaceableKind0(t *testing.T) {
+func TestStoreReplaceableKind0(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "r.db")
 	st, err := Open(ctx, path, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,13 +113,11 @@ func TestSQLiteReplaceableKind0(t *testing.T) {
 	}
 }
 
-func TestSQLiteSearchKindsAndQuotedContent(t *testing.T) {
+func TestStoreSearchKindsAndQuotedContent(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := Open(ctx, filepath.Join(dir, "search.db"), nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,14 +153,12 @@ func TestSQLiteSearchKindsAndQuotedContent(t *testing.T) {
 	}
 }
 
-func TestSQLiteAddressable(t *testing.T) {
+func TestStoreAddressable(t *testing.T) {
+	skipNoDriver(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.db")
 	st, err := Open(ctx, path, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,23 +207,13 @@ func TestSQLiteAddressable(t *testing.T) {
 	}
 }
 
-func nostrRepeat(c string, n int) string {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = c[0]
-	}
-	return string(b)
-}
-
-func TestSQLiteFilterLimit_NilLimit(t *testing.T) {
+func TestStoreFilterLimit_NilLimit(t *testing.T) {
+	skipNoDriver(t)
 	pk := nostrRepeat("b", 64)
 	sig := nostrRepeat("s", 128)
 	ctx := context.Background()
 	dir := t.TempDir()
 	st, err := Open(ctx, filepath.Join(dir, "fl.db"), nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}

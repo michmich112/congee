@@ -10,7 +10,7 @@ import (
 )
 
 // ApplyBootstrapEnvOverrides mutates c from process environment after JSON load.
-// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (SQLite events + meta paths),
+// It applies CONGEE_RELAY_PORT, CONGEE_ADMIN_PORT, and CONGEE_DATA_DIR (Turso events + meta paths),
 // then re-validates c.
 func ApplyBootstrapEnvOverrides(c *Config) error {
 	if c == nil {

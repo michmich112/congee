@@ -2,9 +2,11 @@ package nostr
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Client message types from clients to relay (NIP-01).
@@ -27,7 +29,25 @@ type AuthMessage struct {
 	Event Event
 }
 
-// ParseMessage parses a NIP-01 client JSON array: EVENT, REQ, CLOSE, or AUTH.
+// NegOpenMessage is ["NEG-OPEN", subID, filter, initialHex] (NIP-77).
+type NegOpenMessage struct {
+	SubID       string
+	Filter      Filter
+	InitialHex  string
+}
+
+// NegMsgMessage is ["NEG-MSG", subID, messageHex] (NIP-77).
+type NegMsgMessage struct {
+	SubID      string
+	MessageHex string
+}
+
+// NegCloseMessage is ["NEG-CLOSE", subID] (NIP-77).
+type NegCloseMessage struct {
+	SubID string
+}
+
+// ParseMessage parses client JSON arrays: EVENT, REQ, CLOSE, AUTH, NEG-* (NIP-77).
 func ParseMessage(data []byte) (any, error) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -89,6 +109,51 @@ func ParseMessage(data []byte) (any, error) {
 			return nil, fmt.Errorf("nostr: AUTH event: %w", err)
 		}
 		return &AuthMessage{Event: ev}, nil
+	case "NEG-OPEN":
+		if len(raw) < 4 {
+			return nil, errors.New("nostr: NEG-OPEN missing sub id, filter, or initial message")
+		}
+		var subID string
+		if err := json.Unmarshal(raw[1], &subID); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-OPEN sub id: %w", err)
+		}
+		var f Filter
+		if err := json.Unmarshal(raw[2], &f); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-OPEN filter: %w", err)
+		}
+		var initial string
+		if err := json.Unmarshal(raw[3], &initial); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-OPEN initial message: %w", err)
+		}
+		if err := validateNegHex(initial); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-OPEN initial message: %w", err)
+		}
+		return &NegOpenMessage{SubID: subID, Filter: f, InitialHex: strings.ToLower(initial)}, nil
+	case "NEG-MSG":
+		if len(raw) < 3 {
+			return nil, errors.New("nostr: NEG-MSG missing sub id or message")
+		}
+		var subID string
+		if err := json.Unmarshal(raw[1], &subID); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-MSG sub id: %w", err)
+		}
+		var msgHex string
+		if err := json.Unmarshal(raw[2], &msgHex); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-MSG message: %w", err)
+		}
+		if err := validateNegHex(msgHex); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-MSG message: %w", err)
+		}
+		return &NegMsgMessage{SubID: subID, MessageHex: strings.ToLower(msgHex)}, nil
+	case "NEG-CLOSE":
+		if len(raw) < 2 {
+			return nil, errors.New("nostr: NEG-CLOSE missing subscription id")
+		}
+		var subID string
+		if err := json.Unmarshal(raw[1], &subID); err != nil {
+			return nil, fmt.Errorf("nostr: NEG-CLOSE sub id: %w", err)
+		}
+		return &NegCloseMessage{SubID: subID}, nil
 	default:
 		return nil, fmt.Errorf("nostr: unknown message type %q", typ)
 	}
@@ -147,4 +212,31 @@ func MarshalRelayAuth(challenge string) ([]byte, error) {
 		return nil, errors.New("nostr: empty AUTH challenge")
 	}
 	return json.Marshal([]any{"AUTH", challenge})
+}
+
+func validateNegHex(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return errors.New("empty hex")
+	}
+	if len(s)%2 != 0 {
+		return errors.New("hex length must be even")
+	}
+	if _, err := hex.DecodeString(s); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalRelayNegMsg encodes ["NEG-MSG", subID, hexMessage] (NIP-77).
+func MarshalRelayNegMsg(subID, msgHex string) ([]byte, error) {
+	if err := validateNegHex(msgHex); err != nil {
+		return nil, fmt.Errorf("nostr: NEG-MSG: %w", err)
+	}
+	return json.Marshal([]any{"NEG-MSG", subID, strings.ToLower(msgHex)})
+}
+
+// MarshalRelayNegErr encodes ["NEG-ERR", subID, reason] (NIP-77).
+func MarshalRelayNegErr(subID, reason string) ([]byte, error) {
+	return json.Marshal([]any{"NEG-ERR", subID, reason})
 }

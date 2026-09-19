@@ -10,7 +10,7 @@ func TestMigrationCanonicalDBType(t *testing.T) {
 	if g, w := migrationCanonicalDBType(""), "turso"; g != w {
 		t.Fatalf("empty: got %q want %q", g, w)
 	}
-	if g, w := migrationCanonicalDBType("  SQLITE  "), "sqlite"; g != w {
+	if g, w := migrationCanonicalDBType("  SQLITE  "), "turso"; g != w {
 		t.Fatalf("sqlite: got %q want %q", g, w)
 	}
 	if g, w := migrationCanonicalDBType("postgres"), "postgres"; g != w {
@@ -31,13 +31,13 @@ func TestMigrationSourceMatchesConfig(t *testing.T) {
 	if !migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "", DSN: "./congee.db"}) {
 		t.Fatal("expected match for empty source type")
 	}
-	if migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "sqlite", DSN: "./congee.db"}) {
-		t.Fatal("expected mismatch for sqlite vs default turso")
+	if !migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "sqlite", DSN: "./congee.db"}) {
+		t.Fatal("expected match leftover sqlite as turso")
 	}
 	if migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "postgres", DSN: "./congee.db"}) {
 		t.Fatal("expected mismatch for wrong type")
 	}
-	if migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "sqlite", DSN: "./other.db"}) {
+	if migrationSourceMatchesConfig(cfg, migrationEndpoint{Type: "turso", DSN: "./other.db"}) {
 		t.Fatal("expected mismatch for wrong dsn")
 	}
 }

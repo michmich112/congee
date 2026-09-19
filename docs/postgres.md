@@ -1,6 +1,6 @@
 # PostgreSQL storage
 
-Congee can use **SQLite** or **PostgreSQL** for persistence. Set this in the JSON config:
+Congee can use **Turso/libSQL** (default, local files) or **PostgreSQL** for event persistence. Set this in the JSON config:
 
 ```json
 "database": {
@@ -9,7 +9,7 @@ Congee can use **SQLite** or **PostgreSQL** for persistence. Set this in the JSO
 }
 ```
 
-- `database.type` must be `"postgres"` (or omit/`"turso"` for the default local backend; use `"sqlite"` for modernc SQLite without CGO).
+- `database.type` must be `"postgres"`. Operational metadata still lives in a local libSQL file (`meta_dsn` / `congee-meta.db`), so CGO is required even for PostgreSQL event stores.
 - `database.dsn` is a standard PostgreSQL URL understood by the Bun `pgdriver` (TLS/query params as supported by the driver).
 
 ## Multi-instance fan-out
@@ -27,7 +27,7 @@ With the admin UI enabled, `POST /api/migration/start` accepts JSON:
 
 ```json
 {
-  "source": { "type": "sqlite", "dsn": "./congee.db" },
+  "source": { "type": "turso", "dsn": "./congee.db" },
   "target": { "type": "postgres", "dsn": "postgres://..." }
 }
 ```

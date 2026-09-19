@@ -18,7 +18,6 @@ import (
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/postgres"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
@@ -66,15 +65,13 @@ func handleMigrationTargetPreflight(log zerolog.Logger) http.HandlerFunc {
 		switch migrationCanonicalDBType(req.Target.Type) {
 		case "postgres":
 			out = postgres.PreflightMigrationTarget(ctx, req.Target.DSN, l)
-		case "sqlite":
-			out = sqlite.PreflightMigrationTarget(ctx, req.Target.DSN, l)
 		case "turso":
 			out = turso.PreflightMigrationTarget(ctx, req.Target.DSN, l)
 		default:
 			out = storage.MigrationTargetPreflight{
 				Status:          storage.MigrationPreflightUnreadable,
 				ExpectedVersion: postgres.CurrentSchemaVersion(),
-				Detail:          fmt.Sprintf("unsupported target type %q (use sqlite, turso, or postgres)", req.Target.Type),
+				Detail:          fmt.Sprintf("unsupported target type %q (use turso or postgres)", req.Target.Type),
 			}
 		}
 		if out.Status == "" {
@@ -115,12 +112,10 @@ func migrationCanonicalDBType(typ string) string {
 	switch strings.TrimSpace(strings.ToLower(typ)) {
 	case "postgres":
 		return "postgres"
-	case "sqlite":
-		return "sqlite"
-	case "", "turso":
+	case "turso", "sqlite", "":
 		return "turso"
 	default:
-		return "sqlite"
+		return ""
 	}
 }
 
@@ -135,15 +130,6 @@ func migrationSourceMatchesConfig(cfg *config.Config, src migrationEndpoint) boo
 
 func openMigrationSource(ctx context.Context, dbType, dsn, congeeInstanceID string, log zerolog.Logger) (storage.MigrationSource, func(), error) {
 	switch migrationCanonicalDBType(dbType) {
-	case "sqlite":
-		if dsn == "" {
-			return nil, nil, errors.New("sqlite dsn is required")
-		}
-		st, err := sqlite.Open(ctx, dsn, nil, log)
-		if err != nil {
-			return nil, nil, err
-		}
-		return st, func() { _ = st.Close() }, nil
 	case "turso":
 		if dsn == "" {
 			return nil, nil, errors.New("turso dsn is required")
@@ -163,7 +149,7 @@ func openMigrationSource(ctx context.Context, dbType, dsn, congeeInstanceID stri
 		}
 		return st, func() { _ = st.Close() }, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported database type %q (use sqlite, turso, or postgres)", dbType)
+		return nil, nil, fmt.Errorf("unsupported database type %q (use turso or postgres)", dbType)
 	}
 }
 
@@ -180,9 +166,9 @@ func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu
 		return false, fmt.Errorf("load config: %w", err)
 	}
 
-	dbType := strings.TrimSpace(strings.ToLower(target.Type))
+	dbType := migrationCanonicalDBType(target.Type)
 	switch dbType {
-	case "sqlite", "postgres", "turso":
+	case "postgres", "turso":
 	default:
 		return false, fmt.Errorf("unsupported target type %q", target.Type)
 	}
@@ -268,9 +254,6 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 
 		congeeInstanceID := config.ResolveRelayInstance(cfg).EffectiveID
 
-		srcType := migrationCanonicalDBType(req.Source.Type)
-		tgtType := migrationCanonicalDBType(req.Target.Type)
-
 		fl, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -292,51 +275,37 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 
 		send("ready", map[string]string{"status": "started"})
 
-		var sum storage.MigrationSummary
-		var migErr error
-
-		if srcType == "sqlite" && tgtType == "turso" {
-			l.Debug().Msg("sqlite->turso native migration via VACUUM INTO")
-			send("progress", storage.MigrationProgress{Percent: 5, Message: "copying database file (VACUUM INTO)"})
-			sum, migErr = storage.MigrateSQLiteToTursoNative(ctx, req.Source.DSN, req.Target.DSN)
-			if migErr == nil {
-				send("progress", storage.MigrationProgress{Percent: 100, Message: "native copy complete"})
-			}
-		} else {
-			migrationLogConn(l.Debug(), "source", req.Source.Type, req.Source.DSN).Msg("opening migration source")
-
-			src, closeSrc, openErr := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, congeeInstanceID, l)
-			if openErr != nil {
-				migrationLogConn(log.Warn(), "source", req.Source.Type, req.Source.DSN).
-					Err(openErr).Str("phase", "open_source").Msg("migration rejected: open source failed")
-				http.Error(w, openErr.Error(), http.StatusBadRequest)
-				return
-			}
-			defer closeSrc()
-
-			migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("opening migration target")
-
-			dst, closeDst, openErr := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, congeeInstanceID, l)
-			if openErr != nil {
-				migrationLogConn(log.Warn(), "target", req.Target.Type, req.Target.DSN).
-					Err(openErr).Str("phase", "open_target").Msg("migration rejected: open target failed")
-				http.Error(w, openErr.Error(), http.StatusBadRequest)
-				return
-			}
-			defer closeDst()
-
-			l.Debug().Msg("sse started; running storage.Migrate")
-
-			sum, migErr = storage.Migrate(ctx, src, dst, func(p storage.MigrationProgress) {
-				l.Trace().
-					Float64("percent", p.Percent).
-					Str("message", p.Message).
-					Msg("migration progress")
-				send("progress", p)
-			}, func(step string) {
-				l.Debug().Str("milestone", step).Msg("migration milestone")
-			})
+		src, closeSrc, openErr := openMigrationSource(ctx, req.Source.Type, req.Source.DSN, congeeInstanceID, l)
+		if openErr != nil {
+			migrationLogConn(log.Warn(), "source", req.Source.Type, req.Source.DSN).
+				Err(openErr).Str("phase", "open_source").Msg("migration rejected: open source failed")
+			http.Error(w, openErr.Error(), http.StatusBadRequest)
+			return
 		}
+		defer closeSrc()
+
+		migrationLogConn(l.Debug(), "target", req.Target.Type, req.Target.DSN).Msg("opening migration target")
+
+		dst, closeDst, openErr := openMigrationSource(ctx, req.Target.Type, req.Target.DSN, congeeInstanceID, l)
+		if openErr != nil {
+			migrationLogConn(log.Warn(), "target", req.Target.Type, req.Target.DSN).
+				Err(openErr).Str("phase", "open_target").Msg("migration rejected: open target failed")
+			http.Error(w, openErr.Error(), http.StatusBadRequest)
+			return
+		}
+		defer closeDst()
+
+		l.Debug().Msg("sse started; running storage.Migrate")
+
+		sum, migErr := storage.Migrate(ctx, src, dst, func(p storage.MigrationProgress) {
+			l.Trace().
+				Float64("percent", p.Percent).
+				Str("message", p.Message).
+				Msg("migration progress")
+			send("progress", p)
+		}, func(step string) {
+			l.Debug().Str("milestone", step).Msg("migration milestone")
+		})
 		if migErr != nil {
 			l.Warn().Err(migErr).Msg("migration copy failed")
 			send("error", map[string]any{

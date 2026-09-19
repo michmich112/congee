@@ -8,26 +8,26 @@ import (
 
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 
-func TestMigrateSQLiteToSQLite(t *testing.T) {
+func TestMigrateTursoToTurso(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
 	ctx := context.Background()
 	dir := t.TempDir()
 	srcPath := filepath.Join(dir, "a.db")
 	dstPath := filepath.Join(dir, "b.db")
 
-	src, err := sqlite.Open(ctx, srcPath, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
+	src, err := turso.Open(ctx, srcPath, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer src.Close()
 
-	dst, err := sqlite.Open(ctx, dstPath, nil, zerolog.Nop())
+	dst, err := turso.Open(ctx, dstPath, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,21 +62,21 @@ func TestMigrateSQLiteToSQLite(t *testing.T) {
 }
 
 func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
 	ctx := context.Background()
 	dir := t.TempDir()
 	srcPath := filepath.Join(dir, "src.db")
 	dstPath := filepath.Join(dir, "dst.db")
 
-	src, err := sqlite.Open(ctx, srcPath, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
+	src, err := turso.Open(ctx, srcPath, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer src.Close()
 
-	dst, err := sqlite.Open(ctx, dstPath, nil, zerolog.Nop())
+	dst, err := turso.Open(ctx, dstPath, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 func TestAnalyzeStatsTablesPopulatesStat1(t *testing.T) {
-	if !sqliteshim.HasDriver() {
-		t.Skip("sqliteshim not available")
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
 	}
 	t.Parallel()
 	ctx := context.Background()

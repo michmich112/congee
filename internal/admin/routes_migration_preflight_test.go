@@ -7,25 +7,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 
 const migrationPreflightHTTPTestPassword = "migration-preflight-test-secret"
 
-func TestHandleMigrationTargetPreflightSQLiteCurrent(t *testing.T) {
+func TestHandleMigrationTargetPreflightTursoCurrent(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pf-admin.db")
 
-	st, err := sqlite.Open(ctx, path, nil, zerolog.Nop())
-	if err != nil && strings.Contains(err.Error(), "not available") {
-		t.Skip(err)
-	}
+	st, err := turso.Open(ctx, path, nil, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +37,7 @@ func TestHandleMigrationTargetPreflightSQLiteCurrent(t *testing.T) {
 	h := RequireAdminAuth(migrationPreflightHTTPTestPassword, http.StripPrefix("/api", api))
 
 	payload := map[string]any{
-		"target": map[string]string{"type": "sqlite", "dsn": path},
+		"target": map[string]string{"type": "turso", "dsn": path},
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -59,7 +58,7 @@ func TestHandleMigrationTargetPreflightSQLiteCurrent(t *testing.T) {
 	if out.Status != storage.MigrationPreflightCurrent {
 		t.Fatalf("status=%q detail=%q", out.Status, out.Detail)
 	}
-	if out.ExpectedVersion != sqlite.CurrentSchemaVersion() {
+	if out.ExpectedVersion != turso.CurrentSchemaVersion() {
 		t.Fatalf("expected_version=%d", out.ExpectedVersion)
 	}
 }

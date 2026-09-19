@@ -1,4 +1,4 @@
-package sqlite
+package turso
 
 import (
 	"context"
@@ -6,13 +6,10 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
-	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 func TestAnalyzeStatsTablesPopulatesStat1(t *testing.T) {
-	if !sqliteshim.HasDriver() {
-		t.Skip("sqliteshim not available")
-	}
+	skipNoDriver(t)
 	t.Parallel()
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "analyze.db"), nil, zerolog.Nop())

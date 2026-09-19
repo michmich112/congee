@@ -20,6 +20,8 @@ type ConnAuditLiveSummary struct {
 	TotalAuth           int64           `json:"total_auth"`
 	TotalReq            int64           `json:"total_req"`
 	TotalClientEvent    int64           `json:"total_client_event"`
+	TotalNegOpen        int64           `json:"total_neg_open"`
+	TotalNegMsg         int64           `json:"total_neg_msg"`
 	Series              json.RawMessage `json:"series"`
 }
 
@@ -27,6 +29,7 @@ type ConnAuditLiveSummary struct {
 type ConnAuditLiveDetail struct {
 	ConnAuditLiveSummary
 	SubscriptionDetails []SubConnAudit `json:"subscription_details"`
+	NegSessions         []NegConnAudit `json:"neg_sessions,omitempty"`
 }
 
 // ConnAuditLiveSummaries returns all open connections (newest started last; sorted by conn_id for stability).
@@ -44,6 +47,8 @@ func (s *Server) ConnAuditLiveSummaries() []ConnAuditLiveSummary {
 			TotalAuth:         int64(c.authTotal.Load()),
 			TotalReq:          int64(c.reqTotal.Load()),
 			TotalClientEvent:  int64(c.clientEventTotal.Load()),
+			TotalNegOpen:      int64(c.negOpenTotal.Load()),
+			TotalNegMsg:       int64(c.negMsgTotal.Load()),
 			Series:            c.connAudit.snapshotJSON(),
 		})
 		return true
@@ -69,11 +74,14 @@ func (s *Server) ConnAuditLiveDetailByConnID(connID string) (*ConnAuditLiveDetai
 		TotalAuth:         int64(c.authTotal.Load()),
 		TotalReq:          int64(c.reqTotal.Load()),
 		TotalClientEvent:  int64(c.clientEventTotal.Load()),
+		TotalNegOpen:      int64(c.negOpenTotal.Load()),
+		TotalNegMsg:       int64(c.negMsgTotal.Load()),
 		Series:            c.connAudit.snapshotJSON(),
 	}
 	return &ConnAuditLiveDetail{
 		ConnAuditLiveSummary: sum,
 		SubscriptionDetails:  s.subs.AuditSubscriptionsForConn(connID),
+		NegSessions:          c.negSessions.auditList(),
 	}, true
 }
 

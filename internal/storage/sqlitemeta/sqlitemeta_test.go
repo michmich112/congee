@@ -9,10 +9,14 @@ import (
 
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 )
 
 func TestMetaAuditAndChangelog(t *testing.T) {
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
+	}
 	ctx := context.Background()
 	st, err := sqlitemeta.Open(ctx, filepath.Join(t.TempDir(), "meta.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {
@@ -49,6 +53,9 @@ func TestMetaAuditAndChangelog(t *testing.T) {
 }
 
 func TestMetaListDistinctAuditKinds(t *testing.T) {
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
+	}
 	ctx := context.Background()
 	st, err := sqlitemeta.Open(ctx, filepath.Join(t.TempDir(), "kinds.db"), zerolog.Nop())
 	if err != nil && strings.Contains(err.Error(), "not available") {

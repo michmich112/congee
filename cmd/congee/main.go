@@ -19,6 +19,7 @@ import (
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/db"
+	"github.com/michmich112/congee/internal/nip77/upstream"
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
@@ -47,6 +48,12 @@ func main() {
 	if err := config.ApplyBootstrapEnvOverrides(cfg); err != nil {
 		panic("config: " + err.Error())
 	}
+	promotedSQLite := config.PromoteLegacySQLite(cfg)
+	if promotedSQLite {
+		if err := config.WriteConfigAtomic(path, cfg); err != nil {
+			panic("config: promote sqlite to turso: " + err.Error())
+		}
+	}
 	if err := config.EnsureRelayInstanceIDFile(cfg, path); err != nil {
 		panic("config: ensure relay instance id: " + err.Error())
 	}
@@ -60,6 +67,9 @@ func main() {
 		panic("relay identity: " + err.Error())
 	}
 	log := setupLogger(cfg)
+	if promotedSQLite {
+		log.Info().Int("dsn_len", len(cfg.Database.DSN)).Msg("sqlite config promoted to turso")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -84,6 +94,13 @@ func main() {
 	go relay.RunImportedEventFanout(ctx, srv, storeDB, storeDB.EventNotifier, log)
 	if err := nips.LoadEnabled(cfg, srv, storeDB, log); err != nil {
 		log.Fatal().Err(err).Msg("nips load failed")
+	}
+
+	var upstreamSched *upstream.Scheduler
+	if config.NIP77Enabled(cfg) && cfg.NIP77.UpstreamEnabled && len(cfg.NIP77.Upstreams) > 0 {
+		upstreamSched = upstream.NewScheduler(cfg, storeDB, srv, relayID, log)
+		upstreamSched.Start(ctx)
+		defer upstreamSched.Stop()
 	}
 
 	audit.StartRetentionLoop(ctx, storeDB, cfg.Audit.RetentionDays, log)

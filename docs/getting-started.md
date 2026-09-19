@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go** 1.24 or newer
+- **Go** 1.24 or newer with **CGO** (`CGO_ENABLED=1`) and a C toolchain (gcc/clang)
 - **Node.js** 24 or newer (for the admin UI build)
 - A Nostr client that supports `wss://` or `ws://` (for local testing, use `ws://`)
 
@@ -32,7 +32,7 @@ Optional **local** environment (admin UI, dev mode, secrets) can live in a **`.e
 
 ## Run the relay
 
-**Development (no `bin/` build):** from the repo root, with optional `.env` picked up automatically:
+**Development (no `bin/` build):** from the repo root, with optional `.env` picked up automatically. This starts the relay and the Vite admin UI (hot reload) in the same terminal; log lines are prefixed `[relay]` (cyan) and `[admin]` (magenta):
 
 ```bash
 make dev
@@ -50,11 +50,10 @@ By default the relay listens on the port set in `config.json` (see `config.examp
 
 ## Admin UI (optional)
 
-Set `ENABLE_ADMIN_UI=true` and `ADMIN_PASSWORD` (see [environment-variables.md](environment-variables.md)). With `CONGEE_ENV=dev` (or `development` / `local`), the admin server **proxies** the browser to the Vite dev server on `http://127.0.0.1:5173`. Start Vite in a second terminal, or the UI will not load:
+Set `ENABLE_ADMIN_UI=true` and `ADMIN_PASSWORD` (see [environment-variables.md](environment-variables.md)). With `CONGEE_ENV=dev` (or `development` / `local`), the admin server **proxies** the browser to the Vite dev server on `http://127.0.0.1:5173`. `make dev` starts Vite for you. To run only the UI (for example if the relay is already up):
 
 ```bash
-make ui-dev   # terminal 2 — Vite on :5173
-make dev      # terminal 1 — relay + admin (with .env as needed)
+make ui-dev   # Vite on :5173 only
 ```
 
 If Vite is not running but you have already run **`make ui-build`**, the admin server **falls back** to `web/admin/build` and the UI still works (you will see a short warning in relay logs on the first failed proxy attempt).
@@ -88,4 +87,4 @@ make lint
 make docker-build
 ```
 
-Mount a single **`/data`** volume for the database (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`.
+Mount a single **`/data`** volume for libSQL (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`. Existing `database.type=sqlite` configs are rewritten to `turso` on first boot (same files).

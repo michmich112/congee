@@ -68,6 +68,10 @@ func (c *Conn) noteInboundAfterParse(msg any) {
 		c.reqTotal.Add(1)
 	case *nostr.AuthMessage:
 		c.authTotal.Add(1)
+	case *nostr.NegOpenMessage:
+		c.negOpenTotal.Add(1)
+	case *nostr.NegMsgMessage:
+		c.negMsgTotal.Add(1)
 	}
 }
 

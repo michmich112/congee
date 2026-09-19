@@ -15,20 +15,20 @@ import (
 
 // PreflightConfig inspects a SQLite-compatible DSN without running migrations or starting the writer loop.
 type PreflightConfig struct {
-	Engine      string
-	DSN         string
-	Log         zerolog.Logger
-	HasDriver   func() bool
-	DriverName  string
+	Engine       string
+	DSN          string
+	Log          zerolog.Logger
+	HasDriver    func() bool
+	DriverName   string
 	NormalizeDSN func(string) string
-	OpenDB      func(dsn string) (*sql.DB, error)
+	OpenDB       func(dsn string) (*sql.DB, error)
 }
 
 // PreflightMigrationTarget inspects a target database for admin migration tooling.
 func PreflightMigrationTarget(ctx context.Context, cfg PreflightConfig) storage.MigrationTargetPreflight {
 	engine := strings.TrimSpace(cfg.Engine)
 	if engine == "" {
-		engine = "sqlite"
+		engine = "turso"
 	}
 	exp := CurrentSchemaVersion()
 	out := storage.MigrationTargetPreflight{
@@ -130,16 +130,6 @@ func PreflightMigrationTarget(ctx context.Context, cfg PreflightConfig) storage.
 // MainFilePath resolves the on-disk path from a file: DSN.
 func MainFilePath(rawDSN string) (string, error) {
 	return sqlitewriter.ResolveMainFilePath(rawDSN)
-}
-
-// DefaultSQLitePreflightConfig returns preflight settings for modernc/sqliteshim.
-func DefaultSQLitePreflightConfig(dsn string, log zerolog.Logger) PreflightConfig {
-	return PreflightConfig{
-		Engine:       "sqlite",
-		DSN:          dsn,
-		Log:          log,
-		NormalizeDSN: sqlitewriter.NormalizeDSN,
-	}
 }
 
 // DefaultTursoPreflightConfig returns preflight settings for go-libsql.

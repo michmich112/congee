@@ -10,7 +10,7 @@
     "dsn": "./congee.db",
     "meta_dsn": "./congee-meta.db"
   },
-  "_comment_database_sqlite": "Use type sqlite for modernc.org/sqlite without CGO; see docs/turso.md for Turso/libSQL (default)",
+  "_comment_database": "Local files use type turso (libSQL). PostgreSQL uses type postgres. Legacy sqlite is rewritten to turso on boot.",
   "logging": {
     "level": "info",
     "format": "json"
@@ -66,6 +66,20 @@
   },
   "nip17": {
     "reject_gift_wrap_when_disabled": true
+  },
+  "nip77": {
+    "max_records_per_query": 100000,
+    "session_idle_timeout_seconds": 7,
+    "frame_size_limit_bytes": 1048576,
+    "max_concurrent_sessions": 8,
+    "max_concurrent_loads": 2,
+    "neg_open_per_minute_per_connection": 6,
+    "neg_msg_per_minute_per_connection": 120,
+    "backpressure_req_queue_depth": 64,
+    "upstream_enabled": true,
+    "upstream_pause_when_busy": true,
+    "upstream_message_timeout_seconds": 60,
+    "upstreams": []
   },
   "nips": {
     "enabled": [1, 11]

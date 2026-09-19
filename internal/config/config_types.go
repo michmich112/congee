@@ -1,5 +1,7 @@
 package config
 
+import "encoding/json"
+
 // Config matches the root object in config.example.json.
 type Config struct {
 	Relay                   RelaySection            `json:"relay"`
@@ -16,6 +18,7 @@ type Config struct {
 	NIP42                   NIP42Section            `json:"nip42"`
 	NIP29                   NIP29Section            `json:"nip29"`
 	NIP17                   NIP17Section            `json:"nip17"`
+	NIP77                   NIP77Section            `json:"nip77"`
 	NIPs                    NIPsSection             `json:"nips"`
 }
 
@@ -60,12 +63,12 @@ type RateLimitsSection struct {
 }
 
 type ConnectionLimitsSection struct {
-	MaxOpen                       int  `json:"max_open"`
+	MaxOpen int `json:"max_open"`
 	// MaxOpenPerIP caps concurrent WebSockets per peer IP. Zero disables the cap.
-	MaxOpenPerIP int `json:"max_open_per_ip"`
-	MaxSubscriptionsPerConnection int  `json:"max_subscriptions_per_connection"`
-	MaxFiltersPerReq              int  `json:"max_filters_per_req"`
-	ConnectionsPerMinutePerIP     int  `json:"connections_per_minute_per_ip"`
+	MaxOpenPerIP                  int `json:"max_open_per_ip"`
+	MaxSubscriptionsPerConnection int `json:"max_subscriptions_per_connection"`
+	MaxFiltersPerReq              int `json:"max_filters_per_req"`
+	ConnectionsPerMinutePerIP     int `json:"connections_per_minute_per_ip"`
 	// IdleNoEventNoSubSeconds closes connections with no client EVENT and no open REQ
 	// subscriptions after this many seconds. Zero disables the idle sweeper.
 	IdleNoEventNoSubSeconds int  `json:"idle_no_event_no_sub_seconds"`
@@ -164,3 +167,45 @@ type NIP29Section struct {
 	// StrictPreviousSameH requires each "previous" id prefix to resolve to an event whose "h" tag matches the publishing event's group id.
 	StrictPreviousSameH bool `json:"strict_previous_same_h"`
 }
+
+// NIP77Upstream configures one scheduled pull from an upstream relay (NIP-77 client role).
+type NIP77Upstream struct {
+	Name            string            `json:"name"`
+	URL             string            `json:"url"`
+	Filters         []json.RawMessage `json:"filters"`
+	IntervalSeconds int               `json:"interval_seconds"`
+	Enabled         bool              `json:"enabled"`
+}
+
+// NIP77Section configures NIP-77 negentropy syncing (optional NIP).
+type NIP77Section struct {
+	MaxRecordsPerQuery            int             `json:"max_records_per_query"`
+	SessionIdleTimeoutSeconds     int             `json:"session_idle_timeout_seconds"`
+	FrameSizeLimitBytes           int             `json:"frame_size_limit_bytes"`
+	MaxConcurrentSessions         int             `json:"max_concurrent_sessions"`
+	MaxConcurrentLoads            int             `json:"max_concurrent_loads"`
+	NegOpenPerMinutePerConnection int             `json:"neg_open_per_minute_per_connection"`
+	NegMsgPerMinutePerConnection  int             `json:"neg_msg_per_minute_per_connection"`
+	BackpressureReqQueueDepth     int             `json:"backpressure_req_queue_depth"`
+	UpstreamEnabled               bool            `json:"upstream_enabled"`
+	UpstreamPauseWhenBusy         bool            `json:"upstream_pause_when_busy"`
+	UpstreamMessageTimeoutSeconds int             `json:"upstream_message_timeout_seconds"`
+	// UpstreamAuthWaitSeconds is how long to wait after connect for a NIP-42 AUTH
+	// challenge before sending NEG-OPEN. Zero means do not wait: answer AUTH if it
+	// arrives later in the message loop.
+	UpstreamAuthWaitSeconds int             `json:"upstream_auth_wait_seconds"`
+	Upstreams               []NIP77Upstream `json:"upstreams"`
+}
+
+const (
+	DefaultNIP77MaxRecordsPerQuery            = 100_000
+	DefaultNIP77SessionIdleTimeoutSeconds     = 7
+	DefaultNIP77FrameSizeLimitBytes           = 1 << 20
+	DefaultNIP77MaxConcurrentSessions         = 8
+	DefaultNIP77MaxConcurrentLoads            = 2
+	DefaultNIP77NegOpenPerMinutePerConnection = 6
+	DefaultNIP77NegMsgPerMinutePerConnection  = 120
+	DefaultNIP77BackpressureReqQueueDepth     = 64
+	DefaultNIP77UpstreamMessageTimeoutSeconds = 60
+	DefaultNIP77UpstreamAuthWaitSeconds       = 0
+)

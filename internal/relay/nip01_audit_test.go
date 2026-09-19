@@ -15,8 +15,8 @@ import (
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/michmich112/congee/internal/storage/sqlite"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 )
 
@@ -81,7 +81,7 @@ func openFaultAuditTestStore(ctx context.Context, t *testing.T, dir string, save
 	if err != nil {
 		t.Fatal(err)
 	}
-	ev, err := sqlite.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
+	ev, err := turso.Open(ctx, filepath.Join(dir, "r.db"), nil, zerolog.Nop())
 	if err != nil {
 		_ = meta.Close()
 		t.Fatal(err)

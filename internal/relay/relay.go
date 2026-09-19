@@ -46,6 +46,10 @@ type Server struct {
 	serveOnce     sync.Once
 
 	readQueue *ReaderQueue
+
+	negQueue           *NegQueue
+	negLoadSlots       chan struct{}
+	negActiveSessions  atomic.Int32
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -342,13 +346,14 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 		remoteAddr:  remoteAddr,
 		wsTransport: wsTransport,
 		nc:          nc,
-		send:        make(chan []byte, 256),
+		send:        make(chan []byte, 16384), // TODO: calculate available RAM and make this a configurable parameter
 		writerDone:  make(chan struct{}),
 		ctx:         ctx,
 		cancel:      cancel,
 		limiter:     s.limiter.NewConnLimiter(),
 		log:         log,
 		startedUnix: time.Now().Unix(),
+		negSessions: newNegSessionMap(),
 	}
 	c.initIdleClock()
 	c.log.Info().
@@ -378,6 +383,11 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	}
 
 	c.log.Info().Msg("ws client disconnected")
+	n := c.negSessions.count()
+	c.negSessions.closeAll()
+	if c.server != nil && n > 0 {
+		c.server.negActiveSessions.Add(-int32(n))
+	}
 	s.persistConnAuditSession(c)
 
 	ids := s.subs.UnregisterSender(id)
@@ -393,6 +403,9 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 
 // Shutdown stops listening and closes active WebSocket connections.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.negQueue != nil {
+		s.negQueue.stop()
+	}
 	if s.readQueue != nil {
 		s.readQueue.stop()
 	}
