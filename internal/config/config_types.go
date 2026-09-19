@@ -187,7 +187,11 @@ type NIP77Section struct {
 	UpstreamEnabled               bool            `json:"upstream_enabled"`
 	UpstreamPauseWhenBusy         bool            `json:"upstream_pause_when_busy"`
 	UpstreamMessageTimeoutSeconds int             `json:"upstream_message_timeout_seconds"`
-	Upstreams                     []NIP77Upstream `json:"upstreams"`
+	// UpstreamAuthWaitSeconds is how long to wait after connect for a NIP-42 AUTH
+	// challenge before sending NEG-OPEN. Zero means do not wait: answer AUTH if it
+	// arrives later in the message loop.
+	UpstreamAuthWaitSeconds int             `json:"upstream_auth_wait_seconds"`
+	Upstreams               []NIP77Upstream `json:"upstreams"`
 }
 
 const (
@@ -200,4 +204,5 @@ const (
 	DefaultNIP77NegMsgPerMinutePerConnection  = 120
 	DefaultNIP77BackpressureReqQueueDepth     = 64
 	DefaultNIP77UpstreamMessageTimeoutSeconds = 60
+	DefaultNIP77UpstreamAuthWaitSeconds       = 0
 )

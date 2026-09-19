@@ -72,6 +72,7 @@ func DefaultConfig() *Config {
 			UpstreamEnabled:               true,
 			UpstreamPauseWhenBusy:         true,
 			UpstreamMessageTimeoutSeconds: DefaultNIP77UpstreamMessageTimeoutSeconds,
+			UpstreamAuthWaitSeconds:       DefaultNIP77UpstreamAuthWaitSeconds,
 		},
 	}
 }

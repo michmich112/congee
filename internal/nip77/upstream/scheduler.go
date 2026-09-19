@@ -209,8 +209,13 @@ func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) 
 	log.Info().Str("url", u.URL).Int("filters", len(filters)).Msg("upstream connected")
 
 	msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
-	if err := sch.handshakeAuth(ctx, log, c, u.URL, msgTimeout); err != nil {
-		return 0, 0, err
+	authWait := time.Duration(config.EffectiveNIP77UpstreamAuthWait(sch.cfg)) * time.Second
+	if authWait > 0 {
+		if err := sch.handshakeAuth(ctx, log, c, u.URL, authWait, msgTimeout); err != nil {
+			return 0, 0, err
+		}
+	} else {
+		log.Debug().Msg("upstream AUTH wait 0; answering challenges in the message loop")
 	}
 
 	frameLimit := config.EffectiveNIP77FrameSizeLimit(sch.cfg)

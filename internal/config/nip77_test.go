@@ -33,6 +33,20 @@ func TestEffectiveNIP77UpstreamMessageTimeout(t *testing.T) {
 	}
 }
 
+func TestEffectiveNIP77UpstreamAuthWait(t *testing.T) {
+	if got := config.EffectiveNIP77UpstreamAuthWait(nil); got != 0 {
+		t.Fatalf("nil cfg: got %d", got)
+	}
+	c := config.DefaultConfig()
+	if got := config.EffectiveNIP77UpstreamAuthWait(c); got != 0 {
+		t.Fatalf("default: got %d want 0", got)
+	}
+	c.NIP77.UpstreamAuthWaitSeconds = 5
+	if got := config.EffectiveNIP77UpstreamAuthWait(c); got != 5 {
+		t.Fatalf("explicit: got %d want 5", got)
+	}
+}
+
 func TestNIP77Enabled(t *testing.T) {
 	c := config.DefaultConfig()
 	if config.NIP77Enabled(c) {

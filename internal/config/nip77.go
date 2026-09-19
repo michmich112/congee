@@ -70,6 +70,16 @@ func EffectiveNIP77UpstreamMessageTimeout(cfg *Config) int {
 	return effectiveNIP77Int(cfgValue(cfg).NIP77.UpstreamMessageTimeoutSeconds, DefaultNIP77UpstreamMessageTimeoutSeconds)
 }
 
+func EffectiveNIP77UpstreamAuthWait(cfg *Config) int {
+	if cfg == nil {
+		return DefaultNIP77UpstreamAuthWaitSeconds
+	}
+	if cfg.NIP77.UpstreamAuthWaitSeconds < 0 {
+		return DefaultNIP77UpstreamAuthWaitSeconds
+	}
+	return cfg.NIP77.UpstreamAuthWaitSeconds
+}
+
 func cfgValue(cfg *Config) Config {
 	if cfg == nil {
 		return Config{}
@@ -108,6 +118,9 @@ func validateNIP77(cfg *Config) error {
 	}
 	if n.UpstreamMessageTimeoutSeconds < 0 {
 		return errors.New("config: nip77.upstream_message_timeout_seconds must be >= 0")
+	}
+	if n.UpstreamAuthWaitSeconds < 0 {
+		return errors.New("config: nip77.upstream_auth_wait_seconds must be >= 0")
 	}
 	names := make(map[string]struct{})
 	for i, u := range n.Upstreams {

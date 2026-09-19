@@ -78,14 +78,11 @@ func (sch *Scheduler) answerAuth(c *wsClient, log zerolog.Logger, relayURL, chal
 	return nil
 }
 
-// handshakeAuth waits briefly after connect for a NIP-42 AUTH challenge, answers it,
-// and waits for OK. A timeout with no AUTH is success (relay does not require it).
-func (sch *Scheduler) handshakeAuth(ctx context.Context, log zerolog.Logger, c *wsClient, relayURL string, msgTimeout time.Duration) error {
-	authWait := 2 * time.Second
-	if msgTimeout > 0 && msgTimeout < authWait {
-		authWait = msgTimeout
-	}
+// handshakeAuth waits authWait after connect for a NIP-42 AUTH challenge, answers it,
+// and waits for OK. Callers must pass authWait > 0.
+func (sch *Scheduler) handshakeAuth(ctx context.Context, log zerolog.Logger, c *wsClient, relayURL string, authWait, msgTimeout time.Duration) error {
 	deadline := time.Now().Add(authWait)
+	log.Info().Int("timeout_seconds", int(authWait.Seconds())).Msg("upstream waiting for AUTH challenge")
 	for time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining < time.Millisecond {
