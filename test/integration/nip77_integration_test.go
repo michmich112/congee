@@ -16,11 +16,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nip77"
 	"github.com/michmich112/congee/internal/nips"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
-	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
@@ -30,7 +30,7 @@ func writeNIP77IntegrationConfig(dir, dsn string) string {
 	body := []byte(`{
   "relay": { "port": 3334 },
   "admin": { "port": 3335 },
-  "database": { "type": "sqlite", "dsn": "` + dsn + `" },
+  "database": { "type": "turso", "dsn": "` + dsn + `" },
   "logging": { "level": "error", "format": "json" },
   "audit": { "retention_days": 7 },
   "rate_limits": {

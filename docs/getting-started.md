@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go** 1.24 or newer
+- **Go** 1.24 or newer with **CGO** (`CGO_ENABLED=1`) and a C toolchain (gcc/clang)
 - **Node.js** 24 or newer (for the admin UI build)
 - A Nostr client that supports `wss://` or `ws://` (for local testing, use `ws://`)
 
@@ -87,4 +87,4 @@ make lint
 make docker-build
 ```
 
-Mount a single **`/data`** volume for SQLite (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`.
+Mount a single **`/data`** volume for libSQL (`CONGEE_DATA_DIR` defaults to `/data` in the official image), config (`/data/config/config.json`), and relay secrets (`/data/config/relay.secrets.json`). See [README.md](../README.md) for an example `docker run`. Existing `database.type=sqlite` configs are rewritten to `turso` on first boot (same files).
