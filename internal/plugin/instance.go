@@ -58,6 +58,8 @@ type InstanceSnapshot struct {
 	Ready        bool     `json:"ready"`
 	LastError    string   `json:"last_error,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
+	SourceURL    string   `json:"source_url,omitempty"`
+	SHA256       string   `json:"sha256,omitempty"`
 }
 
 type instance struct {
@@ -130,6 +132,8 @@ func (in *instance) snapshot() InstanceSnapshot {
 		Ready:        in.state == stateReady,
 		LastError:    in.lastErr,
 		Capabilities: append([]string(nil), in.caps...),
+		SourceURL:    in.item.SourceURL,
+		SHA256:       in.item.SHA256,
 	}
 }
 

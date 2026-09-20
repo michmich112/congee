@@ -272,7 +272,14 @@ func (m *Manager) Snapshot() []InstanceSnapshot {
 				out = append(out, in.snapshot())
 				continue
 			}
-			out = append(out, InstanceSnapshot{ID: item.ID, Enabled: item.Enabled, State: "stopped", Version: item.Version})
+			out = append(out, InstanceSnapshot{
+				ID:        item.ID,
+				Enabled:   item.Enabled,
+				State:     "stopped",
+				Version:   item.Version,
+				SourceURL: item.SourceURL,
+				SHA256:    item.SHA256,
+			})
 		}
 		return out
 	}
@@ -289,15 +296,26 @@ func (m *Manager) get(id string) *instance {
 }
 
 // InstallURL downloads, verifies sha256, and copies the package into the plugins dir.
+// Re-installing the same plugin id stops the process, replaces bin/ui, keeps data/,
+// runs hooks.update (or install if update is omitted), then optionally starts again.
 func (m *Manager) InstallURL(ctx context.Context, url, sha256hex string, enable bool) (*Manifest, error) {
 	if err := os.MkdirAll(m.root, 0o755); err != nil {
 		return nil, err
 	}
-	man, dest, err := installFromURL(m.root, url, sha256hex)
+	man, pkgDir, cleanup, err := fetchAndExtractURL(url, sha256hex)
 	if err != nil {
 		return nil, err
 	}
-	m.runInstallHook(ctx, man, dest)
+	defer cleanup()
+	existed := pluginDirExists(m.root, man.ID)
+	if existed {
+		_ = m.Disable(man.ID)
+	}
+	dest := filepath.Join(m.root, man.ID)
+	if err := replacePackageKeepData(pkgDir, dest); err != nil {
+		return nil, err
+	}
+	m.runPostUnpackHooks(ctx, man, dest, existed)
 	m.upsertConfigItem(man, url, sha256hex, enable)
 	if enable {
 		if err := m.Enable(man.ID); err != nil {
@@ -312,11 +330,19 @@ func (m *Manager) InstallLocal(src string, enable bool) (*Manifest, error) {
 	if err := os.MkdirAll(m.root, 0o755); err != nil {
 		return nil, err
 	}
+	peek, err := loadManifest(src)
+	if err != nil {
+		return nil, err
+	}
+	existed := pluginDirExists(m.root, peek.ID)
+	if existed {
+		_ = m.Disable(peek.ID)
+	}
 	man, dest, err := installFromDir(m.root, src)
 	if err != nil {
 		return nil, err
 	}
-	m.runInstallHook(context.Background(), man, dest)
+	m.runPostUnpackHooks(context.Background(), man, dest, existed)
 	m.upsertConfigItem(man, src, "", enable)
 	if enable {
 		if err := m.Enable(man.ID); err != nil {
@@ -340,17 +366,32 @@ func (m *Manager) upsertConfigItem(man *Manifest, source, sha string, enabled bo
 	m.cfg.Plugins.Items = append(m.cfg.Plugins.Items, it)
 }
 
+func (m *Manager) runPostUnpackHooks(ctx context.Context, man *Manifest, pkgDir string, upgrade bool) {
+	if man == nil {
+		return
+	}
+	if upgrade && len(man.Hooks.Update) > 0 {
+		m.runNamedHook(ctx, man, pkgDir, man.Hooks.Update, hookInstallTimeout, "plugin update hook failed")
+		return
+	}
+	m.runInstallHook(ctx, man, pkgDir)
+}
+
 func (m *Manager) runInstallHook(ctx context.Context, man *Manifest, pkgDir string) {
 	if man == nil || len(man.Hooks.Install) == 0 {
 		return
 	}
+	m.runNamedHook(ctx, man, pkgDir, man.Hooks.Install, hookInstallTimeout, "plugin install hook failed")
+}
+
+func (m *Manager) runNamedHook(ctx context.Context, man *Manifest, pkgDir string, args []string, timeout time.Duration, warn string) {
 	dataDir := filepath.Join(pkgDir, "data")
 	settings := ""
 	if item, idx := config.PluginItemByID(m.cfg, man.ID); idx >= 0 {
 		settings = string(item.Settings)
 	}
-	if err := runManifestHook(ctx, man, pkgDir, dataDir, man.ID, settings, man.Hooks.Install, hookInstallTimeout); err != nil {
-		m.log.Warn().Err(err).Str("plugin_id", man.ID).Msg("plugin install hook failed")
+	if err := runManifestHook(ctx, man, pkgDir, dataDir, man.ID, settings, args, timeout); err != nil {
+		m.log.Warn().Err(err).Str("plugin_id", man.ID).Msg(warn)
 	}
 }
 

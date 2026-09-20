@@ -17,7 +17,8 @@
 		includeSettings = true,
 		onEnable,
 		onDisable,
-		onUninstall
+		onUninstall,
+		onUpdate
 	}: {
 		plugin: PluginRow;
 		busy?: boolean;
@@ -25,6 +26,7 @@
 		onEnable: () => void;
 		onDisable: () => void;
 		onUninstall: (wipeData: boolean) => void;
+		onUpdate?: () => void;
 	} = $props();
 </script>
 
@@ -47,6 +49,9 @@
 				<DropdownMenu.Item disabled={busy} onclick={onDisable}>Disable</DropdownMenu.Item>
 			{:else}
 				<DropdownMenu.Item disabled={busy} onclick={onEnable}>Enable</DropdownMenu.Item>
+			{/if}
+			{#if onUpdate}
+				<DropdownMenu.Item disabled={busy} onclick={onUpdate}>Update</DropdownMenu.Item>
 			{/if}
 		</DropdownMenu.Group>
 		<DropdownMenu.Separator />

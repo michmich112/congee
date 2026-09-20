@@ -18,10 +18,11 @@ type Manifest struct {
 	Hooks      PluginHooks       `json:"hooks"`
 }
 
-// PluginHooks are extra argv passed to the plugin exec after install, before Serve, and before package delete.
-// Example: "install": ["--hook=install"], "launch": ["--hook=launch"], "uninstall": ["--hook=uninstall"].
+// PluginHooks are extra argv passed to the plugin exec after install, on package upgrade, before Serve, and before package delete.
+// Example: "install": ["--hook=install"], "update": ["--hook=update"], "launch": ["--hook=launch"], "uninstall": ["--hook=uninstall"].
 type PluginHooks struct {
 	Install   []string `json:"install,omitempty"`
+	Update    []string `json:"update,omitempty"`
 	Launch    []string `json:"launch,omitempty"`
 	Uninstall []string `json:"uninstall,omitempty"`
 }

@@ -12,7 +12,9 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Table from '$lib/components/ui/table';
 	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
+	import PluginUpdateDialog from '$lib/components/PluginUpdateDialog.svelte';
 	import { pluginNav } from '$lib/plugin-nav.svelte';
+	import type { PluginUpdateTarget } from '$lib/plugin-github';
 
 	type PluginRow = {
 		id: string;
@@ -22,6 +24,7 @@
 		state: string;
 		ready?: boolean;
 		last_error?: string;
+		source_url?: string;
 	};
 
 	let plugins = $state<PluginRow[]>([]);
@@ -36,6 +39,9 @@
 	let installEnable = $state(true);
 	let installBusy = $state(false);
 	let installErr = $state<string | null>(null);
+
+	let updateOpen = $state(false);
+	let updatePlugin = $state<PluginUpdateTarget | null>(null);
 
 	async function readApiError(res: Response): Promise<string> {
 		try {
@@ -149,6 +155,17 @@
 		void postPluginAction(p.id, 'uninstall', wipeData);
 	}
 
+	function openUpdate(p: PluginRow) {
+		updatePlugin = {
+			id: p.id,
+			name: p.name,
+			version: p.version,
+			enabled: p.enabled,
+			source_url: p.source_url
+		};
+		updateOpen = true;
+	}
+
 	function stateBadgeVariant(state: string): 'default' | 'secondary' | 'destructive' | 'outline' {
 		if (state === 'ready') return 'default';
 		if (state === 'degraded') return 'destructive';
@@ -229,6 +246,7 @@
 											onEnable={() => void postPluginAction(p.id, 'enable')}
 											onDisable={() => void postPluginAction(p.id, 'disable')}
 											onUninstall={(wipe) => uninstallPlugin(p, wipe)}
+											onUpdate={() => openUpdate(p)}
 										/>
 									</div>
 								</Table.Cell>
@@ -312,3 +330,5 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
+
+<PluginUpdateDialog bind:open={updateOpen} plugin={updatePlugin} onUpdated={loadPlugins} />

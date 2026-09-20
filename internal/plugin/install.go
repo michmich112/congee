@@ -16,45 +16,67 @@ import (
 )
 
 func installFromURL(destRoot, url, wantSHA string) (*Manifest, string, error) {
-	tmp, err := os.MkdirTemp("", "congee-plugin-dl-*")
+	man, pkgDir, cleanup, err := fetchAndExtractURL(url, wantSHA)
 	if err != nil {
 		return nil, "", err
 	}
-	defer os.RemoveAll(tmp)
-	archive := filepath.Join(tmp, "pkg")
-	if err := downloadFile(url, archive); err != nil {
-		return nil, "", err
-	}
-	sum, err := fileSHA256(archive)
-	if err != nil {
-		return nil, "", err
-	}
-	if strings.TrimSpace(wantSHA) == "" {
-		return nil, "", fmt.Errorf("sha256 required for url install")
-	}
-	if !strings.EqualFold(sum, strings.TrimSpace(wantSHA)) {
-		return nil, "", fmt.Errorf("sha256 mismatch: got %s want %s", sum, wantSHA)
-	}
-	extractDir := filepath.Join(tmp, "extract")
-	if err := os.MkdirAll(extractDir, 0o755); err != nil {
-		return nil, "", err
-	}
-	if err := extractArchive(archive, extractDir); err != nil {
-		return nil, "", err
-	}
-	pkgDir, err := findPackageRoot(extractDir)
-	if err != nil {
-		return nil, "", err
-	}
-	man, err := loadManifest(pkgDir)
-	if err != nil {
-		return nil, "", err
-	}
+	defer cleanup()
 	final := filepath.Join(destRoot, man.ID)
 	if err := replacePackageKeepData(pkgDir, final); err != nil {
 		return nil, "", err
 	}
 	return man, final, nil
+}
+
+func fetchAndExtractURL(url, wantSHA string) (*Manifest, string, func(), error) {
+	nop := func() {}
+	tmp, err := os.MkdirTemp("", "congee-plugin-dl-*")
+	if err != nil {
+		return nil, "", nop, err
+	}
+	cleanup := func() { _ = os.RemoveAll(tmp) }
+	fail := func(err error) (*Manifest, string, func(), error) {
+		cleanup()
+		return nil, "", nop, err
+	}
+	archive := filepath.Join(tmp, "pkg")
+	if err := downloadFile(url, archive); err != nil {
+		return fail(err)
+	}
+	sum, err := fileSHA256(archive)
+	if err != nil {
+		return fail(err)
+	}
+	if strings.TrimSpace(wantSHA) == "" {
+		return fail(fmt.Errorf("sha256 required for url install"))
+	}
+	if !strings.EqualFold(sum, strings.TrimSpace(wantSHA)) {
+		return fail(fmt.Errorf("sha256 mismatch: got %s want %s", sum, strings.TrimSpace(wantSHA)))
+	}
+	extractDir := filepath.Join(tmp, "extract")
+	if err := os.MkdirAll(extractDir, 0o755); err != nil {
+		return fail(err)
+	}
+	if err := extractArchive(archive, extractDir); err != nil {
+		return fail(err)
+	}
+	pkgDir, err := findPackageRoot(extractDir)
+	if err != nil {
+		return fail(err)
+	}
+	man, err := loadManifest(pkgDir)
+	if err != nil {
+		return fail(err)
+	}
+	return man, pkgDir, cleanup, nil
+}
+
+func pluginDirExists(root, id string) bool {
+	if root == "" || id == "" {
+		return false
+	}
+	st, err := os.Stat(filepath.Join(root, id))
+	return err == nil && st.IsDir()
 }
 
 func installFromDir(destRoot, src string) (*Manifest, string, error) {

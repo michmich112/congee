@@ -5,8 +5,10 @@
 	import { adminFetch } from '$lib/admin-api';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
+	import PluginUpdateDialog from '$lib/components/PluginUpdateDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { refreshPluginNav } from '$lib/plugin-nav.svelte';
+	import type { PluginUpdateTarget } from '$lib/plugin-github';
 
 	type PluginRow = {
 		id: string;
@@ -16,6 +18,7 @@
 		state: string;
 		ready?: boolean;
 		last_error?: string;
+		source_url?: string;
 	};
 
 	type PluginApiMessage = {
@@ -33,6 +36,8 @@
 	let err = $state<string | null>(null);
 	let actionBusy = $state(false);
 	let iframeEl: HTMLIFrameElement | null = null;
+	let updateOpen = $state(false);
+	let updatePlugin = $state<PluginUpdateTarget | null>(null);
 
 	const iframeSrc = $derived(pluginId ? `/plugin-ui/${pluginId}/` : '');
 
@@ -221,6 +226,24 @@
 		}
 	}
 
+	function openUpdate() {
+		if (!plugin) return;
+		updatePlugin = {
+			id: plugin.id,
+			name: plugin.name,
+			version: plugin.version,
+			enabled: plugin.enabled,
+			source_url: plugin.source_url
+		};
+		updateOpen = true;
+	}
+
+	async function afterUpdate() {
+		if (!pluginId) return;
+		await loadPlugin(pluginId);
+		await refreshPluginNav();
+	}
+
 	function stateBadgeVariant(state: string): 'default' | 'secondary' | 'destructive' | 'outline' {
 		if (state === 'ready') return 'default';
 		if (state === 'degraded') return 'destructive';
@@ -256,6 +279,7 @@
 					onEnable={() => void toggleEnabled()}
 					onDisable={() => void toggleEnabled()}
 					onUninstall={(wipe) => void uninstallPlugin(wipe)}
+					onUpdate={openUpdate}
 				/>
 			</div>
 		{/if}
@@ -278,3 +302,5 @@
 		></iframe>
 	{/if}
 </div>
+
+<PluginUpdateDialog bind:open={updateOpen} plugin={updatePlugin} onUpdated={afterUpdate} />

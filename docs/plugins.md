@@ -39,12 +39,13 @@ This pulls only the nested module zip (gRPC ABI + `Serve`), not Turso, the admin
 ```json
 "hooks": {
   "install": ["--hook=install"],
+  "update": ["--hook=update"],
   "launch": ["--hook=launch"],
   "uninstall": ["--hook=uninstall"]
 }
 ```
 
-The host runs **install** once after unpack (does not fail the install if the hook errors; it logs a warning). **launch** runs once before the long-lived Serve process. **uninstall** runs after SIGTERM and **before** the package directory is deleted (30s timeout). Conduit uses install/launch to fetch MiniLM ONNX, tokenizer, and onnxruntime into `data/` (skipped when `CONDUIT_EMBEDDER=fake`), and uninstall to delete those downloaded blobs. Failed downloads are reported; the plugin never panics.
+The host runs **install** once after a first unpack (does not fail the install if the hook errors; it logs a warning). **update** runs instead of install when the same plugin id is already on disk (package replace keeps `data/`). If `hooks.update` is omitted, the host falls back to **install**. **launch** runs once before the long-lived Serve process. **uninstall** runs after SIGTERM and **before** the package directory is deleted (30s timeout). Conduit uses install/launch to fetch MiniLM ONNX, tokenizer, and onnxruntime into `data/` (skipped when `CONDUIT_EMBEDDER=fake`), update to apply index schema migrations without re-downloading models, and uninstall to delete those downloaded blobs. Failed downloads are reported; the plugin never panics.
 
 Spawn env (set by the host):
 
@@ -79,7 +80,9 @@ Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `con
 
 `plugin.json` `exec` keys are `GOOS_GOARCH` (for example `darwin_arm64`).
 
-**Install:** admin `POST /api/plugins/install` with `{ "url", "sha256" }` (sha256 is the **archive** checksum) or `{ "path" }` for a local directory (dev). Upgrade replaces `bin/` + `ui/` and **keeps `data/`**.
+**Install:** admin `POST /api/plugins/install` with `{ "url", "sha256" }` (sha256 is the **archive** checksum) or `{ "path" }` for a local directory (dev). Re-installing the same id is the **update** path: the host stops the process, replaces `bin/` + `ui/`, **keeps `data/`**, runs `hooks.update` (or install), then starts again if enable is true.
+
+**Update (admin UI):** kebab **Update** on the plugins table or plugin page. Prefills the last `source_url`. Paste a newer archive URL and its sha256. **Check GitHub** is available when the source is a GitHub Releases download URL; Congee does **not** poll GitHub in the background. GitHub asset `digest` is used for sha256 when the API returns it; otherwise copy the digest from the release notes.
 
 **Uninstall:** `POST /api/plugins/{id}/uninstall` with `{ "wipe_data": false|true }`. The host SIGTERMs the process, runs `hooks.uninstall`, then deletes `bin/` + `ui/`. `wipe_data: false` keeps `data/` (index/secrets) after the hook has removed plugin-managed deps (models, runtime). `wipe_data: true` deletes the entire `plugins/<id>/` tree. The config item is always removed.
 
@@ -97,7 +100,7 @@ Plugin DB passwords in settings are redacted in the config changelog. Conduit st
 
 ## Admin UI
 
-Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table kebab: Settings, enable/disable, uninstall. Detail page embeds `GET /plugin-ui/{id}/` in a sandboxed iframe (`allow-scripts allow-forms`, **no** `allow-same-origin`). Module assets send `Access-Control-Allow-Origin` for opaque origin `null`. The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only (settings via `GET/PUT /api/plugins/{id}/settings`), checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`.
+Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table kebab: Settings, enable/disable, **Update**, uninstall. Detail page embeds `GET /plugin-ui/{id}/` in a sandboxed iframe (`allow-scripts allow-forms`, **no** `allow-same-origin`). Module assets send `Access-Control-Allow-Origin` for opaque origin `null`. The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only (settings via `GET/PUT /api/plugins/{id}/settings`), checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`. Plugin UIs must not assume `crypto.randomUUID` exists in that sandbox.
 
 ## Intercept actions
 
@@ -117,7 +120,7 @@ On-device MiniLM (384-d) is linked against onnxruntime 1.21.0 (ORT C API 21, mat
 
 Kinds come from embedded `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
 
-Install a GitHub Release tarball (per `GOOS_GOARCH`) via admin `POST /api/plugins/install` with the **archive** SHA-256 from the release notes.
+Install a GitHub Release tarball (per `GOOS_GOARCH`) via admin `POST /api/plugins/install` with the **archive** SHA-256 from the release notes. To move to a newer release, use **Update** (same install API); data stays, schema migrations run in `hooks.update`.
 
 ## E2E
 
