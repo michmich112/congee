@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	hookInstallTimeout = 15 * time.Minute
-	hookLaunchTimeout  = 15 * time.Minute
+	hookInstallTimeout   = 15 * time.Minute
+	hookLaunchTimeout    = 15 * time.Minute
+	hookUninstallTimeout = 30 * time.Second
 )
 
 func pluginProcessEnv(id, pkgDir, dataDir, settingsJSON string) []string {

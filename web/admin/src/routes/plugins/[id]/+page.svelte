@@ -194,16 +194,19 @@
 		}
 	}
 
-	async function uninstallPlugin() {
+	async function uninstallPlugin(wipeData: boolean) {
 		if (!plugin) return;
-		if (!confirm(`Uninstall plugin “${plugin.name || plugin.id}”?`)) return;
+		const extra = wipeData
+			? ' This deletes the index, secrets, and downloaded models.'
+			: ' Downloaded models are removed; the index and secrets stay.';
+		if (!confirm(`Uninstall plugin “${plugin.name || plugin.id}”?${extra}`)) return;
 		actionBusy = true;
 		err = null;
 		try {
 			const res = await adminFetch(`/api/plugins/${plugin.id}/uninstall`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ wipe_data: false })
+				body: JSON.stringify({ wipe_data: wipeData })
 			});
 			if (!res.ok) {
 				err = await readApiError(res);
@@ -252,7 +255,7 @@
 					busy={actionBusy}
 					onEnable={() => void toggleEnabled()}
 					onDisable={() => void toggleEnabled()}
-					onUninstall={() => void uninstallPlugin()}
+					onUninstall={(wipe) => void uninstallPlugin(wipe)}
 				/>
 			</div>
 		{/if}

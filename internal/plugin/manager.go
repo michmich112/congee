@@ -386,42 +386,71 @@ func (m *Manager) Disable(id string) error {
 	return nil
 }
 
-// Uninstall stops the plugin and removes the package (keeps data/ unless wipe).
+// Uninstall stops the plugin, runs hooks.uninstall, then removes the package.
+// wipeData deletes data/ (index, secrets) as well as bin/ui; otherwise data/ is kept
+// after the uninstall hook has already removed plugin-managed deps (models, runtime libs).
 func (m *Manager) Uninstall(id string, wipeData bool) error {
-	_ = m.Disable(id)
 	pkg := filepath.Join(m.root, id)
+	if abs, err := filepath.Abs(pkg); err == nil {
+		pkg = abs
+	}
+	dataDir := filepath.Join(pkg, "data")
+	man, _ := loadManifest(pkg)
+	settings := ""
+	if item, idx := config.PluginItemByID(m.cfg, id); idx >= 0 {
+		settings = string(item.Settings)
+	}
+
+	_ = m.Disable(id)
+
+	if man != nil && len(man.Hooks.Uninstall) > 0 {
+		if err := runManifestHook(context.Background(), man, pkg, dataDir, id, settings, man.Hooks.Uninstall, hookUninstallTimeout); err != nil {
+			m.log.Warn().Err(err).Str("plugin_id", id).Msg("plugin uninstall hook failed")
+		}
+	}
+
 	if wipeData {
-		return os.RemoveAll(pkg)
-	}
-	data := filepath.Join(pkg, "data")
-	tmpKeep, err := os.MkdirTemp(m.root, "keep-data-*")
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(data, filepath.Join(tmpKeep, "data")); err != nil && !os.IsNotExist(err) {
+		if err := os.RemoveAll(pkg); err != nil {
+			return err
+		}
+	} else {
+		tmpKeep, err := os.MkdirTemp(m.root, "keep-data-*")
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(dataDir, filepath.Join(tmpKeep, "data")); err != nil && !os.IsNotExist(err) {
+			_ = os.RemoveAll(tmpKeep)
+			return err
+		}
+		if err := os.RemoveAll(pkg); err != nil {
+			_ = os.RemoveAll(tmpKeep)
+			return err
+		}
+		if err := os.MkdirAll(pkg, 0o755); err != nil {
+			_ = os.RemoveAll(tmpKeep)
+			return err
+		}
+		_ = os.Rename(filepath.Join(tmpKeep, "data"), filepath.Join(pkg, "data"))
 		_ = os.RemoveAll(tmpKeep)
-		return err
 	}
-	if err := os.RemoveAll(pkg); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(pkg, 0o755); err != nil {
-		return err
-	}
-	_ = os.Rename(filepath.Join(tmpKeep, "data"), filepath.Join(pkg, "data"))
-	_ = os.RemoveAll(tmpKeep)
+
+	m.dropConfigItem(id)
+	return nil
+}
+
+func (m *Manager) dropConfigItem(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.cfg != nil {
-		items := m.cfg.Plugins.Items[:0]
-		for _, it := range m.cfg.Plugins.Items {
-			if it.ID != id {
-				items = append(items, it)
-			}
-		}
-		m.cfg.Plugins.Items = items
+	if m.cfg == nil {
+		return
 	}
-	return nil
+	items := m.cfg.Plugins.Items[:0]
+	for _, it := range m.cfg.Plugins.Items {
+		if it.ID != id {
+			items = append(items, it)
+		}
+	}
+	m.cfg.Plugins.Items = items
 }
 
 // ApplySettings pushes settings to a running plugin and persists them on the item.

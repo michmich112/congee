@@ -10,7 +10,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/joho/godotenv v1.5.1
-	github.com/michmich112/congee/sdk/plugin v0.0.0
+	github.com/michmich112/congee/sdk/plugin v0.1.0
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1

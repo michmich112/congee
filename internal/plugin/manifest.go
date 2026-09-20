@@ -18,11 +18,12 @@ type Manifest struct {
 	Hooks      PluginHooks       `json:"hooks"`
 }
 
-// PluginHooks are extra argv passed to the plugin exec after install and before Serve.
-// Example: "install": ["--hook=install"], "launch": ["--hook=launch"].
+// PluginHooks are extra argv passed to the plugin exec after install, before Serve, and before package delete.
+// Example: "install": ["--hook=install"], "launch": ["--hook=launch"], "uninstall": ["--hook=uninstall"].
 type PluginHooks struct {
-	Install []string `json:"install,omitempty"`
-	Launch  []string `json:"launch,omitempty"`
+	Install   []string `json:"install,omitempty"`
+	Launch    []string `json:"launch,omitempty"`
+	Uninstall []string `json:"uninstall,omitempty"`
 }
 
 func loadManifest(dir string) (*Manifest, error) {

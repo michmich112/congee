@@ -13,6 +13,7 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends gcc \
 	&& rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
+COPY sdk/plugin/go.mod sdk/plugin/go.sum ./sdk/plugin/
 RUN go mod download
 COPY . .
 COPY --from=admin-ui /src/web/admin/build ./web/admin/build
@@ -29,7 +30,7 @@ LABEL org.opencontainers.image.title="Congee" \
 	org.opencontainers.image.revision="${GIT_REVISION}" \
 	org.opencontainers.image.source="https://github.com/michmich112/congee"
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& apt-get install -y --no-install-recommends ca-certificates libgomp1 libstdc++6 \
 	&& rm -rf /var/lib/apt/lists/*
 WORKDIR /
 # Admin UI is served from web/admin/build relative to the process working directory (WORKDIR /).

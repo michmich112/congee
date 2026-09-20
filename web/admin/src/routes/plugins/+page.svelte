@@ -119,7 +119,7 @@
 		}
 	}
 
-	async function postPluginAction(id: string, action: 'enable' | 'disable' | 'uninstall') {
+	async function postPluginAction(id: string, action: 'enable' | 'disable' | 'uninstall', wipeData = false) {
 		const key = `${id}:${action}`;
 		actionBusy = key;
 		err = null;
@@ -127,7 +127,7 @@
 			const res = await adminFetch(`/api/plugins/${id}/${action}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: action === 'uninstall' ? JSON.stringify({ wipe_data: false }) : undefined
+				body: action === 'uninstall' ? JSON.stringify({ wipe_data: wipeData }) : undefined
 			});
 			if (!res.ok) {
 				err = await readApiError(res);
@@ -141,9 +141,12 @@
 		}
 	}
 
-	function uninstallPlugin(p: PluginRow) {
-		if (!confirm(`Uninstall plugin “${p.name || p.id}”?`)) return;
-		void postPluginAction(p.id, 'uninstall');
+	function uninstallPlugin(p: PluginRow, wipeData: boolean) {
+		const extra = wipeData
+			? ' This deletes the index, secrets, and downloaded models.'
+			: ' Downloaded models are removed; the index and secrets stay.';
+		if (!confirm(`Uninstall plugin “${p.name || p.id}”?${extra}`)) return;
+		void postPluginAction(p.id, 'uninstall', wipeData);
 	}
 
 	function stateBadgeVariant(state: string): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -225,7 +228,7 @@
 												actionBusy === `${p.id}:uninstall`}
 											onEnable={() => void postPluginAction(p.id, 'enable')}
 											onDisable={() => void postPluginAction(p.id, 'disable')}
-											onUninstall={() => uninstallPlugin(p)}
+											onUninstall={(wipe) => uninstallPlugin(p, wipe)}
 										/>
 									</div>
 								</Table.Cell>
