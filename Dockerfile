@@ -13,6 +13,7 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends gcc \
 	&& rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
+COPY sdk/plugin/go.mod sdk/plugin/go.sum ./sdk/plugin/
 RUN go mod download
 COPY . .
 COPY --from=admin-ui /src/web/admin/build ./web/admin/build
