@@ -113,7 +113,7 @@ Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler
 
 Depends only on `github.com/michmich112/congee/sdk/plugin` (`go get …@v0.1.0`). Local ABI work: copy `go.work.example` (do not commit a `go.work` that points at a missing sibling checkout).
 
-On-device MiniLM (384-d) is linked against onnxruntime 1.19.2. Install/launch hooks download weights, tokenizer, and `libonnxruntime` into `data/models` and `data/lib/<goos>_<goarch>/`. `CONDUIT_EMBEDDER=fake` skips download and uses a bag-of-words embedder for tests only. A verified OpenAI-compatible HTTP provider that returns `embed_dim` floats offloads MiniLM after Test + Save. Uninstall hook deletes downloaded blobs; `wipe_data` also drops the index.
+On-device MiniLM (384-d) is linked against onnxruntime 1.21.0 (ORT C API 21, matching `yalue/onnxruntime_go` v1.19.0). Install/launch hooks download weights, tokenizer, and `libonnxruntime` into `data/models` and `data/lib/<goos>_<goarch>/`. `CONDUIT_EMBEDDER=fake` skips download and uses a bag-of-words embedder for tests only. A verified OpenAI-compatible HTTP provider that returns `embed_dim` floats offloads MiniLM after Test + Save. Uninstall hook deletes downloaded blobs; `wipe_data` also drops the index.
 
 Kinds come from embedded `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
 
