@@ -235,7 +235,7 @@ async function withRelay(opts, fn) {
 	if (opts.conduit) stageConduit(pluginsDir)
 	const items = []
 	if (opts.fixture) items.push({ id: 'fixture', enabled: true })
-	if (opts.conduit) items.push({ id: 'conduit', enabled: true, settings: { vector_enabled: true, geo_enabled: true, active_filter: true, inject_product_kinds_on_search: true } })
+	if (opts.conduit) items.push({ id: 'conduit', enabled: true, settings: { vector_enabled: true, geo_enabled: true, active_filter: true, max_results: 0 } })
 	const cfgPath = writeConfig({
 		dir: tmp,
 		relayPort,
@@ -373,8 +373,8 @@ async function conduitCases() {
 		soft('conduit inactive not delivered', !after.events.some((e) => e.id === bike.id || e.id === sold.id))
 		const geo = await req(c, 'geo', { kinds: [30402], '#g': ['9q8'] })
 		soft('conduit geo prefix', geo.eose)
-		const inject = await req(c, 'inj', { search: 'pizza' })
-		soft('conduit inject kinds', inject.eose)
+		const inj = await req(c, 'inj', { search: 'pizza' })
+		soft('conduit search without kinds passthrough', inj.eose)
 		const k1 = await req(c, 'k1', { kinds: [1], search: 'hello' })
 		soft('conduit kind 1 search not marketplace', k1.eose && !k1.events.some((e) => e.kind === 30402))
 		const lim = await req(c, 'lim', { kinds: [30402], search: 'pizza', limit: 1 })
