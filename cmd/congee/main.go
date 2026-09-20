@@ -21,6 +21,7 @@ import (
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nip77/upstream"
 	"github.com/michmich112/congee/internal/nips"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/version"
@@ -96,6 +97,13 @@ func main() {
 		log.Fatal().Err(err).Msg("nips load failed")
 	}
 
+	pluginMgr := plugin.NewManager(cfg, path, storeDB, log)
+	if err := pluginMgr.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("plugin manager start failed")
+	}
+	defer pluginMgr.Stop()
+	srv.SetPluginRuntime(pluginMgr)
+
 	var upstreamSched *upstream.Scheduler
 	if config.NIP77Enabled(cfg) && cfg.NIP77.UpstreamEnabled && len(cfg.NIP77.Upstreams) > 0 {
 		upstreamSched = upstream.NewScheduler(cfg, storeDB, srv, relayID, log)
@@ -125,7 +133,7 @@ func main() {
 	var adminSrv *admin.Server
 	if admin.Enabled() {
 		staticDir := filepath.Join("web", "admin", "build")
-		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, relayID, relayInst)
+		adminSrv = admin.NewServer(cfg, path, storeDB, srv, log, admin.AdminPassword(), staticDir, scheduleRestart, relayID, relayInst, pluginMgr)
 		go func() {
 			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("admin server stopped")

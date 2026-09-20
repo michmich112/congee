@@ -78,8 +78,11 @@ TLS termination is expected to be handled by a reverse proxy (Caddy, nginx, etc.
 ```bash
 make test
 make test-integration
+make test-plugin-e2e
 make lint
 ```
+
+Plugin ABI and Conduit marketplace behavior: [plugins.md](plugins.md).
 
 ## Docker
 

@@ -1,4 +1,4 @@
-.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build
+.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e
 
 VERSION ?= 0.0.0-dev
 
@@ -15,12 +15,20 @@ run: build
 
 test:
 	CGO_ENABLED=1 go test ./...
+	cd sdk/plugin && go test ./...
 
 test-integration:
 	go run github.com/onsi/ginkgo/v2/ginkgo -r ./test/integration/...
 
 test-perf:
 	@echo "test-perf: placeholder (add benchmarks under test/performance/)"
+
+proto:
+	cd sdk/plugin && protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative pluginv1/plugin.proto
+
+test-plugin-e2e: build
+	mkdir -p bin && CGO_ENABLED=1 go build -o bin/congee-plugin-fixture ./cmd/congee-plugin-fixture
+	cd test/plugin-e2e && npm install && node run.mjs
 
 lint:
 	go vet ./...

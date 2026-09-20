@@ -1,0 +1,12 @@
+{
+  "id": "fixture",
+  "name": "Fixture",
+  "version": "0.0.1",
+  "api_version": 1,
+  "exec": {
+    "darwin_arm64": "bin/congee-plugin-fixture",
+    "darwin_amd64": "bin/congee-plugin-fixture",
+    "linux_amd64": "bin/congee-plugin-fixture",
+    "linux_arm64": "bin/congee-plugin-fixture"
+  }
+}

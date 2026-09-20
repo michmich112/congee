@@ -83,5 +83,10 @@
   },
   "nips": {
     "enabled": [1, 11]
+  },
+  "plugins": {
+    "directory": "",
+    "intercept_timeout_ms": 250,
+    "items": []
   }
 }

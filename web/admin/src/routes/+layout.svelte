@@ -17,6 +17,7 @@
 	import Radio from '@lucide/svelte/icons/radio';
 	import Shield from '@lucide/svelte/icons/shield';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Blocks from '@lucide/svelte/icons/blocks';
 	import type { Component } from 'svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -69,7 +70,8 @@
 	type IconComponent = Component<{ class?: string }>;
 
 	const mainNav: { href: string; label: string; Icon: IconComponent }[] = [
-		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard }
+		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard },
+		{ href: '/plugins', label: 'Plugins', Icon: Blocks }
 	];
 
 	const auditNav: { href: string; label: string; Icon: IconComponent }[] = [

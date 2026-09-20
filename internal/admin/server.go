@@ -33,6 +33,7 @@ import (
 	"sync"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
@@ -73,6 +74,7 @@ type Server struct {
 	log               zerolog.Logger
 	password          string
 	staticDir         string
+	plugins           *plugin.Manager
 	devProxy          *httputil.ReverseProxy
 	static            http.Handler // SPA file server (production, or dev fallback when Vite is down)
 
@@ -87,7 +89,7 @@ type Server struct {
 // relayInstanceBoot must be the config.RelayInstanceResolution from the same process
 // start as db.Open (see cmd/congee); it is served by GET /relay-identity and does not
 // track in-memory config mutations until the process restarts.
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution) *Server {
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution, plugins *plugin.Manager) *Server {
 	s := &Server{
 		cfg:               cfg,
 		cfgPath:           cfgPath,
@@ -98,6 +100,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 		log:               log,
 		password:          password,
 		staticDir:         staticDir,
+		plugins:           plugins,
 	}
 	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
 	s.static = s.onlyGET(serveAdminStatic(s.staticDir, http.FileServer(spaFS)))
@@ -147,8 +150,10 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart, relayID))
 	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
+	registerPluginRoutes(api, s)
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
+	mux.HandleFunc("GET /plugin-ui/{id}/{path...}", s.handlePluginUIPublic)
 
 	if isDevEnv() {
 		mux.HandleFunc("/", s.serveDevProxy)

@@ -76,7 +76,7 @@ func handlePutConfig(cfgPath string, cfgMu *sync.Mutex, st storage.Store, schedu
 
 		diff := string(body)
 		if len(prev) > 0 {
-			diff = "previous_bytes=" + strconv.Itoa(len(prev)) + "\n" + string(body)
+			diff = "previous_bytes=" + strconv.Itoa(len(prev)) + "\n" + string(config.RedactSecretsForLog(body))
 		}
 		if err := config.SaveConfigChange(r.Context(), st, "PUT /api/config", diff); err != nil {
 			cfgMu.Unlock()
