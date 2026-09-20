@@ -6,7 +6,6 @@
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import * as Card from '$lib/components/ui/card';
 	import { refreshPluginNav } from '$lib/plugin-nav.svelte';
 
 	type PluginRow = {
@@ -229,8 +228,10 @@
 
 <svelte:window onmessage={onPluginMessage} />
 
-<div class="space-y-8">
-	<div class="flex flex-wrap items-start justify-between gap-4">
+<div class="flex min-h-0 flex-1 flex-col">
+	<div
+		class="border-border flex shrink-0 flex-wrap items-start justify-between gap-4 border-b px-4 py-4 md:px-6"
+	>
 		<AdminPageHeading
 			title={plugin?.name || pluginId || 'Plugin'}
 			subtitle={plugin
@@ -258,23 +259,19 @@
 	</div>
 
 	{#if loading}
-		<p class="text-muted-foreground text-sm">Loading…</p>
+		<p class="text-muted-foreground px-4 pt-3 text-sm md:px-6">Loading…</p>
 	{:else if err}
-		<p class="text-destructive text-sm">{err}</p>
+		<p class="text-destructive px-4 pt-3 text-sm md:px-6">{err}</p>
 	{/if}
 
 	{#if pluginId}
-		<Card.Root>
-			<Card.Content class="p-0">
-				<iframe
-					{@attach attachIframe}
-					src={iframeSrc}
-					title="{plugin?.name || pluginId} plugin UI"
-					sandbox="allow-scripts allow-forms"
-					class="bg-background h-[70vh] min-h-[480px] w-full border-0"
-					onload={onIframeLoad}
-				></iframe>
-			</Card.Content>
-		</Card.Root>
+		<iframe
+			{@attach attachIframe}
+			src={iframeSrc}
+			title="{plugin?.name || pluginId} plugin UI"
+			sandbox="allow-scripts allow-forms"
+			class="bg-background min-h-0 w-full flex-1 border-0"
+			onload={onIframeLoad}
+		></iframe>
 	{/if}
 </div>

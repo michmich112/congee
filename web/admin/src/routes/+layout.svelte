@@ -52,7 +52,7 @@
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
 	let auditNavOpen = $state(true);
-	let pluginNavOpen = $state(true);
+	let pluginNavOpen = $state(false);
 	let sidebarCollapsed = $state(false);
 
 	const SIDEBAR_COLLAPSED_KEY = 'congee-admin-sidebar-collapsed';
@@ -144,6 +144,8 @@
 		);
 	}
 
+	const pluginFullBleed = $derived(/^\/plugins\/[^/]+/.test(page.url.pathname));
+
 	$effect(() => {
 		if (page.url.pathname.startsWith('/config')) {
 			configNavOpen = true;
@@ -151,7 +153,7 @@
 		if (page.url.pathname.startsWith('/audit')) {
 			auditNavOpen = true;
 		}
-		if (page.url.pathname.startsWith('/plugins')) {
+		if (pluginNav.items.some((p) => pluginItemActive(p.id))) {
 			pluginNavOpen = true;
 		}
 	});
@@ -278,7 +280,7 @@
 			</form>
 		</main>
 	{:else}
-		<div class="flex min-h-dvh">
+		<div class={pluginFullBleed ? 'flex h-dvh overflow-hidden' : 'flex min-h-dvh'}>
 			<!-- Desktop sidebar -->
 			<aside
 				class={cn(
@@ -344,27 +346,33 @@
 						{/each}
 						{#if !sidebarCollapsed}
 							<Collapsible.Root bind:open={pluginNavOpen} class="space-y-1">
-								<Collapsible.Trigger
-									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-								>
-									<Blocks class="size-4 shrink-0 opacity-80" />
-									<span class="flex-1 font-medium">Plugins</span>
-									<ChevronDown
-										class={cn(
-											'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
-											pluginNavOpen ? 'rotate-180' : ''
-										)}
-									/>
-								</Collapsible.Trigger>
-								<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
+								<div class="flex items-center gap-0.5">
 									<a
 										href="/plugins"
-										class={pluginChildClass(pluginManageActive(), false)}
+										class={cn(
+											'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+											pluginManageActive()
+												? 'bg-muted font-medium text-foreground'
+												: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+										)}
 										aria-current={pluginManageActive() ? 'page' : undefined}
 									>
-										<Blocks class="size-3.5 shrink-0 opacity-75" />
-										Manage
+										<Blocks class="size-4 shrink-0 opacity-80" />
+										<span class="font-medium">Plugins</span>
 									</a>
+									<Collapsible.Trigger
+										class="rounded-md p-1.5 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+										aria-label={pluginNavOpen ? 'Collapse installed plugins' : 'Expand installed plugins'}
+									>
+										<ChevronDown
+											class={cn(
+												'size-4 shrink-0 transition-transform duration-200',
+												pluginNavOpen ? 'rotate-180' : ''
+											)}
+										/>
+									</Collapsible.Trigger>
+								</div>
+								<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
 									{#each pluginNav.items as p (p.id)}
 										<a
 											href="/plugins/{p.id}"
@@ -435,7 +443,7 @@
 								href="/plugins"
 								class={pluginChildClass(pluginManageActive(), true)}
 								aria-current={pluginManageActive() ? 'page' : undefined}
-								title="Manage plugins"
+								title="Plugins"
 							>
 								<Blocks class="size-4 shrink-0 opacity-75" />
 							</a>
@@ -503,7 +511,7 @@
 					</div>
 				</div>
 			</aside>
-			<div class="flex min-w-0 flex-1 flex-col">
+			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<header class="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
 					<Sheet.Root bind:open={mobileNavOpen}>
 						<Sheet.Trigger
@@ -535,20 +543,19 @@
 											{item.label}
 										</a>
 									{/each}
-									<p
-										class="text-muted-foreground flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-medium tracking-wide uppercase"
-									>
-										<Blocks class="size-3.5 shrink-0 opacity-70" />
-										Plugins
-									</p>
 									<a
 										href="/plugins"
-										class={pluginChildClass(pluginManageActive(), false)}
+										class={cn(
+											'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+											pluginManageActive()
+												? 'bg-muted font-medium text-foreground'
+												: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+										)}
 										aria-current={pluginManageActive() ? 'page' : undefined}
 										onclick={() => (mobileNavOpen = false)}
 									>
-										<Blocks class="size-3.5 shrink-0 opacity-75" />
-										Manage
+										<Blocks class="size-4 shrink-0 opacity-80" />
+										Plugins
 									</a>
 									{#each pluginNav.items as p (p.id)}
 										<a
@@ -618,7 +625,11 @@
 					</div>
 				</header>
 
-				<main class="mx-auto w-full max-w-5xl flex-1 px-4 py-6 md:px-6 md:py-8">
+				<main
+					class={pluginFullBleed
+						? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+						: 'mx-auto w-full max-w-5xl flex-1 px-4 py-6 md:px-6 md:py-8'}
+				>
 					{@render children()}
 				</main>
 			</div>
