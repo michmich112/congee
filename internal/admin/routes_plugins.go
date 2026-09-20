@@ -225,7 +225,32 @@ func (s *Server) handlePluginUIPublic(w http.ResponseWriter, r *http.Request) {
 	s.servePluginUI(w, r, r.PathValue("id"), r.PathValue("path"))
 }
 
+// writePluginUIAccessHeaders lets a sandboxed iframe (opaque origin "null") load
+// Vite ES modules from this host. Without CORS, Chrome blocks
+// plugin-ui/{id}/assets/*.js with origin 'null'.
+func writePluginUIAccessHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	switch origin {
+	case "", "*":
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	default:
+		// Includes the string "null" from sandboxed iframes without allow-same-origin.
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+	w.Header().Set("Vary", "Origin")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	if reqHdr := r.Header.Get("Access-Control-Request-Headers"); reqHdr != "" {
+		w.Header().Set("Access-Control-Allow-Headers", reqHdr)
+	}
+	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+}
+
 func (s *Server) servePluginUI(w http.ResponseWriter, r *http.Request, id, rel string) {
+	writePluginUIAccessHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if s.plugins == nil {
 		http.NotFound(w, r)
 		return
@@ -247,7 +272,8 @@ func (s *Server) servePluginUI(w http.ResponseWriter, r *http.Request, id, rel s
 	if st, err := os.Stat(fp); err != nil || st.IsDir() {
 		fp = filepath.Join(ui, "index.html")
 	}
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+	// Opaque iframe origin is not 'self'; allow http(s) so module scripts and CSS load.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src data: http: https:; style-src 'unsafe-inline' http: https:; script-src 'unsafe-inline' http: https:; font-src http: https:; connect-src 'none'; base-uri 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeFile(w, r, fp)
 }

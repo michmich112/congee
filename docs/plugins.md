@@ -66,7 +66,7 @@ Plugin DB passwords in settings are redacted in the config changelog. Conduit st
 
 ## Admin UI
 
-Nav **Plugins**: table, URL or local-path install, enable/disable/uninstall. Detail page embeds `GET /plugin-ui/{id}/` in a sandboxed iframe (`allow-scripts allow-forms`, **no** `allow-same-origin`). The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only, checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`.
+Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table kebab: Settings, enable/disable, uninstall. Detail page embeds `GET /plugin-ui/{id}/` in a sandboxed iframe (`allow-scripts allow-forms`, **no** `allow-same-origin`). Module assets send `Access-Control-Allow-Origin` for opaque origin `null`. The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only (settings via `GET/PUT /api/plugins/{id}/settings`), checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`.
 
 ## Intercept actions
 

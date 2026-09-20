@@ -1,11 +1,13 @@
 <script lang="ts">
 	import Blocks from '@lucide/svelte/icons/blocks';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { adminFetch } from '$lib/admin-api';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
+	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import { refreshPluginNav } from '$lib/plugin-nav.svelte';
 
 	type PluginRow = {
 		id: string;
@@ -185,6 +187,31 @@
 				return;
 			}
 			await loadPlugin(plugin.id);
+			await refreshPluginNav();
+		} catch (e) {
+			err = e instanceof Error ? e.message : 'request failed';
+		} finally {
+			actionBusy = false;
+		}
+	}
+
+	async function uninstallPlugin() {
+		if (!plugin) return;
+		if (!confirm(`Uninstall plugin “${plugin.name || plugin.id}”?`)) return;
+		actionBusy = true;
+		err = null;
+		try {
+			const res = await adminFetch(`/api/plugins/${plugin.id}/uninstall`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ wipe_data: false })
+			});
+			if (!res.ok) {
+				err = await readApiError(res);
+				return;
+			}
+			await refreshPluginNav();
+			await goto('/plugins');
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'request failed';
 		} finally {
@@ -216,20 +243,16 @@
 				<Badge variant={stateBadgeVariant(plugin.state)}>{plugin.state}</Badge>
 				{#if plugin.enabled}
 					<Badge>enabled</Badge>
-					<Button
-						type="button"
-						variant="outline"
-						disabled={actionBusy}
-						onclick={() => void toggleEnabled()}
-					>
-						{actionBusy ? 'Disabling…' : 'Disable'}
-					</Button>
 				{:else}
 					<Badge variant="outline">disabled</Badge>
-					<Button type="button" disabled={actionBusy} onclick={() => void toggleEnabled()}>
-						{actionBusy ? 'Enabling…' : 'Enable'}
-					</Button>
 				{/if}
+				<PluginActionsMenu
+					plugin={plugin}
+					busy={actionBusy}
+					onEnable={() => void toggleEnabled()}
+					onDisable={() => void toggleEnabled()}
+					onUninstall={() => void uninstallPlugin()}
+				/>
 			</div>
 		{/if}
 	</div>

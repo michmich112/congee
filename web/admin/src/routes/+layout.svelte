@@ -28,6 +28,7 @@
 		clearAdminToken,
 		verifyAdminToken
 	} from '$lib/admin-api';
+	import { pluginNav, refreshPluginNav } from '$lib/plugin-nav.svelte';
 	import { initTimestampDisplayFromStorage } from '$lib/admin-timestamp-preference.svelte';
 	import { syncAdminFavicon } from '$lib/admin-favicon';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -51,6 +52,7 @@
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
 	let auditNavOpen = $state(true);
+	let pluginNavOpen = $state(true);
 	let sidebarCollapsed = $state(false);
 
 	const SIDEBAR_COLLAPSED_KEY = 'congee-admin-sidebar-collapsed';
@@ -70,8 +72,7 @@
 	type IconComponent = Component<{ class?: string }>;
 
 	const mainNav: { href: string; label: string; Icon: IconComponent }[] = [
-		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard },
-		{ href: '/plugins', label: 'Plugins', Icon: Blocks }
+		{ href: '/', label: 'Dashboard', Icon: LayoutDashboard }
 	];
 
 	const auditNav: { href: string; label: string; Icon: IconComponent }[] = [
@@ -123,6 +124,26 @@
 		return path === href || path.startsWith(href + '/');
 	}
 
+	function pluginManageActive() {
+		return page.url.pathname === '/plugins';
+	}
+
+	function pluginItemActive(id: string) {
+		const href = `/plugins/${id}`;
+		const path = page.url.pathname;
+		return path === href || path.startsWith(href + '/');
+	}
+
+	function pluginChildClass(active: boolean, collapsed: boolean) {
+		return cn(
+			'flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors',
+			collapsed ? 'justify-center px-0' : 'pl-3 pr-2',
+			active
+				? 'bg-muted font-medium text-foreground'
+				: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+		);
+	}
+
 	$effect(() => {
 		if (page.url.pathname.startsWith('/config')) {
 			configNavOpen = true;
@@ -130,6 +151,18 @@
 		if (page.url.pathname.startsWith('/audit')) {
 			auditNavOpen = true;
 		}
+		if (page.url.pathname.startsWith('/plugins')) {
+			pluginNavOpen = true;
+		}
+	});
+
+	$effect(() => {
+		if (!tokenOk) {
+			pluginNav.items = [];
+			return;
+		}
+		void page.url.pathname;
+		void refreshPluginNav();
 	});
 
 	$effect(() => {
@@ -310,6 +343,40 @@
 							</a>
 						{/each}
 						{#if !sidebarCollapsed}
+							<Collapsible.Root bind:open={pluginNavOpen} class="space-y-1">
+								<Collapsible.Trigger
+									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+								>
+									<Blocks class="size-4 shrink-0 opacity-80" />
+									<span class="flex-1 font-medium">Plugins</span>
+									<ChevronDown
+										class={cn(
+											'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
+											pluginNavOpen ? 'rotate-180' : ''
+										)}
+									/>
+								</Collapsible.Trigger>
+								<Collapsible.Content class="flex flex-col gap-0.5 border-border border-l pl-2">
+									<a
+										href="/plugins"
+										class={pluginChildClass(pluginManageActive(), false)}
+										aria-current={pluginManageActive() ? 'page' : undefined}
+									>
+										<Blocks class="size-3.5 shrink-0 opacity-75" />
+										Manage
+									</a>
+									{#each pluginNav.items as p (p.id)}
+										<a
+											href="/plugins/{p.id}"
+											class={pluginChildClass(pluginItemActive(p.id), false)}
+											aria-current={pluginItemActive(p.id) ? 'page' : undefined}
+										>
+											<Puzzle class="size-3.5 shrink-0 opacity-75" />
+											<span class="truncate">{p.name || p.id}</span>
+										</a>
+									{/each}
+								</Collapsible.Content>
+							</Collapsible.Root>
 							<Collapsible.Root bind:open={auditNavOpen} class="space-y-1">
 								<Collapsible.Trigger
 									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -363,6 +430,25 @@
 								</Collapsible.Content>
 							</Collapsible.Root>
 						{:else}
+							<div class="mx-auto my-0.5 h-px w-6 shrink-0 bg-border" aria-hidden="true"></div>
+							<a
+								href="/plugins"
+								class={pluginChildClass(pluginManageActive(), true)}
+								aria-current={pluginManageActive() ? 'page' : undefined}
+								title="Manage plugins"
+							>
+								<Blocks class="size-4 shrink-0 opacity-75" />
+							</a>
+							{#each pluginNav.items as p (p.id)}
+								<a
+									href="/plugins/{p.id}"
+									class={pluginChildClass(pluginItemActive(p.id), true)}
+									aria-current={pluginItemActive(p.id) ? 'page' : undefined}
+									title={p.name || p.id}
+								>
+									<Puzzle class="size-4 shrink-0 opacity-75" />
+								</a>
+							{/each}
 							<div class="mx-auto my-0.5 h-px w-6 shrink-0 bg-border" aria-hidden="true"></div>
 							{#each auditNav as item}
 								<a
@@ -447,6 +533,32 @@
 										>
 											<item.Icon class="size-4 shrink-0 opacity-80" />
 											{item.label}
+										</a>
+									{/each}
+									<p
+										class="text-muted-foreground flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-medium tracking-wide uppercase"
+									>
+										<Blocks class="size-3.5 shrink-0 opacity-70" />
+										Plugins
+									</p>
+									<a
+										href="/plugins"
+										class={pluginChildClass(pluginManageActive(), false)}
+										aria-current={pluginManageActive() ? 'page' : undefined}
+										onclick={() => (mobileNavOpen = false)}
+									>
+										<Blocks class="size-3.5 shrink-0 opacity-75" />
+										Manage
+									</a>
+									{#each pluginNav.items as p (p.id)}
+										<a
+											href="/plugins/{p.id}"
+											class={pluginChildClass(pluginItemActive(p.id), false)}
+											aria-current={pluginItemActive(p.id) ? 'page' : undefined}
+											onclick={() => (mobileNavOpen = false)}
+										>
+											<Puzzle class="size-3.5 shrink-0 opacity-75" />
+											<span class="truncate">{p.name || p.id}</span>
 										</a>
 									{/each}
 									<p

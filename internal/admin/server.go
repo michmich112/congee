@@ -154,6 +154,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
 	mux.HandleFunc("GET /plugin-ui/{id}/{path...}", s.handlePluginUIPublic)
+	mux.HandleFunc("OPTIONS /plugin-ui/{id}/{path...}", s.handlePluginUIPublic)
 
 	if isDevEnv() {
 		mux.HandleFunc("/", s.serveDevProxy)

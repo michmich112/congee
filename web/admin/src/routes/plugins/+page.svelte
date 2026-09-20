@@ -11,6 +11,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Table from '$lib/components/ui/table';
+	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
+	import { pluginNav } from '$lib/plugin-nav.svelte';
 
 	type PluginRow = {
 		id: string;
@@ -57,6 +59,12 @@
 			}
 			const data = (await res.json()) as { plugins?: PluginRow[] };
 			plugins = data.plugins ?? [];
+			pluginNav.items = plugins.map((p) => ({
+				id: p.id,
+				name: p.name,
+				enabled: p.enabled,
+				state: p.state
+			}));
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'request failed';
 			plugins = [];
@@ -208,37 +216,17 @@
 										<Badge variant="outline">disabled</Badge>
 									{/if}
 								</Table.Cell>
-								<Table.Cell>
-									<div class="flex flex-wrap justify-end gap-2">
-										{#if p.enabled}
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												disabled={actionBusy === `${p.id}:disable`}
-												onclick={() => void postPluginAction(p.id, 'disable')}
-											>
-												{actionBusy === `${p.id}:disable` ? 'Disabling…' : 'Disable'}
-											</Button>
-										{:else}
-											<Button
-												type="button"
-												size="sm"
-												disabled={actionBusy === `${p.id}:enable`}
-												onclick={() => void postPluginAction(p.id, 'enable')}
-											>
-												{actionBusy === `${p.id}:enable` ? 'Enabling…' : 'Enable'}
-											</Button>
-										{/if}
-										<Button
-											type="button"
-											variant="destructive"
-											size="sm"
-											disabled={actionBusy === `${p.id}:uninstall`}
-											onclick={() => uninstallPlugin(p)}
-										>
-											{actionBusy === `${p.id}:uninstall` ? 'Uninstalling…' : 'Uninstall'}
-										</Button>
+								<Table.Cell class="text-right">
+									<div class="flex justify-end">
+										<PluginActionsMenu
+											plugin={p}
+											busy={actionBusy === `${p.id}:enable` ||
+												actionBusy === `${p.id}:disable` ||
+												actionBusy === `${p.id}:uninstall`}
+											onEnable={() => void postPluginAction(p.id, 'enable')}
+											onDisable={() => void postPluginAction(p.id, 'disable')}
+											onUninstall={() => uninstallPlugin(p)}
+										/>
 									</div>
 								</Table.Cell>
 							</Table.Row>
