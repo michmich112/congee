@@ -22,16 +22,29 @@ make proto
 
 Handshake `api_version` must be **1** or the host rejects the plugin.
 
+Import the nested module (not the relay):
+
+```bash
+go get github.com/michmich112/congee/sdk/plugin@v0.1.0
+```
+
+```go
+import sdk "github.com/michmich112/congee/sdk/plugin"
+```
+
+This pulls only the nested module zip (gRPC ABI + `Serve`), not Turso, the admin UI, or `internal/`. Git tags are **`sdk/plugin/vX.Y.Z`**; a root Congee `v1.2.3` release does not version the SDK. Local ABI iteration uses `replace` or [`go.work.example`](../go.work.example).
+
 `plugin.json` may include **hooks** — extra argv on the same `exec` binary:
 
 ```json
 "hooks": {
   "install": ["--hook=install"],
-  "launch": ["--hook=launch"]
+  "launch": ["--hook=launch"],
+  "uninstall": ["--hook=uninstall"]
 }
 ```
 
-The host runs **install** once after unpack (does not fail the install if the hook errors; it logs a warning). **launch** runs once before the long-lived Serve process. Timeouts are 15 minutes so a model download can finish. Conduit uses these hooks to fetch MiniLM ONNX and onnxruntime into `data/` (skipped when `CONDUIT_EMBEDDER=fake`). Failed downloads are reported; the plugin never panics.
+The host runs **install** once after unpack (does not fail the install if the hook errors; it logs a warning). **launch** runs once before the long-lived Serve process. **uninstall** runs after SIGTERM and **before** the package directory is deleted (30s timeout). Conduit uses install/launch to fetch MiniLM ONNX, tokenizer, and onnxruntime into `data/` (skipped when `CONDUIT_EMBEDDER=fake`), and uninstall to delete those downloaded blobs. Failed downloads are reported; the plugin never panics.
 
 Spawn env (set by the host):
 
@@ -50,21 +63,25 @@ State machine: `Starting` → `Ready` → `Degraded` → backoff. Only **Ready**
 
 ## Package layout
 
-Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `config.json`):
+Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `config.json`). In Docker this is **`/data/plugins`**. All plugin-owned files stay under that tree (never `/usr` or the image root):
 
 ```
-<id>/
-  plugin.json
-  bin/…
-  models/      # Conduit: minilm.onnx
-  lib/         # Conduit: onnxruntime per GOOS_GOARCH
-  ui/          # optional static Svelte build
-  data/        # kept across upgrade/uninstall unless wipe
+/data/plugins/
+  host.sock
+  <id>/
+    plugin.json
+    bin/…
+    ui/          # optional static Svelte build
+    data/        # CONGEE_PLUGIN_DATA_DIR — indexes, secrets, downloaded models/libs
+      models/    # Conduit: MiniLM + tokenizer (install hook)
+      lib/       # Conduit: onnxruntime per GOOS_GOARCH (install hook)
 ```
 
 `plugin.json` `exec` keys are `GOOS_GOARCH` (for example `darwin_arm64`).
 
-**Install:** admin `POST /api/plugins/install` with `{ "url", "sha256" }` (sha256 required) or `{ "path" }` for a local directory (dev). Upgrade replaces `bin/` + `ui/` and **keeps `data/`**. Uninstall SIGTERM, then deletes the package; `data/` stays unless `wipe_data`.
+**Install:** admin `POST /api/plugins/install` with `{ "url", "sha256" }` (sha256 is the **archive** checksum) or `{ "path" }` for a local directory (dev). Upgrade replaces `bin/` + `ui/` and **keeps `data/`**.
+
+**Uninstall:** `POST /api/plugins/{id}/uninstall` with `{ "wipe_data": false|true }`. The host SIGTERMs the process, runs `hooks.uninstall`, then deletes `bin/` + `ui/`. `wipe_data: false` keeps `data/` (index/secrets) after the hook has removed plugin-managed deps (models, runtime). `wipe_data: true` deletes the entire `plugins/<id>/` tree. The config item is always removed.
 
 ## Config
 
@@ -92,9 +109,15 @@ Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table k
 
 ## Conduit marketplace plugin
 
-Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain). Fake embedder: `CONDUIT_EMBEDDER=fake` (required to use the test bag-of-words model; otherwise a missing/unlinked ONNX build disables vector rank). Vector width is `embed_dim` (default 384). A verified OpenAI-compatible HTTP provider that returns that many floats offloads MiniLM after Test + Save. Changing `embed_dim` or the embedder rebuilds the index. On-device assets are downloaded by install/launch hooks into `data/models` and `data/lib/<goos>_<goarch>/` (URLs configurable in Indexes). Kinds come from `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
+Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain).
 
-Local SDK development: in `conduit-plugin`, `go.work` uses `../congee/sdk/plugin`. From Congee, `go.work.example` can span both modules — do not commit a `go.work` that points at a missing sibling repo (breaks CI).
+Depends only on `github.com/michmich112/congee/sdk/plugin` (`go get …@v0.1.0`). Local ABI work: copy `go.work.example` (do not commit a `go.work` that points at a missing sibling checkout).
+
+On-device MiniLM (384-d) is linked against onnxruntime 1.19.2. Install/launch hooks download weights, tokenizer, and `libonnxruntime` into `data/models` and `data/lib/<goos>_<goarch>/`. `CONDUIT_EMBEDDER=fake` skips download and uses a bag-of-words embedder for tests only. A verified OpenAI-compatible HTTP provider that returns `embed_dim` floats offloads MiniLM after Test + Save. Uninstall hook deletes downloaded blobs; `wipe_data` also drops the index.
+
+Kinds come from embedded `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
+
+Install a GitHub Release tarball (per `GOOS_GOARCH`) via admin `POST /api/plugins/install` with the **archive** SHA-256 from the release notes.
 
 ## E2E
 
