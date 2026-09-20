@@ -29,7 +29,7 @@ LABEL org.opencontainers.image.title="Congee" \
 	org.opencontainers.image.revision="${GIT_REVISION}" \
 	org.opencontainers.image.source="https://github.com/michmich112/congee"
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& apt-get install -y --no-install-recommends ca-certificates libgomp1 libstdc++6 \
 	&& rm -rf /var/lib/apt/lists/*
 WORKDIR /
 # Admin UI is served from web/admin/build relative to the process working directory (WORKDIR /).

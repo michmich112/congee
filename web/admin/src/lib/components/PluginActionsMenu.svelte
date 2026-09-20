@@ -24,7 +24,7 @@
 		includeSettings?: boolean;
 		onEnable: () => void;
 		onDisable: () => void;
-		onUninstall: () => void;
+		onUninstall: (wipeData: boolean) => void;
 	} = $props();
 </script>
 
@@ -50,8 +50,11 @@
 			{/if}
 		</DropdownMenu.Group>
 		<DropdownMenu.Separator />
-		<DropdownMenu.Item variant="destructive" disabled={busy} onclick={onUninstall}>
+		<DropdownMenu.Item variant="destructive" disabled={busy} onclick={() => onUninstall(false)}>
 			Uninstall
+		</DropdownMenu.Item>
+		<DropdownMenu.Item variant="destructive" disabled={busy} onclick={() => onUninstall(true)}>
+			Uninstall and wipe data
 		</DropdownMenu.Item>
 	</DropdownMenu.Content>
 </DropdownMenu.Root>
