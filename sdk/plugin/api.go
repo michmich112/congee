@@ -16,15 +16,16 @@ const (
 	EnvPluginDataDir    = "CONGEE_PLUGIN_DATA_DIR"
 	EnvPluginSettings   = "CONGEE_PLUGIN_SETTINGS"
 	EnvPluginID         = "CONGEE_PLUGIN_ID"
+	EnvPluginPackageDir = "CONGEE_PLUGIN_PACKAGE_DIR"
 )
 
 // Capabilities declared at handshake. Host enforces them.
 const (
-	CapObserve     = "messages.observe"
-	CapIntercept   = "req.intercept"
-	CapEventsRead  = "events.read"
-	CapIndexOwn    = "index.own"
-	CapAdminUI     = "admin.ui"
+	CapObserve    = "messages.observe"
+	CapIntercept  = "req.intercept"
+	CapEventsRead = "events.read"
+	CapIndexOwn   = "index.own"
+	CapAdminUI    = "admin.ui"
 )
 
 // Event is a NIP-01 event on the plugin ABI (not Congee internal/nostr).
@@ -66,23 +67,23 @@ type ObserveMessage struct {
 
 // TrafficSubscription is a host-side match rule. Empty kinds/types match nothing.
 type TrafficSubscription struct {
-	MessageTypes   []string
-	Kinds          []int
-	ReqHasSearch   bool
-	ReqTagNames    []string
-	InterceptREQ   bool
-	Observe        bool
-	OnStoredEvent  bool
+	MessageTypes  []string
+	Kinds         []int
+	ReqHasSearch  bool
+	ReqTagNames   []string
+	InterceptREQ  bool
+	Observe       bool
+	OnStoredEvent bool
 }
 
 // HandshakeResult is returned from Handler.Handshake.
 type HandshakeResult struct {
-	PluginID             string
-	Name                 string
-	Version              string
-	Capabilities         []string
-	Subscriptions        []TrafficSubscription
-	InterceptDeadlineMs  int
+	PluginID            string
+	Name                string
+	Version             string
+	Capabilities        []string
+	Subscriptions       []TrafficSubscription
+	InterceptDeadlineMs int
 }
 
 // InterceptAction is the plugin decision for a REQ.
@@ -96,10 +97,10 @@ const (
 
 // InterceptResult is returned from Handler.InterceptREQ.
 type InterceptResult struct {
-	Action               InterceptAction
-	ReshapeFilters       []Filter
-	EventIDs             []string
-	SubscriptionFilters  []Filter
+	Action              InterceptAction
+	ReshapeFilters      []Filter
+	EventIDs            []string
+	SubscriptionFilters []Filter
 }
 
 // Status is plugin health and UI JSON.

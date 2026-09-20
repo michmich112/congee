@@ -290,14 +290,14 @@ func (m *Manager) get(id string) *instance {
 
 // InstallURL downloads, verifies sha256, and copies the package into the plugins dir.
 func (m *Manager) InstallURL(ctx context.Context, url, sha256hex string, enable bool) (*Manifest, error) {
-	_ = ctx
 	if err := os.MkdirAll(m.root, 0o755); err != nil {
 		return nil, err
 	}
-	man, _, err := installFromURL(m.root, url, sha256hex)
+	man, dest, err := installFromURL(m.root, url, sha256hex)
 	if err != nil {
 		return nil, err
 	}
+	m.runInstallHook(ctx, man, dest)
 	m.upsertConfigItem(man, url, sha256hex, enable)
 	if enable {
 		if err := m.Enable(man.ID); err != nil {
@@ -312,10 +312,11 @@ func (m *Manager) InstallLocal(src string, enable bool) (*Manifest, error) {
 	if err := os.MkdirAll(m.root, 0o755); err != nil {
 		return nil, err
 	}
-	man, _, err := installFromDir(m.root, src)
+	man, dest, err := installFromDir(m.root, src)
 	if err != nil {
 		return nil, err
 	}
+	m.runInstallHook(context.Background(), man, dest)
 	m.upsertConfigItem(man, src, "", enable)
 	if enable {
 		if err := m.Enable(man.ID); err != nil {
@@ -337,6 +338,20 @@ func (m *Manager) upsertConfigItem(man *Manifest, source, sha string, enabled bo
 		return
 	}
 	m.cfg.Plugins.Items = append(m.cfg.Plugins.Items, it)
+}
+
+func (m *Manager) runInstallHook(ctx context.Context, man *Manifest, pkgDir string) {
+	if man == nil || len(man.Hooks.Install) == 0 {
+		return
+	}
+	dataDir := filepath.Join(pkgDir, "data")
+	settings := ""
+	if item, idx := config.PluginItemByID(m.cfg, man.ID); idx >= 0 {
+		settings = string(item.Settings)
+	}
+	if err := runManifestHook(ctx, man, pkgDir, dataDir, man.ID, settings, man.Hooks.Install, hookInstallTimeout); err != nil {
+		m.log.Warn().Err(err).Str("plugin_id", man.ID).Msg("plugin install hook failed")
+	}
 }
 
 // Enable starts a plugin if installed.

@@ -221,6 +221,12 @@ function stageConduit(pluginsDir) {
 	if (fs.existsSync(path.join(CONDUIT, 'ui'))) {
 		fs.cpSync(path.join(CONDUIT, 'ui'), path.join(dest, 'ui'), { recursive: true })
 	}
+	for (const extra of ['models', 'lib']) {
+		const src = path.join(CONDUIT, extra)
+		if (fs.existsSync(src)) {
+			fs.cpSync(src, path.join(dest, extra), { recursive: true })
+		}
+	}
 }
 
 async function withRelay(opts, fn) {

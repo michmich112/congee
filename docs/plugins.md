@@ -22,6 +22,17 @@ make proto
 
 Handshake `api_version` must be **1** or the host rejects the plugin.
 
+`plugin.json` may include **hooks** — extra argv on the same `exec` binary:
+
+```json
+"hooks": {
+  "install": ["--hook=install"],
+  "launch": ["--hook=launch"]
+}
+```
+
+The host runs **install** once after unpack (does not fail the install if the hook errors; it logs a warning). **launch** runs once before the long-lived Serve process. Timeouts are 15 minutes so a model download can finish. Conduit uses these hooks to fetch MiniLM ONNX and onnxruntime into `data/` (skipped when `CONDUIT_EMBEDDER=fake`). Failed downloads are reported; the plugin never panics.
+
 Spawn env (set by the host):
 
 | Variable | Meaning |
@@ -31,6 +42,7 @@ Spawn env (set by the host):
 | `CONGEE_PLUGIN_DATA_DIR` | Per-plugin `data/` (indexes, secrets) |
 | `CONGEE_PLUGIN_SETTINGS` | JSON settings snapshot |
 | `CONGEE_PLUGIN_ID` | Config id |
+| `CONGEE_PLUGIN_PACKAGE_DIR` | Installed package root (parent of `bin/`) |
 
 The host creates **`host.sock` first**, then spawns the process. Plugin stdout/stderr are captured into zerolog with `plugin_id`.
 
@@ -44,6 +56,8 @@ Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `con
 <id>/
   plugin.json
   bin/…
+  models/      # Conduit: minilm.onnx
+  lib/         # Conduit: onnxruntime per GOOS_GOARCH
   ui/          # optional static Svelte build
   data/        # kept across upgrade/uninstall unless wipe
 ```
@@ -78,7 +92,7 @@ Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table k
 
 ## Conduit marketplace plugin
 
-Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain). Fake embedder: `CONDUIT_EMBEDDER=fake` (required to use the test bag-of-words model; otherwise a missing/unlinked ONNX build disables vector rank). Kinds come from `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
+Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain). Fake embedder: `CONDUIT_EMBEDDER=fake` (required to use the test bag-of-words model; otherwise a missing/unlinked ONNX build disables vector rank). Vector width is `embed_dim` (default 384). A verified OpenAI-compatible HTTP provider that returns that many floats offloads MiniLM after Test + Save. Changing `embed_dim` or the embedder rebuilds the index. On-device assets are downloaded by install/launch hooks into `data/models` and `data/lib/<goos>_<goarch>/` (URLs configurable in Indexes). Kinds come from `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
 
 Local SDK development: in `conduit-plugin`, `go.work` uses `../congee/sdk/plugin`. From Congee, `go.work.example` can span both modules — do not commit a `go.work` that points at a missing sibling repo (breaks CI).
 

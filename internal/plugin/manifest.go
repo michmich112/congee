@@ -15,6 +15,14 @@ type Manifest struct {
 	Version    string            `json:"version"`
 	APIVersion int               `json:"api_version"`
 	Exec       map[string]string `json:"exec"`
+	Hooks      PluginHooks       `json:"hooks"`
+}
+
+// PluginHooks are extra argv passed to the plugin exec after install and before Serve.
+// Example: "install": ["--hook=install"], "launch": ["--hook=launch"].
+type PluginHooks struct {
+	Install []string `json:"install,omitempty"`
+	Launch  []string `json:"launch,omitempty"`
 }
 
 func loadManifest(dir string) (*Manifest, error) {

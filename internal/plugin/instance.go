@@ -83,6 +83,8 @@ type instance struct {
 	client     pluginv1.PluginClient
 	cancelProc context.CancelFunc
 
+	launchHookDone atomic.Bool
+
 	listenQ chan listenJob
 	stopped atomic.Bool
 
@@ -363,6 +365,12 @@ func (in *instance) spawnAndHandshake(parent context.Context) error {
 	if err := os.MkdirAll(in.dataDir, 0o755); err != nil {
 		return err
 	}
+	if !in.launchHookDone.Load() && in.man != nil && len(in.man.Hooks.Launch) > 0 {
+		if err := runManifestHook(parent, in.man, in.pkgDir, in.dataDir, in.id, string(in.settingsJSON()), in.man.Hooks.Launch, hookLaunchTimeout); err != nil {
+			in.log.Warn().Err(err).Msg("plugin launch hook failed")
+		}
+		in.launchHookDone.Store(true)
+	}
 	bin, err := in.man.execPath(in.pkgDir)
 	if err != nil {
 		return err
@@ -376,6 +384,7 @@ func (in *instance) spawnAndHandshake(parent context.Context) error {
 		sdk.EnvPluginHostSocket+"="+hostSock,
 		sdk.EnvPluginDataDir+"="+in.dataDir,
 		sdk.EnvPluginID+"="+in.id,
+		sdk.EnvPluginPackageDir+"="+in.pkgDir,
 		sdk.EnvPluginSettings+"="+string(in.settingsJSON()),
 	)
 	cmd.Stdout = newPluginLogWriter(in.log, "stdout")
