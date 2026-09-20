@@ -17,3 +17,6 @@ config.json
 docs/plans/
 openspec/
 *.secrets.json
+
+# Local plugin installs (binaries + data)
+/plugins/

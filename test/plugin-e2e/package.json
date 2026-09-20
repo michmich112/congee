@@ -1,0 +1,9 @@
+{
+  "name": "congee-plugin-e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "nostr-tools": "^2.15.0",
+    "ws": "^8.18.0"
+  }
+}

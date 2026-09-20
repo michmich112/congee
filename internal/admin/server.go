@@ -9,6 +9,7 @@
 //	GET    /api/audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); JSON {kinds:[]int}
 //	GET    /api/audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); JSON {retention_days,live,closed,closed_total?}
 //	GET    /api/audit/connections/{ref} — session detail + audit_entries; ref is live:{conn_id} or session:{numeric_id}
+//	GET    /api/events           — stored events by kind (?kind=&limit=&offset=&since=&until=&pubkey=); {events,total}
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
@@ -33,6 +34,7 @@ import (
 	"sync"
 
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
@@ -52,6 +54,7 @@ import (
 //	GET      /audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); body {kinds:[]int}
 //	GET      /audit/connections — WebSocket sessions (?limit,&offset,&include_live=,&include_closed=); body {retention_days,live,closed,closed_total?}
 //	GET      /audit/connections/{ref} — session detail + audit_entries; ref is live:{conn_id} or session:{numeric_id}
+//	GET      /events           — stored events by kind (?kind= required); body {events,total}
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
@@ -73,6 +76,7 @@ type Server struct {
 	log               zerolog.Logger
 	password          string
 	staticDir         string
+	plugins           *plugin.Manager
 	devProxy          *httputil.ReverseProxy
 	static            http.Handler // SPA file server (production, or dev fallback when Vite is down)
 
@@ -87,7 +91,7 @@ type Server struct {
 // relayInstanceBoot must be the config.RelayInstanceResolution from the same process
 // start as db.Open (see cmd/congee); it is served by GET /relay-identity and does not
 // track in-memory config mutations until the process restarts.
-func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution) *Server {
+func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv *relay.Server, log zerolog.Logger, password, staticDir string, scheduleRestart func(), relayID *relayidentity.Identity, relayInstanceBoot config.RelayInstanceResolution, plugins *plugin.Manager) *Server {
 	s := &Server{
 		cfg:               cfg,
 		cfgPath:           cfgPath,
@@ -98,6 +102,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 		log:               log,
 		password:          password,
 		staticDir:         staticDir,
+		plugins:           plugins,
 	}
 	spaFS := spaFileSystem{dir: http.Dir(s.staticDir)}
 	s.static = s.onlyGET(serveAdminStatic(s.staticDir, http.FileServer(spaFS)))
@@ -125,6 +130,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   GET      /api/audit/kinds      — distinct kinds from recent audit rows (?scan_limit=); {kinds:[]}
 	//   GET      /api/audit/connections — ws session audit list
 	//   GET      /api/audit/connections/{ref} — ws session audit detail (live: or session: ref)
+	//   GET      /api/events           — stored events by kind (event store, not audit_log)
 	//   GET      /api/events/{id}      — one event from storage by id
 	//   GET      /api/nips             — known NIPs + enabled flags
 	//   PATCH    /api/nips             — toggle optional NIP; { "nip": N, "enabled": bool }; restart_required
@@ -141,14 +147,18 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("GET /audit/connections", HandleAuditConnectionsList(cfg, relaySrv, store))
 	api.HandleFunc("GET /audit", HandleAudit(store).ServeHTTP)
 	api.HandleFunc("GET /events/{id}", handleGetEvent(store).ServeHTTP)
+	api.HandleFunc("GET /events", handleListEvents(store).ServeHTTP)
 	api.HandleFunc("GET /nips", handleNIPsGet(cfgPath).ServeHTTP)
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
 	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart, relayID))
 	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
+	registerPluginRoutes(api, s)
 
 	mux.Handle("/api/", RequireAdminAuth(password, http.StripPrefix("/api", api)))
+	mux.HandleFunc("GET /plugin-ui/{id}/{path...}", s.handlePluginUIPublic)
+	mux.HandleFunc("OPTIONS /plugin-ui/{id}/{path...}", s.handlePluginUIPublic)
 
 	if isDevEnv() {
 		mux.HandleFunc("/", s.serveDevProxy)

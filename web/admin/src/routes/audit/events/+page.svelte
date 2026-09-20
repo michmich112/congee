@@ -28,6 +28,13 @@
 		pubkey: string;
 	};
 
+	type StoredEvent = {
+		id: string;
+		pubkey: string;
+		created_at: number;
+		kind: number;
+	};
+
 	const PAGE_SIZES = [50, 100, 250, 500, 1000] as const;
 	type PageSize = (typeof PAGE_SIZES)[number];
 
@@ -87,6 +94,12 @@
 	let err = $state<string | null>(null);
 	let loading = $state(true);
 
+	let storedEvents = $state<StoredEvent[]>([]);
+	let storedTotal = $state(0);
+	let storedErr = $state<string | null>(null);
+	let storedLoading = $state(false);
+	let storedPage = $state(1);
+
 	let page = $state(1);
 	let pageSize = $state<PageSize>(50);
 	let action = $state('');
@@ -126,6 +139,20 @@
 	});
 
 	const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+
+	const storedRangeLabel = $derived.by(() => {
+		if (selectedKinds.length === 0) {
+			return '';
+		}
+		if (storedTotal === 0) {
+			return '0 stored events (with current filters)';
+		}
+		const from = (storedPage - 1) * pageSize + 1;
+		const to = Math.min(storedPage * pageSize, storedTotal);
+		return `Rows ${from}–${to} of ${storedTotal}`;
+	});
+
+	const storedTotalPages = $derived(Math.max(1, Math.ceil(storedTotal / pageSize)));
 
 	const kindComboboxTriggerLabel = $derived.by(() => {
 		if (selectedKinds.length === 0) return 'Any kinds';
@@ -173,10 +200,11 @@
 		action = '';
 		pubkey = '';
 		page = 1;
+		storedPage = 1;
 		await load();
 	}
 
-	async function load(allowClampRetry = true) {
+	async function loadAudit(allowClampRetry = true) {
 		loading = true;
 		err = null;
 		try {
@@ -202,9 +230,8 @@
 			if (page > tp) {
 				page = tp;
 				if (allowClampRetry) {
-					await load(false);
+					await loadAudit(false);
 				}
-				return;
 			}
 		} catch (e) {
 			err = e instanceof Error ? e.message : String(e);
@@ -213,27 +240,87 @@
 		}
 	}
 
+	async function loadStored(allowClampRetry = true) {
+		if (selectedKinds.length === 0) {
+			storedEvents = [];
+			storedTotal = 0;
+			storedErr = null;
+			storedLoading = false;
+			return;
+		}
+		storedLoading = true;
+		storedErr = null;
+		try {
+			const q = new URLSearchParams();
+			q.set('limit', String(pageSize));
+			q.set('offset', String((storedPage - 1) * pageSize));
+			if (sinceDate) q.set('since', String(localDayStartUnix(sinceDate)));
+			if (untilDate) q.set('until', String(localDayEndUnix(untilDate)));
+			if (pubkey) q.set('pubkey', pubkey);
+			for (const k of selectedKinds) {
+				q.append('kind', String(k));
+			}
+			const res = await adminFetch(`/api/events?${q}`);
+			if (!res.ok) {
+				storedErr = await res.text();
+				return;
+			}
+			const data = (await res.json()) as { events?: StoredEvent[]; total?: number };
+			storedEvents = data.events ?? [];
+			storedTotal = typeof data.total === 'number' ? data.total : 0;
+			const tp = Math.max(1, Math.ceil(storedTotal / pageSize));
+			if (storedPage > tp) {
+				storedPage = tp;
+				if (allowClampRetry) {
+					await loadStored(false);
+				}
+			}
+		} catch (e) {
+			storedErr = e instanceof Error ? e.message : String(e);
+		} finally {
+			storedLoading = false;
+		}
+	}
+
+	async function load(allowClampRetry = true) {
+		await Promise.all([loadAudit(allowClampRetry), loadStored(allowClampRetry)]);
+	}
+
 	async function applyFilters() {
 		page = 1;
+		storedPage = 1;
 		await load();
 	}
 
 	function goPrev() {
 		if (page <= 1) return;
 		page -= 1;
-		void load();
+		void loadAudit();
 	}
 
 	function goNext() {
 		if (page >= totalPages) return;
 		page += 1;
-		void load();
+		void loadAudit();
+	}
+
+	function goStoredPrev() {
+		if (storedPage <= 1) return;
+		storedPage -= 1;
+		void loadStored();
+	}
+
+	function goStoredNext() {
+		if (storedPage >= storedTotalPages) return;
+		storedPage += 1;
+		void loadStored();
 	}
 
 	function onPageSizeChange(ev: Event) {
 		const v = Number.parseInt((ev.currentTarget as HTMLSelectElement).value, 10);
 		pageSize = isPageSize(v) ? v : 50;
 		page = 1;
+		storedPage = 1;
 		void load();
 	}
 
@@ -293,7 +380,7 @@
 <div class="space-y-6">
 	<AdminPageHeading
 		title="Audit · Events"
-		subtitle="Search and inspect persisted relay audit log entries."
+		subtitle="Audit log rows are relay activity (accept/reject). Kind filters also search the event store, so backfilled events with no audit row still appear."
 		Icon={ClipboardList}
 	/>
 
@@ -377,7 +464,7 @@
 							bind:value={action}
 							aria-label="Audit action filter"
 						>
-							{#each AUDIT_ACTION_OPTIONS as opt}
+							{#each AUDIT_ACTION_OPTIONS as opt (opt.value)}
 								<option value={opt.value}>{opt.label}</option>
 							{/each}
 						</select>
@@ -440,9 +527,111 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
+	{#if selectedKinds.length > 0}
+		<div class="space-y-2">
+			<div>
+				<h2 class="text-base font-semibold">Stored events</h2>
+				<p class="text-muted-foreground text-sm">
+					Relay event store (NIP-01), not the audit log. Events imported or backfilled without an
+					audit row still appear here.
+				</p>
+			</div>
+			{#if storedErr}
+				<p class="text-sm text-destructive">{storedErr}</p>
+			{/if}
+			{#if storedLoading && storedEvents.length === 0}
+				<p class="text-sm text-muted-foreground">Loading stored events…</p>
+			{:else}
+				<div class="overflow-hidden rounded-lg border border-border">
+					<div class="overflow-x-auto">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head class="whitespace-nowrap">Created</Table.Head>
+									<Table.Head class="whitespace-nowrap text-right">Kind</Table.Head>
+									<Table.Head class="whitespace-nowrap">Event ID</Table.Head>
+									<Table.Head>Pubkey</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each storedEvents as row (row.id)}
+									<Table.Row>
+										<Table.Cell><TimestampCell unixValue={row.created_at} /></Table.Cell>
+										<Table.Cell class="text-right font-mono text-xs tabular-nums">
+											<span
+												class="cursor-help border-b border-dotted border-muted-foreground/60"
+												title={describeNostrKind(row.kind)}>{row.kind}</span
+											>
+										</Table.Cell>
+										<Table.Cell class="font-mono text-xs">
+											<button
+												type="button"
+												class="cursor-pointer text-left text-primary underline-offset-2 hover:underline"
+												title={row.id}
+												onclick={() => void openEventModal(row.id)}
+											>
+												{shortEventId(row.id)}
+											</button>
+										</Table.Cell>
+										<Table.Cell class="max-w-[200px] truncate font-mono text-xs" title={row.pubkey}
+											>{row.pubkey || '—'}</Table.Cell
+										>
+									</Table.Row>
+								{:else}
+									<Table.Row>
+										<Table.Cell colspan={4} class="text-center text-sm text-muted-foreground"
+											>No stored events for these kinds</Table.Cell
+										>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+					<div
+						class="flex flex-col gap-3 border-t border-border bg-muted/20 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+					>
+						<p class="text-sm text-muted-foreground">{storedRangeLabel}</p>
+						<div class="flex flex-wrap items-center gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={storedPage <= 1}
+								onclick={goStoredPrev}
+							>
+								Previous
+							</Button>
+							<span class="text-sm tabular-nums text-muted-foreground"
+								>Page {storedPage} / {storedTotalPages}</span
+							>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={storedPage >= storedTotalPages}
+								onclick={goStoredNext}
+							>
+								Next
+							</Button>
+						</div>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	{#if loading}
-		<p class="text-sm text-muted-foreground">Loading…</p>
+		<p class="text-sm text-muted-foreground">Loading audit log…</p>
 	{:else}
+		<div class="space-y-2">
+			<div>
+				<h2 class="text-base font-semibold">Audit log</h2>
+				<p class="text-muted-foreground text-sm">
+					Rows written when this relay accepted, rejected, or saw an event. Matching is a trailing
+					<code class="text-xs">kind=N</code> suffix on the detail string — not a catalog of stored
+					events.
+				</p>
+			</div>
 		<div class="overflow-hidden rounded-lg border border-border">
 			<div
 				class="flex flex-wrap items-center justify-end gap-3 border-b border-border bg-muted/30 px-3 py-2"
@@ -537,7 +726,7 @@
 							onchange={onPageSizeChange}
 							aria-label="Results per page"
 						>
-							{#each PAGE_SIZES as sz}
+							{#each PAGE_SIZES as sz (sz)}
 								<option value={String(sz)}>{sz}</option>
 							{/each}
 						</select>
@@ -553,6 +742,7 @@
 					</div>
 				</div>
 			</div>
+		</div>
 		</div>
 	{/if}
 </div>

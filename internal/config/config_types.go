@@ -20,6 +20,27 @@ type Config struct {
 	NIP17                   NIP17Section            `json:"nip17"`
 	NIP77                   NIP77Section            `json:"nip77"`
 	NIPs                    NIPsSection             `json:"nips"`
+	Plugins                 PluginsSection          `json:"plugins"`
+}
+
+// DefaultPluginInterceptTimeoutMs is used when plugins.intercept_timeout_ms is omitted or 0.
+const DefaultPluginInterceptTimeoutMs = 250
+
+// PluginsSection is the host plugin manager configuration.
+type PluginsSection struct {
+	Directory          string       `json:"directory,omitempty"`
+	InterceptTimeoutMs int          `json:"intercept_timeout_ms,omitempty"`
+	Items              []PluginItem `json:"items,omitempty"`
+}
+
+// PluginItem is one installed plugin in config.json.
+type PluginItem struct {
+	ID        string          `json:"id"`
+	Enabled   bool            `json:"enabled"`
+	SourceURL string          `json:"source_url,omitempty"`
+	SHA256    string          `json:"sha256,omitempty"`
+	Version   string          `json:"version,omitempty"`
+	Settings  json.RawMessage `json:"settings,omitempty"`
 }
 
 type RelaySection struct {
@@ -179,17 +200,17 @@ type NIP77Upstream struct {
 
 // NIP77Section configures NIP-77 negentropy syncing (optional NIP).
 type NIP77Section struct {
-	MaxRecordsPerQuery            int             `json:"max_records_per_query"`
-	SessionIdleTimeoutSeconds     int             `json:"session_idle_timeout_seconds"`
-	FrameSizeLimitBytes           int             `json:"frame_size_limit_bytes"`
-	MaxConcurrentSessions         int             `json:"max_concurrent_sessions"`
-	MaxConcurrentLoads            int             `json:"max_concurrent_loads"`
-	NegOpenPerMinutePerConnection int             `json:"neg_open_per_minute_per_connection"`
-	NegMsgPerMinutePerConnection  int             `json:"neg_msg_per_minute_per_connection"`
-	BackpressureReqQueueDepth     int             `json:"backpressure_req_queue_depth"`
-	UpstreamEnabled               bool            `json:"upstream_enabled"`
-	UpstreamPauseWhenBusy         bool            `json:"upstream_pause_when_busy"`
-	UpstreamMessageTimeoutSeconds int             `json:"upstream_message_timeout_seconds"`
+	MaxRecordsPerQuery            int  `json:"max_records_per_query"`
+	SessionIdleTimeoutSeconds     int  `json:"session_idle_timeout_seconds"`
+	FrameSizeLimitBytes           int  `json:"frame_size_limit_bytes"`
+	MaxConcurrentSessions         int  `json:"max_concurrent_sessions"`
+	MaxConcurrentLoads            int  `json:"max_concurrent_loads"`
+	NegOpenPerMinutePerConnection int  `json:"neg_open_per_minute_per_connection"`
+	NegMsgPerMinutePerConnection  int  `json:"neg_msg_per_minute_per_connection"`
+	BackpressureReqQueueDepth     int  `json:"backpressure_req_queue_depth"`
+	UpstreamEnabled               bool `json:"upstream_enabled"`
+	UpstreamPauseWhenBusy         bool `json:"upstream_pause_when_busy"`
+	UpstreamMessageTimeoutSeconds int  `json:"upstream_message_timeout_seconds"`
 	// UpstreamAuthWaitSeconds is how long to wait after connect for a NIP-42 AUTH
 	// challenge before sending NEG-OPEN. Zero means do not wait: answer AUTH if it
 	// arrives later in the message loop.

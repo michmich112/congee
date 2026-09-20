@@ -56,7 +56,8 @@ func DefaultConfig() *Config {
 			Software:           "https://github.com/michmich112/congee",
 			CORSAllowAnyOrigin: false,
 		},
-		NIPs: NIPsSection{Enabled: []int{1, 11}},
+		NIPs:    NIPsSection{Enabled: []int{1, 11}},
+		Plugins: PluginsSection{InterceptTimeoutMs: DefaultPluginInterceptTimeoutMs},
 		NIP17: NIP17Section{
 			RejectGiftWrapWhenDisabled: ptrBool(true),
 		},
@@ -238,6 +239,9 @@ func (c *Config) Validate() error {
 		return errors.New("config: NIP 17 requires NIP 42 to be enabled in nips.enabled")
 	}
 	if err := validateNIP77(c); err != nil {
+		return err
+	}
+	if err := validatePlugins(c); err != nil {
 		return err
 	}
 	return nil

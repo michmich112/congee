@@ -16,6 +16,8 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
 - `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).
 - `internal/audit/` — audit log writes and retention cleanup.
+- `internal/plugin/` — gRPC plugin manager (Unix sockets, listen queues, REQ intercept).
+- `sdk/plugin/` — nested module: protobuf ABI and Serve helper for plugin binaries. Independently versioned with git tags `sdk/plugin/vX.Y.Z` (`go get github.com/michmich112/congee/sdk/plugin@vX.Y.Z`). Plugins must not import the parent `github.com/michmich112/congee` module.
 - `internal/admin/` — standalone admin HTTP server (API + static UI or dev proxy).
 - `internal/config/` — JSON config load/validate, atomic writes, changelog.
 - `web/admin/` — SvelteKit admin UI (Tailwind, shadcn-svelte).

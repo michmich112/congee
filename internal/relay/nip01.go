@@ -10,6 +10,7 @@ import (
 	"github.com/michmich112/congee/internal/audit"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
@@ -128,17 +129,63 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 	if s.metrics != nil {
 		s.metrics.IncReq()
 	}
-	for i := range msg.Filters {
-		if msg.Filters[i].HasSearch() && !searchEnabled {
-			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
-		}
-	}
 	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
 	}
+
+	effective := msg
+	if s.plugins != nil {
+		ires := s.plugins.InterceptREQ(ctx, msg)
+		switch ires.Action {
+		case plugin.InterceptReshapeREQ:
+			if len(ires.Filters) > 0 {
+				cloned := *msg
+				cloned.Filters = ires.Filters
+				effective = &cloned
+			}
+		case plugin.InterceptRespond:
+			subFilters := msg.Filters
+			if len(ires.SubscriptionFilters) > 0 {
+				subFilters = ires.SubscriptionFilters
+			}
+			if err := s.subs.Add(c.ID, msg.SubID, subFilters); err != nil {
+				return sendREQAddError(c, msg.SubID, err, log)
+			}
+			c.noteSubscriptionCount(s.subs.SubCount(c.ID))
+			events, err := plugin.GetEventsByIDs(ctx, s.store, ires.EventIDs)
+			if err != nil {
+				log.Error().Err(err).Str("sub_id", msg.SubID).Msg("plugin respond hydrate failed")
+				return c.sendClosed(msg.SubID, "internal error")
+			}
+			for _, ev := range events {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if !s.EventVisibleToSubscription(c.ID, ev) {
+					continue
+				}
+				if err := c.sendEvent(msg.SubID, ev); err != nil {
+					log.Debug().Err(err).Str("sub_id", msg.SubID).Str("event_id", ev.ID).Msg("send event skipped")
+				}
+			}
+			if err := c.sendEOSE(msg.SubID); err != nil {
+				return err
+			}
+			s.subs.NoteSubEOSE(c.ID, msg.SubID)
+			s.subs.FinishSnapshot(c.ID, msg.SubID)
+			return nil
+		}
+	}
+
+	for i := range effective.Filters {
+		if effective.Filters[i].HasSearch() && !searchEnabled {
+			return c.sendClosed(msg.SubID, "search filter is not supported (enable NIP-50 in nips.enabled and restart)")
+		}
+	}
+
 	prevSubs := s.subs.SubCount(c.ID)
-	if err := s.subs.Add(c.ID, msg.SubID, msg.Filters); err != nil {
+	if err := s.subs.Add(c.ID, effective.SubID, effective.Filters); err != nil {
 		switch {
 		case errors.Is(err, ErrSubscriptionIDTooLong):
 			return c.sendClosed(msg.SubID, "subscription id too long")
@@ -160,7 +207,7 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 	}
 	pageSize := config.EffectiveQueryPageSize(s.cfg.ConnectionLimits.QueryPageSize)
 	defaultLimit := config.EffectiveREQDefaultQueryLimit(s.cfg.ConnectionLimits.DefaultQueryLimit)
-	state := newREQQueryState(msg.Filters, defaultLimit, searchEnabled)
+	state := newREQQueryState(effective.Filters, defaultLimit, searchEnabled)
 
 	t0 := time.Now()
 	events, hasMore, err := fetchREQPage(ctx, s.store, state, pageSize)
@@ -170,8 +217,8 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 	}
 	if err != nil {
 		hasSearch := false
-		for i := range msg.Filters {
-			if msg.Filters[i].HasSearch() {
+		for i := range effective.Filters {
+			if effective.Filters[i].HasSearch() {
 				hasSearch = true
 				break
 			}
@@ -234,4 +281,18 @@ func handleCLOSE(ctx context.Context, s *Server, c *Conn, msg *nostr.CloseMessag
 		Str("sub_id", msg.SubID).
 		Int("subscriptions", s.subs.SubCount(c.ID)).
 		Msg("subscription closed")
+}
+
+func sendREQAddError(c *Conn, subID string, err error, log zerolog.Logger) error {
+	switch {
+	case errors.Is(err, ErrSubscriptionIDTooLong):
+		return c.sendClosed(subID, "subscription id too long")
+	case errors.Is(err, ErrTooManyFilters):
+		return c.sendClosed(subID, "too many filters")
+	case errors.Is(err, ErrTooManySubscriptions):
+		return c.sendClosed(subID, "too many subscriptions")
+	default:
+		log.Warn().Err(err).Str("sub_id", subID).Msg("req subscription add rejected")
+		return c.sendClosed(subID, err.Error())
+	}
 }

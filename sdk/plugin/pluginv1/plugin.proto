@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package congee.plugin.v1;
+
+option go_package = "github.com/michmich112/congee/sdk/plugin/pluginv1";
+
+message Event {
+  string id = 1;
+  string pubkey = 2;
+  int64 created_at = 3;
+  int32 kind = 4;
+  repeated Tag tags = 5;
+  string content = 6;
+  string sig = 7;
+}
+
+message Tag {
+  repeated string values = 1;
+}
+
+message Filter {
+  repeated string ids = 1;
+  repeated string authors = 2;
+  repeated int32 kinds = 3;
+  optional int64 since = 4;
+  optional int64 until = 5;
+  optional int32 limit = 6;
+  string search = 7;
+  repeated TagFilter tag_filters = 8;
+}
+
+message TagFilter {
+  string name = 1; // letter without '#', e.g. "g"
+  repeated string values = 2;
+}
+
+message TrafficSubscription {
+  repeated string message_types = 1; // EVENT, REQ, CLOSE, AUTH
+  repeated int32 kinds = 2;
+  bool req_has_search = 3;
+  repeated string req_tag_names = 4;
+  bool intercept_req = 5;
+  bool observe = 6;
+  bool on_stored_event = 7;
+}
+
+message HandshakeRequest {
+  int32 api_version = 1;
+  string settings_json = 2;
+}
+
+message HandshakeResponse {
+  int32 api_version = 1;
+  string plugin_id = 2;
+  string name = 3;
+  string version = 4;
+  repeated string capabilities = 5;
+  repeated TrafficSubscription subscriptions = 6;
+  int32 intercept_deadline_ms = 7;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  bool ready = 1;
+  string message = 2;
+}
+
+message ObserveRequest {
+  string message_type = 1;
+  Event event = 2;
+  string sub_id = 3;
+  repeated Filter filters = 4;
+}
+
+message ObserveResponse {}
+
+message InterceptREQRequest {
+  string sub_id = 1;
+  repeated Filter filters = 2;
+}
+
+enum InterceptAction {
+  INTERCEPT_ACTION_PASSTHROUGH = 0;
+  INTERCEPT_ACTION_RESHAPE_REQ = 1;
+  INTERCEPT_ACTION_RESPOND = 2;
+}
+
+message InterceptREQResponse {
+  InterceptAction action = 1;
+  repeated Filter reshape_filters = 2;
+  repeated string event_ids = 3;
+  repeated Filter subscription_filters = 4;
+}
+
+message OnStoredEventRequest {
+  Event event = 1;
+  bool stored = 2;
+}
+
+message OnStoredEventResponse {}
+
+message ApplySettingsRequest {
+  string settings_json = 1;
+}
+
+message ApplySettingsResponse {
+  repeated TrafficSubscription subscriptions = 1;
+}
+
+message AdminActionRequest {
+  string name = 1;
+  string payload_json = 2;
+}
+
+message AdminActionResponse {
+  string payload_json = 1;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool ready = 1;
+  string json = 2;
+}
+
+message QueryEventsRequest {
+  repeated Filter filters = 1;
+}
+
+message QueryEventsResponse {
+  repeated Event events = 1;
+}
+
+message GetEventsByIDsRequest {
+  repeated string ids = 1;
+}
+
+message GetEventsByIDsResponse {
+  repeated Event events = 1;
+}
+
+message LogRequest {
+  string level = 1;
+  string message = 2;
+  map<string, string> fields = 3;
+}
+
+message LogResponse {}
+
+service Plugin {
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Observe(ObserveRequest) returns (ObserveResponse);
+  rpc InterceptREQ(InterceptREQRequest) returns (InterceptREQResponse);
+  rpc OnStoredEvent(OnStoredEventRequest) returns (OnStoredEventResponse);
+  rpc ApplySettings(ApplySettingsRequest) returns (ApplySettingsResponse);
+  rpc AdminAction(AdminActionRequest) returns (AdminActionResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+service Host {
+  rpc QueryEvents(QueryEventsRequest) returns (QueryEventsResponse);
+  rpc GetEventsByIDs(GetEventsByIDsRequest) returns (GetEventsByIDsResponse);
+  rpc Log(LogRequest) returns (LogResponse);
+}

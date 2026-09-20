@@ -326,6 +326,9 @@ func (c *Conn) dispatchPayload(payload []byte) {
 			return
 		}
 	}
+	if c.server.plugins != nil {
+		c.server.plugins.Observe(msg)
+	}
 	dispatchCtx := WithMsgID(c.ctx, newMsgID())
 	if err := c.server.registry.Dispatch(dispatchCtx, c, msg); err != nil {
 		dl := relayLogger(c, dispatchCtx)

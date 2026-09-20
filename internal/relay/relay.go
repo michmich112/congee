@@ -14,6 +14,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
@@ -47,6 +48,8 @@ type Server struct {
 
 	readQueue *ReaderQueue
 
+	plugins plugin.Runtime
+
 	negQueue           *NegQueue
 	negLoadSlots       chan struct{}
 	negActiveSessions  atomic.Int32
@@ -78,6 +81,13 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		metricsCancel: mcancel,
 	}
 	s.readQueue = newReaderQueue(s)
+	s.AppendPostHook("plugin_on_stored", func(ctx context.Context, env HookEnv) error {
+		_ = ctx
+		if s.plugins != nil && env.Event != nil {
+			s.plugins.EnqueueStoredEvent(env.Event, env.Stored)
+		}
+		return nil
+	})
 	mux := http.NewServeMux()
 	mux.Handle("/health", &HealthHandler{Store: store})
 	mux.HandleFunc("/", s.handleRoot)
@@ -90,7 +100,10 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 	return s, nil
 }
 
-// RegisterMessageHandler registers a NIP-01 command handler (used by nips loader).
+// SetPluginRuntime attaches the plugin manager (nil-safe). Listen enqueue never blocks the relay.
+func (s *Server) SetPluginRuntime(rt plugin.Runtime) {
+	s.plugins = rt
+}
 func (s *Server) RegisterMessageHandler(typ string, h MessageHandler) {
 	s.registry.Register(typ, h)
 }
