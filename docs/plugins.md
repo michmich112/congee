@@ -78,7 +78,7 @@ Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table k
 
 ## Conduit marketplace plugin
 
-Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain). Fake embedder: `CONDUIT_EMBEDDER=fake`. Kinds: NIP-15 `30017`/`30018`/`34550`/`34560`, NIP-99 `30402`/`30403`, kind `5`. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
+Separate repo: `conduit-plugin`. Packages: `listing`, `embed`, `index`, `handler`. Default index is **Turso/libSQL** at `$CONGEE_PLUGIN_DATA_DIR/conduit-index.db`. Postgres is optional in the plugin UI (warns if the **relay** is already Postgres — split brain). Fake embedder: `CONDUIT_EMBEDDER=fake` (required to use the test bag-of-words model; otherwise a missing/unlinked ONNX build disables vector rank). Kinds come from `kinds.json`: NIP-15 `30017`/`30018`, NIP-99 `30402`/`30403`, NIP-09 kind `5`. Kind `34550` is a NIP-72 community definition, not a stall. Observe is **off**; indexing is `OnStoredEvent` + watermark backfill.
 
 Local SDK development: in `conduit-plugin`, `go.work` uses `../congee/sdk/plugin`. From Congee, `go.work.example` can span both modules — do not commit a `go.work` that points at a missing sibling repo (breaks CI).
 
