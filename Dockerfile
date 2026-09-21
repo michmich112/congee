@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm AS admin-ui
+# Build the static admin UI on the builder's native platform. npm/esbuild must
+# not run under qemu (linux/arm64 multi-arch CI hits ETXTBSY in esbuild's
+# postinstall). The output is architecture-independent.
+FROM --platform=$BUILDPLATFORM node:24-bookworm AS admin-ui
 WORKDIR /src/web/admin
 COPY web/admin/package.json web/admin/package-lock.json ./
 RUN npm ci
