@@ -365,18 +365,41 @@ fetch:
 			log.Debug().Str("id", id).Err(err).Msg("upstream event sig invalid")
 			continue
 		}
-		has, err := sch.store.HasEventID(ctx, ev.ID)
-		if err != nil || has {
+		ok, err := sch.persistImportedEvent(ctx, ev)
+		if err != nil {
+			log.Debug().Str("id", id).Err(err).Msg("upstream save event failed")
 			continue
 		}
-		if err := sch.store.SaveEvent(ctx, ev); err != nil {
-			log.Debug().Str("id", id).Err(err).Msg("upstream save event failed")
+		if !ok {
 			continue
 		}
 		log.Debug().Str("id", id).Int("kind", ev.Kind).Msg("upstream event imported")
 		imported++
 	}
 	return needCount, imported, nil
+}
+
+// persistImportedEvent saves a newly fetched upstream event and notifies plugins.
+// Returns false when the event was already present. Events are not re-validated
+// beyond the caller’s VerifySig — they skip the WebSocket EVENT hook chain.
+func (sch *Scheduler) persistImportedEvent(ctx context.Context, ev *nostr.Event) (bool, error) {
+	if sch == nil || sch.store == nil || ev == nil {
+		return false, nil
+	}
+	has, err := sch.store.HasEventID(ctx, ev.ID)
+	if err != nil {
+		return false, err
+	}
+	if has {
+		return false, nil
+	}
+	if err := sch.store.SaveEvent(ctx, ev); err != nil {
+		return false, err
+	}
+	if sch.srv != nil {
+		sch.srv.NotifyPluginStoredEvent(ev, true)
+	}
+	return true, nil
 }
 
 func collectNeedIDs(neg *negentropy.Negentropy) []string {

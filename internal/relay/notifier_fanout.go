@@ -9,8 +9,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// RunImportedEventFanout loads events by id from NOTIFY/LISTEN and broadcasts to REQ subscriptions.
+// RunImportedEventFanout loads events by id from NOTIFY/LISTEN, notifies plugins
+// that subscribe to the event, and broadcasts to REQ subscriptions.
 // It returns when ctx is done or the notifier channel is closed.
+// Same-origin LISTEN is filtered by the notifier, so the importing instance
+// notifies plugins from persistImportedEvent instead of this loop.
 func RunImportedEventFanout(ctx context.Context, s *Server, store storage.Store, n storage.EventNotifier, log zerolog.Logger) {
 	if n == nil {
 		n = storage.NoopNotifier{}
@@ -34,6 +37,7 @@ func RunImportedEventFanout(ctx context.Context, s *Server, store storage.Store,
 				log.Debug().Err(err).Str("event_id", id).Msg("imported event fetch skipped")
 				continue
 			}
+			s.NotifyPluginStoredEvent(evs[0], true)
 			s.broadcastEvent(evs[0])
 		}
 	}

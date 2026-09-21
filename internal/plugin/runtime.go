@@ -30,6 +30,7 @@ type Runtime interface {
 	// InterceptREQ is the only synchronous plugin call on the REQ path.
 	InterceptREQ(ctx context.Context, req *nostr.ReqMessage) InterceptResult
 	// EnqueueStoredEvent enqueues an accepted EVENT for index plugins. Never blocks.
+	// Called for WebSocket EVENT post-hooks and for NIP-77 imported events.
 	EnqueueStoredEvent(ev *nostr.Event, stored bool)
 	// Snapshot returns admin-facing plugin rows.
 	Snapshot() []InstanceSnapshot

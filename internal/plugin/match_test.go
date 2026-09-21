@@ -17,6 +17,13 @@ func TestMatchOnStoredEventKinds(t *testing.T) {
 	}
 }
 
+func TestMatchOnStoredEventEmptyKinds(t *testing.T) {
+	subs := []sdk.TrafficSubscription{{OnStoredEvent: true}}
+	if MatchOnStoredEvent(subs, 30402) {
+		t.Fatal("empty kinds must not match")
+	}
+}
+
 func TestMatchInterceptREQSearch(t *testing.T) {
 	subs := []sdk.TrafficSubscription{{
 		MessageTypes: []string{"REQ"},

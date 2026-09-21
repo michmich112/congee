@@ -14,6 +14,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/michmich112/congee/internal/config"
+	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
@@ -50,9 +51,9 @@ type Server struct {
 
 	plugins plugin.Runtime
 
-	negQueue           *NegQueue
-	negLoadSlots       chan struct{}
-	negActiveSessions  atomic.Int32
+	negQueue          *NegQueue
+	negLoadSlots      chan struct{}
+	negActiveSessions atomic.Int32
 }
 
 // NewServer constructs a relay server (handlers and NIP hooks are registered separately).
@@ -83,8 +84,8 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 	s.readQueue = newReaderQueue(s)
 	s.AppendPostHook("plugin_on_stored", func(ctx context.Context, env HookEnv) error {
 		_ = ctx
-		if s.plugins != nil && env.Event != nil {
-			s.plugins.EnqueueStoredEvent(env.Event, env.Stored)
+		if env.Event != nil {
+			s.notifyPluginStoredEvent(env.Event, env.Stored, false)
 		}
 		return nil
 	})
@@ -104,6 +105,24 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 func (s *Server) SetPluginRuntime(rt plugin.Runtime) {
 	s.plugins = rt
 }
+
+// NotifyPluginStoredEvent delivers an already-persisted event to plugins that
+// subscribe via OnStoredEvent or Observe EVENT. Used for NIP-77 imports which
+// skip the WebSocket EVENT handler. Kind matching stays inside the plugin Runtime.
+func (s *Server) NotifyPluginStoredEvent(ev *nostr.Event, stored bool) {
+	s.notifyPluginStoredEvent(ev, stored, true)
+}
+
+func (s *Server) notifyPluginStoredEvent(ev *nostr.Event, stored, observe bool) {
+	if s == nil || s.plugins == nil || ev == nil {
+		return
+	}
+	s.plugins.EnqueueStoredEvent(ev, stored)
+	if observe {
+		s.plugins.Observe(&nostr.EventMessage{Event: *ev})
+	}
+}
+
 func (s *Server) RegisterMessageHandler(typ string, h MessageHandler) {
 	s.registry.Register(typ, h)
 }
