@@ -41,6 +41,12 @@ type Manager struct {
 	passthroughNotReady atomic.Int64
 	passthroughTimeout  atomic.Int64
 	passthroughError    atomic.Int64
+
+	interceptLogMu      sync.Mutex
+	interceptLogCh      chan interceptLogJob
+	interceptLogs       map[string][]InterceptLogEntry
+	interceptLogDropped atomic.Int64
+	interceptLogLimitN  atomic.Int64
 }
 
 // Metrics is a snapshot of plugin host counters.
@@ -93,7 +99,7 @@ func NewManager(cfg *config.Config, cfgPath string, store storage.Store, log zer
 	if abs, err := filepath.Abs(cfgPath); err == nil {
 		cfgPath = abs
 	}
-	return &Manager{
+	m := &Manager{
 		cfg:     cfg,
 		cfgPath: cfgPath,
 		store:   store,
@@ -101,11 +107,14 @@ func NewManager(cfg *config.Config, cfgPath string, store storage.Store, log zer
 		root:    root,
 		inst:    map[string]*instance{},
 	}
+	m.interceptLogLimitN.Store(int64(config.EffectivePluginInterceptLogSize(cfg)))
+	return m
 }
 
 // Start listens on a shared host.sock (under root) and starts enabled plugins.
 func (m *Manager) Start(parent context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(parent)
+	m.startInterceptLogWorker(m.ctx)
 	if err := os.MkdirAll(m.root, 0o755); err != nil {
 		return err
 	}
@@ -191,6 +200,9 @@ func (m *Manager) Stop() {
 	if m.hostLis != nil {
 		_ = m.hostLis.Close()
 	}
+	m.interceptLogMu.Lock()
+	m.interceptLogCh = nil
+	m.interceptLogMu.Unlock()
 }
 
 // Observe implements Runtime.

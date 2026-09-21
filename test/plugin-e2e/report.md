@@ -1,8 +1,8 @@
 # Plugin e2e report
 
-Generated: 2026-09-20T01:48:02.468Z
+Generated: 2026-09-21T05:57:49.277Z
 
-Passed: 49  Failed: 0
+Passed: 52  Failed: 0
 
 | Test | Result | Detail |
 | --- | --- | --- |
@@ -19,14 +19,17 @@ Passed: 49  Failed: 0
 | relay NIP-50 kind 1 | PASS |  |
 | relay bad sig | PASS |  |
 | relay invalid JSON | PASS |  |
-| slow OnStoredEvent still OK | PASS | dt=3ms baseline=2ms |
-| slow listen does not add ~2s | PASS | dt=3 baseline=2 |
+| slow OnStoredEvent still OK | PASS | dt=2ms baseline=2ms |
+| slow listen does not add ~2s | PASS | dt=2 baseline=2 |
 | fixture intercept passthrough EOSE | PASS |  |
+| fixture intercept log recorded | PASS | {"unix_milli":1789970261466,"duration_ms":0,"sub_id":"pt","filters":[{"kinds":[30402],"search":"x"}],"action":"passthrough"} |
+| fixture intercept log put limit | PASS | {"status":200,"json":{"limit":50,"ok":true}} |
+| fixture intercept log limit applied | PASS | {"limit":50,"dropped":0,"entries":[{"unix_milli":1789970261466,"duration_ms":0,"sub_id":"pt","filters":[{"kinds":[30402],"search":"x"}],"action":"passthrough"}]} |
 | conduit store product OK | PASS |  |
-| conduit rank bicycle first | PASS | ["30fe50d52be06f66d751e8c7f376eae3f2be3bdce8ed9d452b49c6f1f0829a4f","915f4f671def17dd8de605f2386f82713637c0d08772559cb39ff0a3101dad16"] |
+| conduit rank bicycle first | PASS | ["4845c35713c11ad8f074524d5614f0d328641fae671330d1551684eddb57d278","7e4c88e30c052aa82ec97de95b9a5bb9ff7bf92e1d16192916709435598c52a9"] |
 | conduit inactive not delivered | PASS |  |
 | conduit geo prefix | PASS |  |
-| conduit inject kinds | PASS |  |
+| conduit search without kinds passthrough | PASS |  |
 | conduit kind 1 search not marketplace | PASS |  |
 | conduit limit | PASS |  |
 | conduit proximity listings stored | PASS | sf:9q8yy oak:9q9p1 sj:9q9k6 sac:9qce7 la:9q5ct lb:9q5bn fre:9qdbf sb:9q4gu lv:9qqjg bak:9q735 nyc:dr5re |

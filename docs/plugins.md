@@ -7,6 +7,7 @@ Congee can run **isolated plugin processes** beside the relay. Plugins speak gRP
 - **Listen** (`messages.observe`, `index.own` / `OnStoredEvent`) is fire-and-forget. After an in-process subscription match, the relay goroutine only does a non-blocking enqueue (`select` / default drop). A background worker performs gRPC. Queue-full or plugin-down drops never fail the client. `OnStoredEvent` drops are healed by plugin backfill; pure observe drops are best-effort (metrics).
 - **Intercept** (`req.intercept`) is the **only** synchronous plugin call. It runs on `REQ` **before** `subs.Add`, with a deadline. Not ready, timeout, or RPC error → **fail-open passthrough**.
 - Host matches **subscriptions** before enqueue/RPC. Empty `kinds` / `message_types` match nothing (opt-in traffic).
+- **Intercept log** (admin plugin page): after each intercept decision the host copies the REQ, action, and plugin response onto a logging goroutine (`select` / default drop). The REQ path never waits on the log. Default window is **100** (`plugins.intercept_log_size`; `0` disables; max 10000). Newest rows are shown first. This is in-memory only (lost on restart).
 - **NIP-77 imports**: events saved by upstream pull (and replica imported-event fanout) are delivered with the same kind matching as live ingest — `OnStoredEvent` and `Observe` EVENT. They skip the WebSocket EVENT validator / hook chain (already signature-verified). Duplicate IDs already in the store are not re-notified.
 
 Host deadline is `min(plugins.intercept_timeout_ms, handshake intercept_deadline_ms)`. Default / example ceiling is **250ms** (Conduit handshake asks for 200ms).
@@ -93,6 +94,7 @@ Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `con
 "plugins": {
   "directory": "",
   "intercept_timeout_ms": 250,
+  "intercept_log_size": 100,
   "items": []
 }
 ```

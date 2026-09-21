@@ -11,6 +11,12 @@ func validatePlugins(c *Config) error {
 	if c.Plugins.InterceptTimeoutMs < 0 {
 		return fmt.Errorf("config: plugins.intercept_timeout_ms must be >= 0")
 	}
+	if c.Plugins.InterceptLogSize != nil {
+		n := *c.Plugins.InterceptLogSize
+		if n < 0 || n > MaxPluginInterceptLogSize {
+			return fmt.Errorf("config: plugins.intercept_log_size must be between 0 and %d", MaxPluginInterceptLogSize)
+		}
+	}
 	seen := make(map[string]struct{})
 	for i, it := range c.Plugins.Items {
 		id := strings.TrimSpace(it.ID)
@@ -29,6 +35,21 @@ func validatePlugins(c *Config) error {
 		}
 	}
 	return nil
+}
+
+// EffectivePluginInterceptLogSize is the in-memory intercept log window (0 disables).
+func EffectivePluginInterceptLogSize(c *Config) int {
+	if c != nil && c.Plugins.InterceptLogSize != nil {
+		n := *c.Plugins.InterceptLogSize
+		if n < 0 {
+			return 0
+		}
+		if n > MaxPluginInterceptLogSize {
+			return MaxPluginInterceptLogSize
+		}
+		return n
+	}
+	return DefaultPluginInterceptLogSize
 }
 
 // EffectivePluginInterceptTimeout is the host intercept deadline ceiling.

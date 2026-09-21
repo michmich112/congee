@@ -306,3 +306,37 @@ func TestEffectiveQueryPageSize(t *testing.T) {
 		t.Fatalf("positive: got %d want 42", g)
 	}
 }
+
+func TestValidateRejectsInterceptLogSize(t *testing.T) {
+	c := minimalValidConfig()
+	bad := -1
+	c.Plugins.InterceptLogSize = &bad
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+	tooBig := MaxPluginInterceptLogSize + 1
+	c.Plugins.InterceptLogSize = &tooBig
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestEffectivePluginInterceptLogSize(t *testing.T) {
+	if g := EffectivePluginInterceptLogSize(nil); g != DefaultPluginInterceptLogSize {
+		t.Fatalf("nil: %d", g)
+	}
+	c := minimalValidConfig()
+	if g := EffectivePluginInterceptLogSize(c); g != DefaultPluginInterceptLogSize {
+		t.Fatalf("omitted: %d", g)
+	}
+	z := 0
+	c.Plugins.InterceptLogSize = &z
+	if g := EffectivePluginInterceptLogSize(c); g != 0 {
+		t.Fatalf("zero: %d", g)
+	}
+	n := 50
+	c.Plugins.InterceptLogSize = &n
+	if g := EffectivePluginInterceptLogSize(c); g != 50 {
+		t.Fatalf("50: %d", g)
+	}
+}

@@ -26,11 +26,19 @@ type Config struct {
 // DefaultPluginInterceptTimeoutMs is used when plugins.intercept_timeout_ms is omitted or 0.
 const DefaultPluginInterceptTimeoutMs = 250
 
+// DefaultPluginInterceptLogSize is the in-memory intercept log window when intercept_log_size is omitted.
+const DefaultPluginInterceptLogSize = 100
+
+// MaxPluginInterceptLogSize caps the rolling intercept log.
+const MaxPluginInterceptLogSize = 10000
+
 // PluginsSection is the host plugin manager configuration.
 type PluginsSection struct {
-	Directory          string       `json:"directory,omitempty"`
-	InterceptTimeoutMs int          `json:"intercept_timeout_ms,omitempty"`
-	Items              []PluginItem `json:"items,omitempty"`
+	Directory          string `json:"directory,omitempty"`
+	InterceptTimeoutMs int    `json:"intercept_timeout_ms,omitempty"`
+	// InterceptLogSize is the per-plugin rolling intercept log window. nil = default 100; 0 disables.
+	InterceptLogSize *int         `json:"intercept_log_size,omitempty"`
+	Items            []PluginItem `json:"items,omitempty"`
 }
 
 // PluginItem is one installed plugin in config.json.
