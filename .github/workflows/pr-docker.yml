@@ -1,0 +1,22 @@
+# Pull requests targeting main: verify the Docker image builds for the same
+# platforms as nightly. Does not push to GHCR.
+name: PR — Docker build (main)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  actions: write
+
+jobs:
+  image:
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: pr-${{ github.event.pull_request.number }}
+      version_embed: 0.0.0-pr.${{ github.event.pull_request.number }}
+      push: false
+      tag_latest: false
+      platforms: linux/amd64,linux/arm64
