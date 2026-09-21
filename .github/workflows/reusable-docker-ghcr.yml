@@ -47,6 +47,7 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: write
 
 jobs:
   docker:
@@ -123,3 +124,8 @@ jobs:
             VERSION=${{ steps.vbin.outputs.build_version }}
             GIT_REVISION=${{ github.sha }}
           tags: ${{ steps.tags.outputs.lines }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Multi-platform builds cannot load into docker; cacheonly still
+          # compiles every stage when we are only verifying (push=false).
+          outputs: ${{ inputs.push == true && 'type=image,push=true' || 'type=cacheonly' }}
