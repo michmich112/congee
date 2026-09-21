@@ -16,7 +16,7 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
 - `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).
 - `internal/audit/` — audit log writes and retention cleanup.
-- `internal/plugin/` — gRPC plugin manager (Unix sockets, listen queues, REQ intercept).
+- `internal/plugin/` — gRPC plugin **host** (Unix sockets, listen queues, REQ intercept, intercept log). Plugins are out-of-process; see [docs/plugin-architecture.md](docs/plugin-architecture.md).
 - `sdk/plugin/` — nested module: protobuf ABI and Serve helper for plugin binaries. Independently versioned with git tags `sdk/plugin/vX.Y.Z` (`go get github.com/michmich112/congee/sdk/plugin@vX.Y.Z`). Plugins must not import the parent `github.com/michmich112/congee` module.
 - `internal/admin/` — standalone admin HTTP server (API + static UI or dev proxy).
 - `internal/config/` — JSON config load/validate, atomic writes, changelog.
@@ -56,12 +56,16 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 12. **Config file writes**: Atomic — write temp file in same directory, then `os.Rename`; serialize concurrent writes with a mutex.
 13. **libSQL**: WAL mode; all writes through a **single-writer goroutine**; `MaxOpenConns=1` so CGO calls never overlap. Build with `CGO_ENABLED=1`.
 14. **Lint**: `go vet` and `golangci-lint` (see `Makefile`).
+15. **gRPC plugins**: listen is non-blocking; intercept is the only sync RPC and **fail-opens**. Intercept observability (rolling log, window size) is **host-side** — after intercept returns, never on the REQ path, never in the plugin binary/iframe/ABI. Do not implement that log in Conduit or `sdk/plugin`.
 
 ## Where to read next
 
 - `README.md` — quick links
 - `docs/getting-started.md` — build and run
 - `docs/environment-variables.md` — env vars and config overview
+- `docs/plugin-architecture.md` — gRPC host vs plugin binary, intercept log decision
+- `docs/plugins.md` — install, ABI, admin UI, Conduit
+- `.cursor/rules/plugins.mdc` — agent rule when editing plugin paths
 - `docs/plans/phase*.md` — implementation steps per phase
 
 ## Agent instructions (follow fully)

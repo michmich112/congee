@@ -20,6 +20,8 @@ func main() {
 
 Handshake `api_version` must be **1**. Declare capabilities such as `sdk.CapIntercept`, `sdk.CapEventsRead`, `sdk.CapIndexOwn`, `sdk.CapAdminUI`.
 
+The relay **fail-opens** intercept when the plugin is not ready, times out, or returns an RPC error — those paths never call `InterceptREQ`. The rolling intercept log on the plugin settings page is **host-side** (Congee admin chrome). Do not add intercept-log RPCs to this ABI or assume a plugin iframe can read that log (`connect-src 'none'`). See [docs/plugin-architecture.md](../../docs/plugin-architecture.md).
+
 Git tags for this module are prefixed: `sdk/plugin/vX.Y.Z`. A root Congee release tag (`v1.2.3`) does **not** version this SDK.
 
 For local ABI work against a Congee checkout, use a `go.work` overlay or `replace` pointing at `./sdk/plugin`. Do not commit a `go.work` that assumes a missing sibling repo.
