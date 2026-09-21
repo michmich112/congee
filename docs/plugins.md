@@ -2,11 +2,14 @@
 
 Congee can run **isolated plugin processes** beside the relay. Plugins speak gRPC + protobuf (`congee.plugin.v1`) over **Unix domain sockets**, reconnect after crashes, and never share the relay address space.
 
+Architecture (host vs plugin, why intercept logging is on Congee): [plugin-architecture.md](plugin-architecture.md).
+
 ## Listen vs intercept
 
 - **Listen** (`messages.observe`, `index.own` / `OnStoredEvent`) is fire-and-forget. After an in-process subscription match, the relay goroutine only does a non-blocking enqueue (`select` / default drop). A background worker performs gRPC. Queue-full or plugin-down drops never fail the client. `OnStoredEvent` drops are healed by plugin backfill; pure observe drops are best-effort (metrics).
 - **Intercept** (`req.intercept`) is the **only** synchronous plugin call. It runs on `REQ` **before** `subs.Add`, with a deadline. Not ready, timeout, or RPC error → **fail-open passthrough**.
 - Host matches **subscriptions** before enqueue/RPC. Empty `kinds` / `message_types` match nothing (opt-in traffic).
+- **Intercept log** (host, not the plugin): after each intercept decision — including fail-open — the host copies the REQ, action, and plugin response onto a logging goroutine (`select` / default drop). The REQ path never waits. Default window is **100** (`plugins.intercept_log_size`; `0` disables; max 10000). Newest first; in-memory only. Shown on the **Congee** plugin settings page, not inside the sandboxed plugin iframe. See [plugin-architecture.md](plugin-architecture.md).
 - **NIP-77 imports**: events saved by upstream pull (and replica imported-event fanout) are delivered with the same kind matching as live ingest — `OnStoredEvent` and `Observe` EVENT. They skip the WebSocket EVENT validator / hook chain (already signature-verified). Duplicate IDs already in the store are not re-notified.
 
 Host deadline is `min(plugins.intercept_timeout_ms, handshake intercept_deadline_ms)`. Default / example ceiling is **250ms** (Conduit handshake asks for 200ms).
@@ -93,6 +96,7 @@ Installed under `plugins.directory` (or `$CONGEE_DATA_DIR/plugins` / beside `con
 "plugins": {
   "directory": "",
   "intercept_timeout_ms": 250,
+  "intercept_log_size": 100,
   "items": []
 }
 ```
@@ -101,7 +105,9 @@ Plugin DB passwords in settings are redacted in the config changelog. Conduit st
 
 ## Admin UI
 
-Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table kebab: Settings, enable/disable, **Update**, uninstall. Detail page embeds `GET /plugin-ui/{id}/` in a sandboxed iframe (`allow-scripts allow-forms`, **no** `allow-same-origin`). Module assets send `Access-Control-Allow-Origin` for opaque origin `null`. The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only (settings via `GET/PUT /api/plugins/{id}/settings`), checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`. Plugin UIs must not assume `crypto.randomUUID` exists in that sandbox.
+Nav **Plugins**: expandable sidebar (Manage plus each installed plugin). Table kebab: Settings, enable/disable, **Update**, uninstall. Detail page shows the host **intercept log** (request, metadata, decision, plugin response; configurable rolling window) **above** a sandboxed iframe of `GET /plugin-ui/{id}/` (`allow-scripts allow-forms`, **no** `allow-same-origin`). The iframe cannot fetch the intercept-log API (`connect-src 'none'`). Module assets send `Access-Control-Allow-Origin` for opaque origin `null`. The parent bridges `postMessage` `{ type: "congee:plugin-api" }` to `/api/plugins/{id}/*` only (settings via `GET/PUT /api/plugins/{id}/settings`), checks `event.origin` (including `"null"`), and never puts the admin token in the iframe. Theme: `{ type: "congee:theme", theme }`. Plugin UIs must not assume `crypto.randomUUID` exists in that sandbox.
+
+Admin API: `GET/PUT /api/plugins/{id}/intercept-log` (`limit` on PUT). Host-wide window, per-plugin in-memory buffers.
 
 ## Intercept actions
 

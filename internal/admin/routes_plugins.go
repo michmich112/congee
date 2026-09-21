@@ -22,6 +22,8 @@ func registerPluginRoutes(api *http.ServeMux, s *Server) {
 	api.HandleFunc("GET /plugins/{id}/settings", s.handlePluginGetSettings)
 	api.HandleFunc("PUT /plugins/{id}/settings", s.handlePluginPutSettings)
 	api.HandleFunc("GET /plugins/{id}/status", s.handlePluginStatus)
+	api.HandleFunc("GET /plugins/{id}/intercept-log", s.handlePluginGetInterceptLog)
+	api.HandleFunc("PUT /plugins/{id}/intercept-log", s.handlePluginPutInterceptLog)
 	api.HandleFunc("POST /plugins/{id}/actions/{action}", s.handlePluginAction)
 	api.HandleFunc("GET /plugins/{id}/ui/{path...}", s.handlePluginUI)
 }
@@ -197,6 +199,58 @@ func (s *Server) handlePluginStatus(w http.ResponseWriter, r *http.Request) {
 		"status":              json.RawMessage(raw),
 		"relay_database_type": s.cfg.Database.Type,
 	})
+}
+
+func (s *Server) pluginKnown(id string) bool {
+	if s.plugins == nil || id == "" {
+		return false
+	}
+	for _, p := range s.plugins.Snapshot() {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) handlePluginGetInterceptLog(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.plugins == nil {
+		writeJSON(w, http.StatusOK, plugin.InterceptLogSnapshot{
+			Limit:   config.DefaultPluginInterceptLogSize,
+			Entries: []plugin.InterceptLogEntry{},
+		})
+		return
+	}
+	if !s.pluginKnown(id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.plugins.InterceptLogSnapshot(id))
+}
+
+func (s *Server) handlePluginPutInterceptLog(w http.ResponseWriter, r *http.Request) {
+	if s.plugins == nil {
+		http.Error(w, `{"error":"plugins disabled"}`, http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	if !s.pluginKnown(id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Limit *int `json:"limit"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil || body.Limit == nil {
+		http.Error(w, `{"error":"limit required"}`, http.StatusBadRequest)
+		return
+	}
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
+	limit := s.plugins.SetInterceptLogLimit(*body.Limit)
+	_ = s.persistPluginConfigLocked(r, "plugin intercept log size")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "limit": limit})
 }
 
 func (s *Server) handlePluginAction(w http.ResponseWriter, r *http.Request) {

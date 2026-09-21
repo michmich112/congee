@@ -10,7 +10,9 @@ dist/
 config.json
 
 .codex
-.cursor
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 .opencode
 
 # Local planning / OpenSpec workflow (not versioned for now)

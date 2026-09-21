@@ -257,12 +257,21 @@ func (in *instance) dispatchListen(ctx context.Context, job listenJob) {
 }
 
 func (in *instance) intercept(ctx context.Context, req *nostr.ReqMessage) InterceptResult {
+	t0 := time.Now()
+	res, fail := in.doIntercept(ctx, req)
+	if in.mgr != nil {
+		in.mgr.enqueueInterceptLog(in.id, req, res, time.Since(t0), fail)
+	}
+	return res
+}
+
+func (in *instance) doIntercept(ctx context.Context, req *nostr.ReqMessage) (InterceptResult, string) {
 	if req == nil || !in.isReady() {
 		in.passthroughN.Add(1)
 		if in.mgr != nil {
 			in.mgr.passthroughNotReady.Add(1)
 		}
-		return InterceptResult{Action: InterceptPassthrough}
+		return InterceptResult{Action: InterceptPassthrough}, "not_ready"
 	}
 	in.mu.Lock()
 	cli := in.client
@@ -273,7 +282,7 @@ func (in *instance) intercept(ctx context.Context, req *nostr.ReqMessage) Interc
 		if in.mgr != nil {
 			in.mgr.passthroughNotReady.Add(1)
 		}
-		return InterceptResult{Action: InterceptPassthrough}
+		return InterceptResult{Action: InterceptPassthrough}, "not_ready"
 	}
 	if deadline <= 0 {
 		deadline = 80 * time.Millisecond
@@ -286,30 +295,42 @@ func (in *instance) intercept(ctx context.Context, req *nostr.ReqMessage) Interc
 		SubId:   req.SubID,
 		Filters: filtersToV1(nostrFiltersToSDK(req.Filters)),
 	})
-	in.mgr.recordIntercept(time.Since(t0), err)
+	if in.mgr != nil {
+		in.mgr.recordIntercept(time.Since(t0), err)
+	}
 	if err != nil || res == nil {
 		in.passthroughN.Add(1)
+		fail := "rpc"
 		if in.mgr != nil {
 			if ictx.Err() != nil {
 				in.mgr.passthroughTimeout.Add(1)
+				fail = "timeout"
 			} else {
 				in.mgr.passthroughError.Add(1)
 			}
+		} else if ictx.Err() != nil {
+			fail = "timeout"
 		}
-		return InterceptResult{Action: InterceptPassthrough}
+		if err != nil && fail == "rpc" {
+			fail = "rpc: " + err.Error()
+			if len(fail) > 200 {
+				fail = fail[:200]
+			}
+		}
+		return InterceptResult{Action: InterceptPassthrough}, fail
 	}
 	switch res.Action {
 	case pluginv1.InterceptAction_INTERCEPT_ACTION_RESHAPE_REQ:
-		return InterceptResult{Action: InterceptReshapeREQ, Filters: sdkFiltersToNostr(filtersFromV1(res.ReshapeFilters))}
+		return InterceptResult{Action: InterceptReshapeREQ, Filters: sdkFiltersToNostr(filtersFromV1(res.ReshapeFilters))}, ""
 	case pluginv1.InterceptAction_INTERCEPT_ACTION_RESPOND:
 		return InterceptResult{
 			Action:              InterceptRespond,
 			EventIDs:            append([]string(nil), res.EventIds...),
 			SubscriptionFilters: sdkFiltersToNostr(filtersFromV1(res.SubscriptionFilters)),
-		}
+		}, ""
 	default:
 		in.passthroughN.Add(1)
-		return InterceptResult{Action: InterceptPassthrough}
+		return InterceptResult{Action: InterceptPassthrough}, ""
 	}
 }
 

@@ -87,6 +87,7 @@
   "plugins": {
     "directory": "",
     "intercept_timeout_ms": 250,
+    "intercept_log_size": 100,
     "items": []
   }
 }

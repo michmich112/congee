@@ -95,6 +95,57 @@ function copyPkg(srcDir, destDir) {
 	fs.cpSync(srcDir, destDir, { recursive: true })
 }
 
+function adminJSON(port, method, path, body) {
+	return new Promise((resolve, reject) => {
+		const payload = body === undefined ? null : JSON.stringify(body)
+		const req = http.request(
+			{
+				hostname: '127.0.0.1',
+				port,
+				path,
+				method,
+				headers: {
+					Authorization: 'Bearer e2e-admin',
+					...(payload
+						? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+						: {}),
+				},
+			},
+			(res) => {
+				let buf = ''
+				res.on('data', (d) => {
+					buf += d
+				})
+				res.on('end', () => {
+					let json = buf
+					try {
+						json = JSON.parse(buf)
+					} catch {
+						/* keep string */
+					}
+					resolve({ status: res.statusCode, json })
+				})
+			}
+		)
+		req.on('error', reject)
+		if (payload) req.write(payload)
+		req.end()
+	})
+}
+
+async function waitInterceptLog(adminPort, pluginId, minEntries, ms = 2000) {
+	const t0 = Date.now()
+	let last = { status: 0, json: {} }
+	while (Date.now() - t0 < ms) {
+		last = await adminJSON(adminPort, 'GET', `/api/plugins/${pluginId}/intercept-log`)
+		if (last.status === 200 && Array.isArray(last.json.entries) && last.json.entries.length >= minEntries) {
+			return last.json
+		}
+		await new Promise((r) => setTimeout(r, 50))
+	}
+	return last.json
+}
+
 function startCongee({ cfgPath, dataDir, extraEnv }) {
 	const bin = path.join(CONGEE, 'bin', 'congee')
 	const env = {
@@ -591,12 +642,26 @@ async function conduitProximity() {
 async function fixtureIntercept() {
 	await withRelay(
 		{ fixture: true, env: { PLUGIN_INTERCEPT: 'passthrough' }, readyWait: 2000 },
-		async ({ ws }) => {
-			const sk = generateSecretKey()
+		async ({ ws, adminPort }) => {
 			const c = await connect(ws)
 			const r = await req(c, 'pt', { kinds: [30402], search: 'x' })
 			soft('fixture intercept passthrough EOSE', r.eose)
 			c.close()
+			const snap = await waitInterceptLog(adminPort, 'fixture', 1)
+			const row = snap && snap.entries && snap.entries[0]
+			soft(
+				'fixture intercept log recorded',
+				!!row && row.sub_id === 'pt' && row.action === 'passthrough' && Array.isArray(row.filters),
+				JSON.stringify(row || snap)
+			)
+			const put = await adminJSON(adminPort, 'PUT', '/api/plugins/fixture/intercept-log', { limit: 50 })
+			soft('fixture intercept log put limit', put.status === 200 && put.json && put.json.ok === true && put.json.limit === 50, JSON.stringify(put))
+			const after = await adminJSON(adminPort, 'GET', '/api/plugins/fixture/intercept-log')
+			soft(
+				'fixture intercept log limit applied',
+				after.status === 200 && after.json && after.json.limit === 50 && Array.isArray(after.json.entries) && after.json.entries.length >= 1,
+				JSON.stringify(after.json)
+			)
 		}
 	)
 }

@@ -6,6 +6,7 @@
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import PluginActionsMenu from '$lib/components/PluginActionsMenu.svelte';
 	import PluginUpdateDialog from '$lib/components/PluginUpdateDialog.svelte';
+	import InterceptLogPanel from '$lib/components/InterceptLogPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { refreshPluginNav } from '$lib/plugin-nav.svelte';
 	import type { PluginUpdateTarget } from '$lib/plugin-github';
@@ -292,6 +293,7 @@
 	{/if}
 
 	{#if pluginId}
+		<InterceptLogPanel pluginId={pluginId} />
 		<iframe
 			{@attach attachIframe}
 			src={iframeSrc}

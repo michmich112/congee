@@ -1,0 +1,19 @@
+---
+description: Out-of-process gRPC plugin architecture — host vs plugin, intercept log
+globs: internal/plugin/**,sdk/plugin/**,docs/plugin*.md,web/admin/src/**/plugin*,web/admin/src/**/Intercept*,cmd/congee-plugin-fixture/**,test/plugin-e2e/**
+alwaysApply: false
+---
+
+# gRPC plugins (host vs binary)
+
+Plugins are **separate processes** (`internal/plugin` + `sdk/plugin`). This is not the in-tree NIP registry. Full decision record: [docs/plugin-architecture.md](docs/plugin-architecture.md).
+
+- Plugins import **only** `github.com/michmich112/congee/sdk/plugin`. Never the parent module.
+- **Listen** is non-blocking enqueue after an in-process match. **Intercept** is the only sync RPC; not-ready / timeout / RPC error **fail-open** (plugin never called).
+- **Intercept log** stays on the **host**: copy after intercept returns, logging goroutine, drop-on-full. Do not add it to proto, Conduit, or the plugin iframe.
+- Plugin iframe: `connect-src 'none'`, no `allow-same-origin`, no admin token. Host chrome owns intercept-log GET/PUT.
+
+```
+// ❌ BAD — plugin-only log misses fail-open; iframe cannot fetch admin API
+// ✅ GOOD — host enqueueInterceptLog after doIntercept; InterceptLogPanel on the settings page
+```
