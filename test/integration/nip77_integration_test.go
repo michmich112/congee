@@ -136,7 +136,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"kinds": []int{1}}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg1", filter, initial})
@@ -170,10 +171,7 @@ var _ = Describe("NIP-77 negentropy", func() {
 			}
 		}
 	done:
-		var need []string
-		for id := range clientNeg.HaveNots {
-			need = append(need, id)
-		}
+		need := clientNeg.NeedIDs()
 		Expect(need).NotTo(BeEmpty())
 	})
 
@@ -182,7 +180,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"search": "test"}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg2", filter, initial})
@@ -206,7 +205,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"kinds": []int{1}, "limit": 10}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg3", filter, initial})

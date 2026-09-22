@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,7 +17,9 @@ import (
 )
 
 type wsClient struct {
-	conn *websocket.Conn
+	conn    *websocket.Conn
+	readErr error
+	fetchN  atomic.Uint64
 }
 
 func dialUpstream(ctx context.Context, rawURL string) (*wsClient, error) {
@@ -75,6 +78,9 @@ func (c *wsClient) sendJSON(v any) error {
 }
 
 func (c *wsClient) readMessage(ctx context.Context, timeout time.Duration) (typ string, raw []json.RawMessage, err error) {
+	if c.readErr != nil {
+		return "", nil, c.readErr
+	}
 	if timeout <= 0 {
 		timeout = time.Duration(60) * time.Second
 	}
@@ -85,6 +91,7 @@ func (c *wsClient) readMessage(ctx context.Context, timeout time.Duration) (typ 
 	_ = c.conn.SetReadDeadline(deadline)
 	_, data, err := c.conn.ReadMessage()
 	if err != nil {
+		c.readErr = err
 		return "", nil, err
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -100,7 +107,9 @@ func (c *wsClient) readMessage(ctx context.Context, timeout time.Duration) (typ 
 }
 
 func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, error) {
-	subID := "fetch-" + id[:8]
+	// Short unique sub id: strfry rejects long ids, and an 8-hex prefix collides.
+	// A previous REQ's EOSE can still be buffered, so only this sub's frames count.
+	subID := fmt.Sprintf("f%x", c.fetchN.Add(1))
 	filter := map[string]any{"ids": []string{id}}
 	if err := c.sendJSON([]any{"REQ", subID, filter}); err != nil {
 		return nil, err
@@ -116,7 +125,7 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, e
 		}
 		switch typ {
 		case "EVENT":
-			if len(raw) < 3 {
+			if len(raw) < 3 || jsonStringAt(raw, 1) != subID {
 				continue
 			}
 			var ev nostr.Event
@@ -128,8 +137,16 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, e
 				return &ev, nil
 			}
 		case "EOSE":
+			if jsonStringAt(raw, 1) != subID {
+				continue
+			}
 			_ = c.sendJSON([]any{"CLOSE", subID})
 			return nil, fmt.Errorf("event not found: %s", id)
+		case "CLOSED":
+			if jsonStringAt(raw, 1) != subID {
+				continue
+			}
+			return nil, fmt.Errorf("closed: %s", jsonStringAt(raw, 2))
 		}
 	}
 	return nil, context.DeadlineExceeded
