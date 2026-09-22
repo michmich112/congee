@@ -1,0 +1,24 @@
+# Pull requests targeting main: Congee NIP-77 upstream sync against a real strfry.
+name: PR — NIP-77 strfry e2e
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  nip77-strfry-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: go.sum
+
+      - run: docker pull ghcr.io/hoytech/strfry:latest
+
+      - run: make test-nip77-strfry-e2e

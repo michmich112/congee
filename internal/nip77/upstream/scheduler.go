@@ -15,7 +15,6 @@ import (
 	"github.com/michmich112/congee/internal/relay"
 	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
-	"github.com/nbd-wtf/go-nostr/nip77/negentropy"
 	"github.com/rs/zerolog"
 )
 
@@ -257,7 +256,8 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 	}
 	log.Debug().Int("local_events", len(local)).Msg("upstream local vector built")
 
-	clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(local), frameLimit)
+	clientNeg := nip77.NewSyncClient(nip77.BuildVector(local), frameLimit)
+	defer clientNeg.Stop()
 	subID := fmt.Sprintf("up-%d", time.Now().UnixNano())
 	initial := clientNeg.Start()
 
@@ -351,9 +351,14 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 	}
 
 fetch:
-	needIDs := collectNeedIDs(clientNeg)
+	needIDs := clientNeg.NeedIDs()
 	needCount = len(needIDs)
-	log.Debug().Str("sub_id", subID).Int("need", needCount).Int("rounds", round).Msg("upstream reconcile complete")
+	log.Debug().
+		Str("sub_id", subID).
+		Int("need", needCount).
+		Int("haves", clientNeg.HaveCount()).
+		Int("rounds", round).
+		Msg("upstream reconcile complete")
 
 	for _, id := range needIDs {
 		ev, err := c.reqEventByID(ctx, id)
@@ -400,17 +405,4 @@ func (sch *Scheduler) persistImportedEvent(ctx context.Context, ev *nostr.Event)
 		sch.srv.NotifyPluginStoredEvent(ev, true)
 	}
 	return true, nil
-}
-
-func collectNeedIDs(neg *negentropy.Negentropy) []string {
-	if neg == nil || neg.HaveNots == nil {
-		return nil
-	}
-	var ids []string
-	for id := range neg.HaveNots {
-		if id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids
 }

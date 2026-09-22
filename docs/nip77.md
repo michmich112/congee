@@ -67,3 +67,7 @@ If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync)
 - NIP-50 search filters are rejected for negentropy
 - NIP-29 per-connection visibility is not applied during sync (DB contents matching the filter are used)
 - Persistent negentropy caches (strfry-style) are not implemented
+
+## Testing upstream sync
+
+`make test-nip77-strfry-e2e` builds Congee, starts `ghcr.io/hoytech/strfry:latest` with 1100 imported events, and checks that a fresh Congee upstream job imports them. It needs Docker. The same job runs in GitHub Actions on pull requests to `main`. Default `go test ./...` does not start strfry.
