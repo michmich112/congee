@@ -2,11 +2,13 @@ package turso
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -61,6 +63,46 @@ func TestStoreCRUD(t *testing.T) {
 	out2, _ := st.QueryEvents(ctx, []nostr.Filter{f})
 	if len(out2) != 0 {
 		t.Fatalf("after delete: %d", len(out2))
+	}
+}
+
+func TestReplaceableRevisionOrder(t *testing.T) {
+	skipNoDriver(t)
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "order.db"), nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	pk := nostrRepeat("b", 64)
+	for _, tc := range []struct {
+		kind int
+		tags [][]string
+	}{
+		{kind: 0}, {kind: 30402, tags: [][]string{{"d", "product"}}},
+	} {
+		suffix := "0"
+		if tc.kind != 0 {
+			suffix = "1"
+		}
+		makeEvent := func(id string, created int64) *nostr.Event {
+			return &nostr.Event{ID: nostrRepeat(id, 63) + suffix, PubKey: pk, CreatedAt: created,
+				Kind: tc.kind, Tags: tc.tags, Content: id, Sig: nostrRepeat("f", 128)}
+		}
+		for _, ev := range []*nostr.Event{makeEvent("c", 10), makeEvent("b", 10), makeEvent("a", 9), makeEvent("d", 10)} {
+			err := st.SaveEvent(ctx, ev)
+			if ev.ID[0] == 'a' || ev.ID[0] == 'd' {
+				if !errors.Is(err, storage.ErrStaleReplaceable) {
+					t.Fatalf("kind %d stale %s: %v", tc.kind, ev.ID, err)
+				}
+			} else if err != nil {
+				t.Fatalf("kind %d save %s: %v", tc.kind, ev.ID, err)
+			}
+		}
+		out, err := st.QueryEvents(ctx, []nostr.Filter{{Authors: []string{pk}, Kinds: []int{tc.kind}}})
+		if err != nil || len(out) != 1 || out[0].ID != nostrRepeat("b", 63)+suffix {
+			t.Fatalf("kind %d winner: %+v err=%v", tc.kind, out, err)
+		}
 	}
 }
 

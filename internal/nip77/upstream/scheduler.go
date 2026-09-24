@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -394,6 +395,9 @@ func (sch *Scheduler) persistImportedEvent(ctx context.Context, ev *nostr.Event)
 		return false, nil
 	}
 	if err := sch.store.SaveEvent(ctx, ev); err != nil {
+		if errors.Is(err, storage.ErrStaleReplaceable) {
+			return false, nil
+		}
 		return false, err
 	}
 	if sch.srv != nil {
