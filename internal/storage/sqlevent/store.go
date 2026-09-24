@@ -364,7 +364,7 @@ INNER JOIN event_fts ON event_fts.event_id = events.id
 WHERE event_fts MATCH ?`)
 	args := []interface{}{matchExpr}
 	sqliteAppendSearchFilter(&sb, &args, &cons)
-	sb.WriteString(` ORDER BY bm25(event_fts) ASC`)
+	sb.WriteString(` ORDER BY bm25(event_fts) ASC, events.id ASC`)
 	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
 		sb.WriteString(fmt.Sprintf(" LIMIT %d", *lim))
 	}
@@ -556,4 +556,3 @@ func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberP
 		return false, nil
 	}
 }
-

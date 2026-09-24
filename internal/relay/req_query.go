@@ -76,13 +76,24 @@ func newREQQueryState(filters []nostr.Filter, defaultQueryLimit int, searchEnabl
 	return st
 }
 
-func mergePageEvents(pageByID map[string]*nostr.Event, seen map[string]struct{}) []*nostr.Event {
+// mergePageEvents keeps the relevance order supplied by SearchEvents. Events that
+// match only non-search filters follow in the usual newest-first order.
+func mergePageEvents(pageByID map[string]*nostr.Event, searchOrder []string, seen map[string]struct{}) []*nostr.Event {
+	out := make([]*nostr.Event, 0, len(pageByID))
+	for _, id := range searchOrder {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		if ev, ok := pageByID[id]; ok {
+			seen[id] = struct{}{}
+			out = append(out, ev)
+		}
+	}
 	ids := make([]string, 0, len(pageByID))
 	for id := range pageByID {
 		if _, dup := seen[id]; dup {
 			continue
 		}
-		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool {
@@ -92,8 +103,8 @@ func mergePageEvents(pageByID map[string]*nostr.Event, seen map[string]struct{})
 		}
 		return a.ID < b.ID
 	})
-	out := make([]*nostr.Event, 0, len(ids))
 	for _, id := range ids {
+		seen[id] = struct{}{}
 		out = append(out, pageByID[id])
 	}
 	return out
@@ -101,6 +112,7 @@ func mergePageEvents(pageByID map[string]*nostr.Event, seen map[string]struct{})
 
 func fetchREQAll(ctx context.Context, store storage.Store, st *reqQueryState) ([]*nostr.Event, bool, error) {
 	pageByID := make(map[string]*nostr.Event)
+	var searchOrder []string
 	for i := range st.search {
 		f := &st.search[i]
 		evs, err := store.SearchEvents(ctx, f.SearchText(), f.WithoutSearch())
@@ -109,6 +121,7 @@ func fetchREQAll(ctx context.Context, store storage.Store, st *reqQueryState) ([
 		}
 		for _, ev := range evs {
 			pageByID[ev.ID] = ev
+			searchOrder = append(searchOrder, ev.ID)
 		}
 	}
 	st.searchDone = true
@@ -123,7 +136,7 @@ func fetchREQAll(ctx context.Context, store storage.Store, st *reqQueryState) ([
 		}
 		fc.exhausted = true
 	}
-	return mergePageEvents(pageByID, st.seen), false, nil
+	return mergePageEvents(pageByID, searchOrder, st.seen), false, nil
 }
 
 // fetchREQPage loads one page of initial REQ snapshot events (OR across filters).
@@ -138,6 +151,7 @@ func fetchREQPage(ctx context.Context, store storage.Store, st *reqQueryState, p
 	}
 
 	pageByID := make(map[string]*nostr.Event)
+	var searchOrder []string
 
 	if !st.searchDone {
 		for i := range st.search {
@@ -148,6 +162,7 @@ func fetchREQPage(ctx context.Context, store storage.Store, st *reqQueryState, p
 			}
 			for _, ev := range evs {
 				pageByID[ev.ID] = ev
+				searchOrder = append(searchOrder, ev.ID)
 			}
 		}
 		st.searchDone = true
@@ -197,7 +212,7 @@ func fetchREQPage(ctx context.Context, store storage.Store, st *reqQueryState, p
 			break
 		}
 	}
-	return mergePageEvents(pageByID, st.seen), hasMore, nil
+	return mergePageEvents(pageByID, searchOrder, st.seen), hasMore, nil
 }
 
 // queryInitialREQEvents loads the initial snapshot for a REQ (OR across filters).
