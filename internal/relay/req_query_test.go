@@ -8,8 +8,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/db"
+	"github.com/michmich112/congee/internal/nostr"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
@@ -59,6 +59,81 @@ func TestQueryInitialREQEvents_SearchORWithKinds(t *testing.T) {
 	}
 	if len(out) != 2 {
 		t.Fatalf("want 2 events (search+kind OR), got %d", len(out))
+	}
+}
+
+func TestMergePageEvents_PreservesSearchOrderAcrossORFilters(t *testing.T) {
+	olderMatch := &nostr.Event{ID: "older-match", CreatedAt: 1}
+	newerMatch := &nostr.Event{ID: "newer-match", CreatedAt: 3}
+	nonSearch := &nostr.Event{ID: "non-search", CreatedAt: 4}
+	page := map[string]*nostr.Event{
+		olderMatch.ID: olderMatch,
+		newerMatch.ID: newerMatch,
+		nonSearch.ID:  nonSearch,
+	}
+	seen := make(map[string]struct{})
+	// The same event can appear in several search filters and a non-search filter.
+	got := mergePageEvents(page, []string{olderMatch.ID, newerMatch.ID, olderMatch.ID}, seen)
+	want := []string{olderMatch.ID, newerMatch.ID, nonSearch.ID}
+	if len(got) != len(want) {
+		t.Fatalf("got %d events, want %d", len(got), len(want))
+	}
+	for i, id := range want {
+		if got[i].ID != id {
+			t.Fatalf("event %d = %q, want %q", i, got[i].ID, id)
+		}
+	}
+	if again := mergePageEvents(page, []string{olderMatch.ID}, seen); len(again) != 0 {
+		t.Fatalf("already delivered events appeared again: %v", again)
+	}
+}
+
+func TestQueryInitialREQEvents_SearchUsesStorageRelevanceOrder(t *testing.T) {
+	ctx := context.Background()
+	st, closeStore, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "search-order.db"), zerolog.Nop())
+	if err != nil && strings.Contains(err.Error(), "not available") {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	pk := strings.Repeat("b", 64)
+	sig := strings.Repeat("s", 128)
+	events := []*nostr.Event{
+		{ID: strings.Repeat("1", 64), PubKey: pk, CreatedAt: 1, Kind: 1, Content: "alpha alpha alpha alpha", Sig: sig},
+		{ID: strings.Repeat("2", 64), PubKey: pk, CreatedAt: 3, Kind: 1, Content: "alpha beta gamma delta epsilon zeta", Sig: sig},
+	}
+	for _, ev := range events {
+		if err := st.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	q := "alpha"
+	f := nostr.Filter{Search: &q, Kinds: []int{1}}
+	ranked, err := st.SearchEvents(ctx, q, f.WithoutSearch())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ranked) != 2 || ranked[0].ID != events[0].ID {
+		t.Fatalf("fixture must rank older event first, got %v", ranked)
+	}
+	for _, pageSize := range []int{0, 10} {
+		state := newREQQueryState([]nostr.Filter{f}, 0, true)
+		got, _, err := fetchREQPage(ctx, st, state, pageSize)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != len(ranked) {
+			t.Fatalf("page size %d: got %d events, want %d", pageSize, len(got), len(ranked))
+		}
+		for i := range ranked {
+			if got[i].ID != ranked[i].ID {
+				t.Fatalf("page size %d: event %d = %s, want %s", pageSize, i, got[i].ID, ranked[i].ID)
+			}
+		}
 	}
 }
 
@@ -602,4 +677,3 @@ func TestFetchREQPage_ZeroPageSizeIsSingleQuery(t *testing.T) {
 		t.Fatalf("want 3 events (default limit), got %d", len(evs))
 	}
 }
-

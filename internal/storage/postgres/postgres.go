@@ -407,7 +407,7 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	var eventRows []storage.EventRow
 	sel := s.db.NewSelect().Model(&eventRows)
 	sel = sel.Where("search_vector @@ websearch_to_tsquery('english', ?)", q)
-	sel = sel.OrderExpr("ts_rank_cd(search_vector, websearch_to_tsquery('english', ?)) DESC", q)
+	sel = sel.OrderExpr("ts_rank_cd(search_vector, websearch_to_tsquery('english', ?)) DESC, id ASC", q)
 	sel = applyFilterQueryPrefix(sel, &cons, "")
 	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
 		sel = sel.Limit(*lim)
@@ -515,4 +515,3 @@ func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberP
 		return false, nil
 	}
 }
-
