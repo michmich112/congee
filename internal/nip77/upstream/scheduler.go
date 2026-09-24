@@ -395,7 +395,7 @@ func (sch *Scheduler) persistImportedEvent(ctx context.Context, ev *nostr.Event)
 		return false, nil
 	}
 	if err := sch.store.SaveEvent(ctx, ev); err != nil {
-		if errors.Is(err, storage.ErrStaleReplaceable) {
+		if errors.Is(err, storage.ErrStaleReplaceable) || errors.Is(err, storage.ErrDeletedEvent) {
 			return false, nil
 		}
 		return false, err

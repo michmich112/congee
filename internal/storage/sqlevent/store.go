@@ -61,8 +61,16 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if nostr.IsEphemeral(ev.Kind) {
 		return fmt.Errorf("%s: ephemeral events are not stored", s.engine)
 	}
+	if ev.Kind == 5 {
+		if err := ev.VerifySig(); err != nil {
+			return fmt.Errorf("invalid: deletion signature: %w", err)
+		}
+	}
 	err := s.runWrite(ctx, "SaveEvent", func(ctx context.Context, db bun.IDB) error {
 		return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			if err := storage.CheckDeletion(ctx, tx, ev, extractDTag(ev.Tags)); err != nil {
+				return err
+			}
 			switch nostr.ClassifyKind(ev.Kind) {
 			case nostr.KindReplaceable:
 				var current storage.EventRow
@@ -138,7 +146,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 					return err
 				}
 			}
-			return nil
+			return storage.ApplyDeletion(ctx, tx, ev)
 		})
 	})
 	if err != nil {

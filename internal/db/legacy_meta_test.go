@@ -12,6 +12,7 @@ import (
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/sqlitemeta"
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
+	"github.com/michmich112/congee/internal/storage/turso"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun/driver/pgdriver"
 )
@@ -143,8 +144,8 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	if err := checkDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
 		t.Fatal(err)
 	}
-	if userVer != 7 {
-		t.Fatalf("events db user_version=%d want 7", userVer)
+	if userVer != turso.CurrentSchemaVersion() {
+		t.Fatalf("events db user_version=%d want %d", userVer, turso.CurrentSchemaVersion())
 	}
 	var hasAudit bool
 	if err := checkDB.QueryRowContext(ctx,

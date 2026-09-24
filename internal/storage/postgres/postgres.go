@@ -116,7 +116,20 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if nostr.IsEphemeral(ev.Kind) {
 		return errors.New("postgres: ephemeral events are not stored")
 	}
+	if ev.Kind == 5 {
+		if err := ev.VerifySig(); err != nil {
+			return fmt.Errorf("invalid: deletion signature: %w", err)
+		}
+	}
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// All events by one author serialize with deletion requests, including
+		// imports racing a kind-5 request on another relay instance.
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "nostr-author:"+ev.PubKey); err != nil {
+			return err
+		}
+		if err := storage.CheckDeletion(ctx, tx, ev, extractDTag(ev.Tags)); err != nil {
+			return err
+		}
 		switch nostr.ClassifyKind(ev.Kind) {
 		case nostr.KindReplaceable:
 			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", fmt.Sprintf("%s:%d", ev.PubKey, ev.Kind)); err != nil {
@@ -198,7 +211,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 				return err
 			}
 		}
-		return nil
+		return storage.ApplyDeletion(ctx, tx, ev)
 	})
 	if err != nil {
 		return err

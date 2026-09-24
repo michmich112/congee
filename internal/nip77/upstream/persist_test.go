@@ -2,10 +2,12 @@ package upstream
 
 import (
 	"context"
+	"encoding/hex"
 	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/db"
 	"github.com/michmich112/congee/internal/nostr"
@@ -18,6 +20,51 @@ import (
 type recordingRuntime struct {
 	mu     sync.Mutex
 	stored []*nostr.Event
+}
+
+func TestPersistImportedDeletionPreventsResurrection(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "events.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+	srv, err := relay.NewServer(config.DefaultConfig(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := &recordingRuntime{}
+	srv.SetPluginRuntime(rt)
+	sch := NewScheduler(nil, st, srv, nil, zerolog.Nop())
+	priv, _ := btcec.PrivKeyFromBytes([]byte{3})
+	pk := hex.EncodeToString(priv.PubKey().SerializeCompressed()[1:])
+	makeEvent := func(kind int, at int64, tags [][]string) *nostr.Event {
+		ev := &nostr.Event{PubKey: pk, CreatedAt: at, Kind: kind, Tags: tags, Content: "import"}
+		if err := ev.Sign(priv); err != nil {
+			t.Fatal(err)
+		}
+		return ev
+	}
+	target := makeEvent(1, 100, nil)
+	if stored, err := sch.persistImportedEvent(ctx, target); err != nil || !stored {
+		t.Fatalf("target import: %v %v", stored, err)
+	}
+	request := makeEvent(5, 200, [][]string{{"e", target.ID}})
+	if stored, err := sch.persistImportedEvent(ctx, request); err != nil || !stored {
+		t.Fatalf("deletion import: %v %v", stored, err)
+	}
+	if stored, err := sch.persistImportedEvent(ctx, target); err != nil || stored {
+		t.Fatalf("resurrection import: %v %v", stored, err)
+	}
+	if ids := rt.ids(); len(ids) != 2 || ids[0] != target.ID || ids[1] != request.ID {
+		t.Fatalf("stored notifications: %v", ids)
+	}
+	if has, err := st.HasEventID(ctx, target.ID); err != nil || has {
+		t.Fatalf("deleted target present: %v %v", has, err)
+	}
 }
 
 func (r *recordingRuntime) Observe(any) {}
