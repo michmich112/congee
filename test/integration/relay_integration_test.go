@@ -384,8 +384,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		priv, err := btcec.NewPrivateKey()
 		Expect(err).NotTo(HaveOccurred())
 		ev1 := signedEvent(priv, 0, "first", nil)
-		time.Sleep(10 * time.Millisecond)
 		ev2 := signedEvent(priv, 0, "second", nil)
+		ev2.CreatedAt = ev1.CreatedAt + 1
+		Expect(ev2.Sign(priv)).To(Succeed())
 
 		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
 		Expect(err).NotTo(HaveOccurred())

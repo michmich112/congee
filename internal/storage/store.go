@@ -3,9 +3,19 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/michmich112/congee/internal/nostr"
 )
+
+// ErrStaleReplaceable means a replaceable event lost NIP-01 revision ordering.
+// Callers must not treat it as a newly stored event.
+var ErrStaleReplaceable = errors.New("invalid: newer replaceable event already stored")
+
+// ReplaceableWins applies NIP-01's timestamp and lowest-ID tie break.
+func ReplaceableWins(incomingTime int64, incomingID string, currentTime int64, currentID string) bool {
+	return incomingTime > currentTime || (incomingTime == currentTime && incomingID < currentID)
+}
 
 // AuditEntry is a row written to the audit log.
 type AuditEntry struct {
