@@ -95,6 +95,12 @@ func validateNegFilter(cfg *config.Config, c *Conn, f *nostr.Filter) error {
 	if f.Limit != nil {
 		return fmt.Errorf("blocked: limit filters not supported for NEG-OPEN")
 	}
+	// Negentropy reveals event IDs even when subsequent REQs withhold the events.
+	// Do not reconcile gift wraps on this public endpoint, including IDs-only and
+	// wildcard filters. Explicit non-gift-wrap kinds remain available for sync.
+	if len(f.Kinds) == 0 || slices.Contains(f.Kinds, nip17KindGiftWrap) || slices.Contains(f.Kinds, nip59KindEphemeralGiftWrap) {
+		return fmt.Errorf("blocked: gift-wrap kinds are not available for negentropy")
+	}
 	if subscribeAuthRequired(cfg, []nostr.Filter{*f}) && !c.nip42HasAnyAuth() {
 		return fmt.Errorf("auth-required: subscription requires authentication")
 	}
