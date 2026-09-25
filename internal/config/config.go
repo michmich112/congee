@@ -51,6 +51,8 @@ func DefaultConfig() *Config {
 		NIP11: NIP11Section{
 			Name:               "Congee",
 			Description:        "Nostr relay (example metadata)",
+			Banner:             "",
+			Icon:               "",
 			PubKey:             "",
 			Contact:            "",
 			Software:           "https://github.com/michmich112/congee",

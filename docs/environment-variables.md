@@ -25,6 +25,8 @@ If a file named **`.env`** exists in the **current working directory** when the 
 
 Most relay behavior — logging level, audit retention, rate limits, connection limits, WebSocket compression, NIP-11 metadata, `nips.enabled`, shutdown timeouts, **plugins**, etc. — is configured in the JSON file referenced by `CONFIG_PATH`. Listen ports and the events/meta file paths can additionally be overridden at process start by the variables above (applied after JSON load, then the merged config is validated).
 
+Optional `nip11.icon` and `nip11.banner` image URLs can be set in that JSON file or under **Config → Relay** in the admin UI. Congee includes each URL in its NIP-11 relay information response when set and omits it when empty.
+
 Plugin subprocesses additionally receive `CONGEE_PLUGIN_SOCKET`, `CONGEE_PLUGIN_HOST_SOCKET`, `CONGEE_PLUGIN_DATA_DIR`, `CONGEE_PLUGIN_SETTINGS`, and `CONGEE_PLUGIN_ID` (set by the host; see [plugins.md](plugins.md)). Conduit tests use `CONDUIT_EMBEDDER=fake`. If that variable is unset, Conduit does not silently fall back to the fake embedder — vector rank stays off until ONNX loads.
 
 JSON `database.meta_dsn` (optional) points at the libSQL file for operational metadata (`audit_log`, `config_changelog`, `relay_metric_buckets`, `ws_connection_sessions`). Meta always uses go-libsql, including when events are in PostgreSQL. When omitted, Congee uses `congee-meta.db` beside `database.dsn` (or `./congee-meta.db` when `database.type` is `postgres`). Every build requires CGO.

@@ -16,13 +16,15 @@ type NIP11Handler struct {
 }
 
 type nip11Doc struct {
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	PubKey        string   `json:"pubkey"`
-	Contact       string   `json:"contact"`
-	SupportedNIPs []int    `json:"supported_nips"`
-	Software      string   `json:"software"`
-	Version       string   `json:"version"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Banner        string `json:"banner,omitempty"`
+	Icon          string `json:"icon,omitempty"`
+	PubKey        string `json:"pubkey"`
+	Contact       string `json:"contact"`
+	SupportedNIPs []int  `json:"supported_nips"`
+	Software      string `json:"software"`
+	Version       string `json:"version"`
 }
 
 // writeNIP11CORSResponse sets CORS headers for browser NIP-11 fetches.
@@ -62,6 +64,8 @@ func (h *NIP11Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	doc := nip11Doc{
 		Name:          h.Cfg.NIP11.Name,
 		Description:   h.Cfg.NIP11.Description,
+		Banner:        h.Cfg.NIP11.Banner,
+		Icon:          h.Cfg.NIP11.Icon,
 		PubKey:        h.Cfg.NIP11.PubKey,
 		Contact:       h.Cfg.NIP11.Contact,
 		SupportedNIPs: supported,

@@ -13,6 +13,23 @@ func TestLoadExampleValidates(t *testing.T) {
 	}
 }
 
+func TestNIP11ImagesConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig()
+	cfg.NIP11.Icon = "https://images.example/icon.png"
+	cfg.NIP11.Banner = "https://images.example/banner.jpg"
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.NIP11.Icon != cfg.NIP11.Icon || loaded.NIP11.Banner != cfg.NIP11.Banner {
+		t.Fatalf("NIP-11 image URLs did not survive config save/load: %+v", loaded.NIP11)
+	}
+}
+
 func TestValidateRejectsBadPort(t *testing.T) {
 	c := minimalValidConfig()
 	c.Relay.Port = 0

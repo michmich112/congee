@@ -37,6 +37,8 @@ export type AppConfig = {
 	nip11: {
 		name: string;
 		description: string;
+		banner?: string;
+		icon?: string;
 		pubkey: string;
 		contact: string;
 		software: string;

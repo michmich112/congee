@@ -47,6 +47,32 @@
 					}}
 				/>
 			</div>
+			<div class="space-y-2">
+				<Label for="n11-icon">Icon URL</Label>
+				<Input
+					id="n11-icon"
+					type="url"
+					value={draft().nip11.icon ?? ''}
+					oninput={(e) => {
+						draft().nip11.icon = e.currentTarget.value;
+						ctx.markDirty();
+					}}
+				/>
+				<p class="text-xs text-muted-foreground">Optional square image shown in compact relay lists.</p>
+			</div>
+			<div class="space-y-2">
+				<Label for="n11-banner">Banner URL</Label>
+				<Input
+					id="n11-banner"
+					type="url"
+					value={draft().nip11.banner ?? ''}
+					oninput={(e) => {
+						draft().nip11.banner = e.currentTarget.value;
+						ctx.markDirty();
+					}}
+				/>
+				<p class="text-xs text-muted-foreground">Optional wide image for the relay’s information page.</p>
+			</div>
 			<div class="md:col-span-2 space-y-4 rounded-lg border border-border bg-muted/20 px-4 py-4">
 				<div>
 					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>

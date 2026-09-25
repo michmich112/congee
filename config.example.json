@@ -47,6 +47,8 @@
   "nip11": {
     "name": "Congee",
     "description": "Nostr relay (example metadata)",
+    "banner": "",
+    "icon": "",
     "pubkey": "",
     "contact": "",
     "software": "https://github.com/michmich112/congee",
