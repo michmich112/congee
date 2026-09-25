@@ -61,10 +61,28 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	if nostr.IsEphemeral(ev.Kind) {
 		return fmt.Errorf("%s: ephemeral events are not stored", s.engine)
 	}
+	if ev.Kind == 5 {
+		if err := ev.VerifySig(); err != nil {
+			return fmt.Errorf("invalid: deletion signature: %w", err)
+		}
+	}
 	err := s.runWrite(ctx, "SaveEvent", func(ctx context.Context, db bun.IDB) error {
 		return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			if err := storage.CheckDeletion(ctx, tx, ev, extractDTag(ev.Tags)); err != nil {
+				return err
+			}
 			switch nostr.ClassifyKind(ev.Kind) {
 			case nostr.KindReplaceable:
+				var current storage.EventRow
+				err := tx.NewSelect().Model(&current).Column("id", "created_at").
+					Where("pubkey = ? AND kind = ?", ev.PubKey, ev.Kind).
+					Order("created_at DESC", "id ASC").Limit(1).Scan(ctx)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				if err == nil && !storage.ReplaceableWins(ev.CreatedAt, ev.ID, current.CreatedAt, current.ID) {
+					return storage.ErrStaleReplaceable
+				}
 				if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
 					Where("pubkey = ? AND kind = ?", ev.PubKey, ev.Kind).
 					Exec(ctx); err != nil {
@@ -72,6 +90,16 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 				}
 			case nostr.KindAddressable:
 				dt := extractDTag(ev.Tags)
+				var current storage.EventRow
+				err := tx.NewSelect().Model(&current).Column("id", "created_at").
+					Where("pubkey = ? AND kind = ? AND d_tag = ?", ev.PubKey, ev.Kind, dt).
+					Order("created_at DESC", "id ASC").Limit(1).Scan(ctx)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				if err == nil && !storage.ReplaceableWins(ev.CreatedAt, ev.ID, current.CreatedAt, current.ID) {
+					return storage.ErrStaleReplaceable
+				}
 				if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
 					Where("pubkey = ? AND kind = ? AND d_tag = ?", ev.PubKey, ev.Kind, dt).
 					Exec(ctx); err != nil {
@@ -118,7 +146,7 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 					return err
 				}
 			}
-			return nil
+			return storage.ApplyDeletion(ctx, tx, ev)
 		})
 	})
 	if err != nil {
@@ -556,4 +584,3 @@ func (s *Store) IsGroupMember(ctx context.Context, relayPubkey, groupID, memberP
 		return false, nil
 	}
 }
-

@@ -283,6 +283,44 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		Expect(msg[2]).To(Equal(true))
 	})
 
+	It("enforces signed NIP-09 deletions on client writes", func() {
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+		send := func(ev nostr.Event) bool {
+			payload, err := json.Marshal([]any{"EVENT", ev})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(c.WriteMessage(websocket.TextMessage, payload)).To(Succeed())
+			_, data, err := c.ReadMessage()
+			Expect(err).NotTo(HaveOccurred())
+			var msg []any
+			Expect(json.Unmarshal(data, &msg)).To(Succeed())
+			Expect(msg[0]).To(Equal("OK"))
+			Expect(msg[1]).To(Equal(ev.ID))
+			return msg[2] == true
+		}
+		owner, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		other, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		target := signedEvent(owner, 1, "delete me", nil)
+		Expect(send(target)).To(BeTrue())
+		foreign := signedEvent(other, 5, "", [][]string{{"e", target.ID}})
+		Expect(send(foreign)).To(BeTrue())
+		has, err := st.HasEventID(context.Background(), target.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeTrue())
+		request := signedEvent(owner, 5, "", [][]string{{"e", target.ID}})
+		Expect(send(request)).To(BeTrue())
+		has, err = st.HasEventID(context.Background(), target.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeFalse())
+		Expect(send(target)).To(BeFalse())
+		unsigned := signedEvent(owner, 5, "", [][]string{{"e", request.ID}})
+		unsigned.Sig = "00"
+		Expect(send(unsigned)).To(BeFalse())
+	})
+
 	It("handles REQ with historical EVENT then EOSE", func() {
 		priv, err := btcec.NewPrivateKey()
 		Expect(err).NotTo(HaveOccurred())
@@ -384,8 +422,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		priv, err := btcec.NewPrivateKey()
 		Expect(err).NotTo(HaveOccurred())
 		ev1 := signedEvent(priv, 0, "first", nil)
-		time.Sleep(10 * time.Millisecond)
 		ev2 := signedEvent(priv, 0, "second", nil)
+		ev2.CreatedAt = ev1.CreatedAt + 1
+		Expect(ev2.Sign(priv)).To(Succeed())
 
 		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
 		Expect(err).NotTo(HaveOccurred())

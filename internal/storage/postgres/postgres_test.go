@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -9,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/storage"
 	"github.com/rs/zerolog"
 )
 
@@ -20,6 +24,87 @@ func testPostgresDSN(t *testing.T) string {
 		t.Skip("set TEST_POSTGRES_DSN to run postgres tests (e.g. postgres://user:pass@127.0.0.1:5432/congee?sslmode=disable)")
 	}
 	return d
+}
+
+func TestPostgresNIP09Deletion(t *testing.T) {
+	ctx := context.Background()
+	dsn := testPostgresDSN(t)
+	st, err := Open(ctx, dsn, "test-nip09", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	owner, _ := btcec.PrivKeyFromBytes([]byte{8})
+	other, _ := btcec.PrivKeyFromBytes([]byte{9})
+	sign := func(key *btcec.PrivateKey, kind int, at int64, tags [][]string, content string) *nostr.Event {
+		ev := &nostr.Event{PubKey: hex.EncodeToString(key.PubKey().SerializeCompressed()[1:]), CreatedAt: at, Kind: kind, Tags: tags, Content: content}
+		if err := ev.Sign(key); err != nil {
+			t.Fatal(err)
+		}
+		return ev
+	}
+	base := time.Now().Unix()
+	target := sign(owner, 1, base-2, nil, fmt.Sprintf("target-%d", time.Now().UnixNano()))
+	if err := st.SaveEvent(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	foreign := sign(other, 5, base-1, [][]string{{"e", target.ID}}, "foreign-"+target.ID)
+	if err := st.SaveEvent(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := st.HasEventID(ctx, target.ID); err != nil || !has {
+		t.Fatalf("foreign request removed target: %v %v", has, err)
+	}
+	request := sign(owner, 5, base, [][]string{{"e", target.ID}}, "own-"+target.ID)
+	if err := st.SaveEvent(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := st.HasEventID(ctx, target.ID); err != nil || has {
+		t.Fatalf("own request left target: %v %v", has, err)
+	}
+	if err := st.SaveEvent(ctx, target); !errors.Is(err, storage.ErrDeletedEvent) {
+		t.Fatalf("reimport deleted event: %v", err)
+	}
+}
+
+func TestPostgresReplaceableRevisionOrder(t *testing.T) {
+	ctx := context.Background()
+	dsn := testPostgresDSN(t)
+	st, err := Open(ctx, dsn, "test-revision-order", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	pk := nostrRepeat('9', 64)
+	for _, tc := range []struct {
+		kind int
+		tags [][]string
+	}{
+		{kind: 0}, {kind: 30402, tags: [][]string{{"d", "postgres-order"}}},
+	} {
+		suffix := "0"
+		if tc.kind != 0 {
+			suffix = "1"
+		}
+		makeEvent := func(id byte, created int64) *nostr.Event {
+			return &nostr.Event{ID: nostrRepeat(id, 63) + suffix, PubKey: pk, CreatedAt: created,
+				Kind: tc.kind, Tags: tc.tags, Content: string(id), Sig: nostrRepeat('f', 128)}
+		}
+		for _, ev := range []*nostr.Event{makeEvent('c', 10), makeEvent('b', 10), makeEvent('a', 9), makeEvent('d', 10)} {
+			err := st.SaveEvent(ctx, ev)
+			if ev.ID[0] == 'a' || ev.ID[0] == 'd' {
+				if !errors.Is(err, storage.ErrStaleReplaceable) {
+					t.Fatalf("kind %d stale %s: %v", tc.kind, ev.ID, err)
+				}
+			} else if err != nil {
+				t.Fatalf("kind %d save %s: %v", tc.kind, ev.ID, err)
+			}
+		}
+		out, err := st.QueryEvents(ctx, []nostr.Filter{{Authors: []string{pk}, Kinds: []int{tc.kind}}})
+		if err != nil || len(out) != 1 || out[0].ID != nostrRepeat('b', 63)+suffix {
+			t.Fatalf("kind %d winner: %+v err=%v", tc.kind, out, err)
+		}
+	}
 }
 
 func nostrRepeat(c byte, n int) string {
@@ -100,7 +185,7 @@ func TestPostgresManyTagsJSONBRoundTrip(t *testing.T) {
 		ID:        nostrRepeat('3', 64),
 		PubKey:    nostrRepeat('4', 64),
 		CreatedAt: 100,
-		Kind:      5,
+		Kind:      1,
 		Tags:      tags,
 		Content:   "delete",
 		Sig:       nostrRepeat('5', 128),
