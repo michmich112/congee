@@ -196,6 +196,13 @@ func (c *Conn) nip42AddPubkey(pk string) {
 		c.nip42Pubkeys = make(map[string]struct{})
 	}
 	c.nip42Pubkeys[pk] = struct{}{}
+	c.nip42CurrentPubkey = pk
+}
+
+func (c *Conn) nip42CurrentAuthPubkey() string {
+	c.authMu.RLock()
+	defer c.authMu.RUnlock()
+	return c.nip42CurrentPubkey
 }
 
 func (c *Conn) nip42HasPubkey(pk string) bool {

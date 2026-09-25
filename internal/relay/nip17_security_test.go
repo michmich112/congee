@@ -22,6 +22,17 @@ type nip17FilterStore struct {
 	pool []*nostr.Event
 }
 
+// A store returning rows outside the requested filter must not bypass the
+// relay's final recipient visibility check.
+type nip17OverReturnStore struct {
+	visibilityStoreStub
+	events []*nostr.Event
+}
+
+func (s *nip17OverReturnStore) QueryEvents(context.Context, []nostr.Filter) ([]*nostr.Event, error) {
+	return s.events, nil
+}
+
 func (s *nip17FilterStore) QueryEvents(ctx context.Context, filters []nostr.Filter) ([]*nostr.Event, error) {
 	_ = ctx
 	var out []*nostr.Event
@@ -131,13 +142,44 @@ func drainOutboundChan(t *testing.T, c *Conn, max int) []string {
 	return types
 }
 
+func assertClosedWithoutEvent(t *testing.T, c *Conn, reasonPrefix string) {
+	t.Helper()
+	var closed bool
+	for {
+		select {
+		case b := <-c.send:
+			var frame []any
+			if err := json.Unmarshal(b, &frame); err != nil {
+				t.Fatal(err)
+			}
+			if len(frame) == 0 {
+				t.Fatal("empty frame")
+			}
+			if frame[0] == "EVENT" || frame[0] == "EOSE" {
+				t.Fatalf("private request reached backend: %v", frame[0])
+			}
+			if frame[0] == "CLOSED" {
+				if len(frame) < 3 || !strings.HasPrefix(frame[2].(string), reasonPrefix) {
+					t.Fatalf("unexpected CLOSED reason: %v", frame)
+				}
+				closed = true
+			}
+		default:
+			if !closed {
+				t.Fatal("missing CLOSED response")
+			}
+			return
+		}
+	}
+}
+
 func registerNIP01NIP42NIP17(srv *Server, st storage.Store) {
 	RegisterNIP01(srv, st)
 	RegisterNIP42(srv, st)
 	RegisterNIP17(srv, st)
 }
 
-func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuth_EmptySnapshotNoLeak(t *testing.T) {
+func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuth_BlockedBeforeQuery(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("a", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -160,14 +202,10 @@ func TestHandleREQ_NIP17_IDsOnlyGiftWrapWithoutAuth_EmptySnapshotNoLeak(t *testi
 	if err := handleREQ(ctx, srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	types := drainOutboundChan(t, c, 8)
-	assertOutboundHasNoAuthLeak(t, types)
-	if len(types) != 1 || types[0] != "EOSE" {
-		t.Fatalf("want only EOSE (gift wrap withheld without AUTH), got %#v", types)
-	}
+	assertClosedWithoutEvent(t, c, "blocked:")
 }
 
-func TestHandleREQ_NIP17_Kinds1059WithoutAuth_EmptySnapshotNoLeak(t *testing.T) {
+func TestHandleREQ_NIP17_Kinds1059WithoutAuth_RequiresAuth(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("b", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -184,19 +222,15 @@ func TestHandleREQ_NIP17_Kinds1059WithoutAuth_EmptySnapshotNoLeak(t *testing.T) 
 	c := registerTestConnLargeSend(t, srv, "req-k1059-noauth")
 	req := &nostr.ReqMessage{
 		SubID:   "sub1",
-		Filters: []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}}},
+		Filters: []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}, Tag: map[string][]string{"#p": {alice}}}},
 	}
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	types := drainOutboundChan(t, c, 8)
-	assertOutboundHasNoAuthLeak(t, types)
-	if len(types) != 1 || types[0] != "EOSE" {
-		t.Fatalf("want only EOSE without AUTH, got %#v", types)
-	}
+	assertClosedWithoutEvent(t, c, "auth-required:")
 }
 
-func TestHandleREQ_NIP17_IDsOnlyWithAuthRecipientGetsEventThenEOSE(t *testing.T) {
+func TestHandleREQ_NIP17_RecipientFilterWithAuthGetsEventThenEOSE(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("c", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -214,7 +248,7 @@ func TestHandleREQ_NIP17_IDsOnlyWithAuthRecipientGetsEventThenEOSE(t *testing.T)
 	c.nip42AddPubkey(alice)
 	req := &nostr.ReqMessage{
 		SubID:   "sub1",
-		Filters: []nostr.Filter{{IDs: []string{wrap.ID}}},
+		Filters: []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}, IDs: []string{wrap.ID}, Tag: map[string][]string{"#p": {alice}}}},
 	}
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
@@ -225,7 +259,40 @@ func TestHandleREQ_NIP17_IDsOnlyWithAuthRecipientGetsEventThenEOSE(t *testing.T)
 	}
 }
 
-func TestHandleREQ_NIP17_IDsOnlyWithAuthWrongRecipientNoEvent(t *testing.T) {
+func TestHandleREQ_NIP17_BackendOverReturnDoesNotLeakOtherRecipient(t *testing.T) {
+	t.Parallel()
+	alice := strings.Repeat("a", 64)
+	bob := strings.Repeat("b", 64)
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrap := signedGiftWrapEvent(t, priv, bob)
+	st := &nip17OverReturnStore{events: []*nostr.Event{wrap}}
+	srv, err := NewServer(nip17SecurityTestCfg(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerNIP01NIP42NIP17(srv, st)
+	c := registerTestConnLargeSend(t, srv, "over-return")
+	c.nip42AddPubkey(alice)
+	req := &nostr.ReqMessage{
+		SubID: "sub1",
+		Filters: []nostr.Filter{{
+			Kinds: []int{nip17KindGiftWrap},
+			Tag:   map[string][]string{"#p": {alice}},
+		}},
+	}
+	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
+		t.Fatal(err)
+	}
+	types := drainOutboundChan(t, c, 4)
+	if len(types) != 1 || types[0] != "EOSE" {
+		t.Fatalf("over-returned wrap leaked: %v", types)
+	}
+}
+
+func TestHandleREQ_NIP17_WrongAuthRecipientBlocked(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("d", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -243,20 +310,12 @@ func TestHandleREQ_NIP17_IDsOnlyWithAuthWrongRecipientNoEvent(t *testing.T) {
 	c.nip42AddPubkey(strings.Repeat("e", 64))
 	req := &nostr.ReqMessage{
 		SubID:   "sub1",
-		Filters: []nostr.Filter{{IDs: []string{wrap.ID}}},
+		Filters: []nostr.Filter{{Kinds: []int{nip17KindGiftWrap}, IDs: []string{wrap.ID}, Tag: map[string][]string{"#p": {alice}}}},
 	}
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	types := drainOutboundChan(t, c, 4)
-	for _, typ := range types {
-		if typ == "EVENT" {
-			t.Fatal("non-recipient must not receive gift wrap EVENT")
-		}
-	}
-	if len(types) == 0 || types[len(types)-1] != "EOSE" {
-		t.Fatalf("want EOSE only, got %#v", types)
-	}
+	assertClosedWithoutEvent(t, c, "restricted:")
 }
 
 func TestHandleREQ_NIP17_Kinds1AndIDGiftWrap_NoAuth_NoLeak(t *testing.T) {
@@ -296,7 +355,7 @@ func TestHandleREQ_NIP17_Kinds1AndIDGiftWrap_NoAuth_NoLeak(t *testing.T) {
 	}
 }
 
-func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyWithoutAuth_Withholds1059(t *testing.T) {
+func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyWithoutAuth_Blocked(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("1", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -321,14 +380,10 @@ func TestHandleREQ_NIP17_MultiFilterORSecondIDsOnlyWithoutAuth_Withholds1059(t *
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	types := drainOutboundChan(t, c, 8)
-	assertOutboundHasNoAuthLeak(t, types)
-	if len(types) != 1 || types[0] != "EOSE" {
-		t.Fatalf("want only EOSE (1059 from OR branch withheld), got %#v", types)
-	}
+	assertClosedWithoutEvent(t, c, "blocked:")
 }
 
-func TestHandleREQ_NIP17_IDsOnlyUnknownId_EmptyStore(t *testing.T) {
+func TestHandleREQ_NIP17_IDsOnlyUnknownId_Blocked(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("a", 64)
 	priv, err := btcec.NewPrivateKey()
@@ -350,14 +405,10 @@ func TestHandleREQ_NIP17_IDsOnlyUnknownId_EmptyStore(t *testing.T) {
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
 	}
-	types := drainOutboundChan(t, c, 8)
-	assertOutboundHasNoAuthLeak(t, types)
-	if len(types) != 1 || types[0] != "EOSE" {
-		t.Fatalf("want only EOSE for unknown id, got %#v", types)
-	}
+	assertClosedWithoutEvent(t, c, "blocked:")
 }
 
-func TestHandleREQ_NIP17_IDsOnlyKind1WithoutAuth_Delivers(t *testing.T) {
+func TestHandleREQ_NIP17_ExplicitKind1WithoutAuth_Delivers(t *testing.T) {
 	t.Parallel()
 	priv, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -373,7 +424,7 @@ func TestHandleREQ_NIP17_IDsOnlyKind1WithoutAuth_Delivers(t *testing.T) {
 	c := registerTestConnLargeSend(t, srv, "req-kind1-noauth")
 	req := &nostr.ReqMessage{
 		SubID:   "sub1",
-		Filters: []nostr.Filter{{IDs: []string{note.ID}}},
+		Filters: []nostr.Filter{{Kinds: []int{1}, IDs: []string{note.ID}}},
 	}
 	if err := handleREQ(context.Background(), srv, c, req, false); err != nil {
 		t.Fatal(err)
@@ -418,6 +469,34 @@ func TestBroadcast_NIP17GiftWrapNotSentToWrongAuthedSubscriber(t *testing.T) {
 	srv.broadcastEvent(wrap)
 	if got != 1 {
 		t.Fatalf("expected 1 EVENT after recipient AUTH added, got %d", got)
+	}
+}
+
+func TestBroadcast_EphemeralGiftWrapRequiresCurrentRecipientAuth(t *testing.T) {
+	t.Parallel()
+	alice := strings.Repeat("a", 64)
+	bob := strings.Repeat("b", 64)
+	st := &visibilityStoreStub{}
+	srv, err := NewServer(nip17SecurityTestCfg(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerNIP01NIP42NIP17(srv, st)
+	var got int
+	srv.subs.RegisterSender("ephemeral-live", func([]byte) bool { got++; return true })
+	c := registerTestConn(t, srv, "ephemeral-live")
+	if err := srv.subs.Add(c.ID, "sub1", []nostr.Filter{{Kinds: []int{nip59KindEphemeralGiftWrap}}}); err != nil {
+		t.Fatal(err)
+	}
+	srv.subs.FinishSnapshot(c.ID, "sub1")
+	ev := &nostr.Event{ID: strings.Repeat("1", 64), Kind: nip59KindEphemeralGiftWrap, Tags: [][]string{{"p", alice}}}
+	srv.broadcastEvent(ev)
+	c.nip42AddPubkey(alice)
+	srv.broadcastEvent(ev)
+	c.nip42AddPubkey(bob)
+	srv.broadcastEvent(ev)
+	if got != 1 {
+		t.Fatalf("expected only current recipient AUTH to receive live wrap, got %d deliveries", got)
 	}
 }
 
@@ -655,7 +734,7 @@ func TestHandleEVENT_NIP17_SealNonEmptyTagsRejected(t *testing.T) {
 	}
 }
 
-func TestEventVisibleToSubscriptionGiftWrapMultiplePMatchesAny(t *testing.T) {
+func TestEventVisibleToSubscriptionGiftWrapMultiplePWithheld(t *testing.T) {
 	t.Parallel()
 	alice := strings.Repeat("5", 64)
 	bob := strings.Repeat("6", 64)
@@ -672,8 +751,8 @@ func TestEventVisibleToSubscriptionGiftWrapMultiplePMatchesAny(t *testing.T) {
 		CreatedAt: 1,
 	}
 	c := registerTestConn(t, srv, "multi-p")
-	c.nip42AddPubkey(strings.ToUpper(bob[:8]) + bob[8:])
-	if !srv.EventVisibleToSubscription("multi-p", ev) {
-		t.Fatal("expected visible when second p tag matches (case-insensitive)")
+	c.nip42AddPubkey(bob)
+	if srv.EventVisibleToSubscription("multi-p", ev) {
+		t.Fatal("multiple-recipient gift wrap must be withheld")
 	}
 }

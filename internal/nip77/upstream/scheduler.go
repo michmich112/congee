@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -244,6 +245,11 @@ func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
 		}
 		if f.HasSearch() {
 			return nil, fmt.Errorf("filter %d: search not supported", i)
+		}
+		// The initiator sends its local ID set to the upstream. Never disclose
+		// gift-wrap IDs through an unrestricted or mixed-kind sync filter.
+		if len(f.Kinds) == 0 || slices.Contains(f.Kinds, 1059) || slices.Contains(f.Kinds, 21059) {
+			return nil, fmt.Errorf("filter %d: gift-wrap kinds are not available for upstream sync", i)
 		}
 		out = append(out, f)
 	}

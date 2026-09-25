@@ -129,6 +129,12 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 	if s.metrics != nil {
 		s.metrics.IncReq()
 	}
+	if err := validateNIP17REQ(s.cfg, c, msg.Filters); err != nil {
+		if strings.HasPrefix(err.Error(), "auth-required:") {
+			_ = nip42EnqueueAuthChallenge(c, s.cfg)
+		}
+		return c.sendClosed(msg.SubID, err.Error())
+	}
 	if subscribeAuthRequired(s.cfg, msg.Filters) && !c.nip42HasAnyAuth() {
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 		return c.sendClosed(msg.SubID, "auth-required: subscription requires authentication")
@@ -148,6 +154,9 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			subFilters := msg.Filters
 			if len(ires.SubscriptionFilters) > 0 {
 				subFilters = ires.SubscriptionFilters
+			}
+			if err := validateNIP17REQ(s.cfg, c, subFilters); err != nil {
+				return c.sendClosed(msg.SubID, err.Error())
 			}
 			if err := s.subs.Add(c.ID, msg.SubID, subFilters); err != nil {
 				return sendREQAddError(c, msg.SubID, err, log)
@@ -175,6 +184,11 @@ func handleREQ(ctx context.Context, s *Server, c *Conn, msg *nostr.ReqMessage, s
 			s.subs.NoteSubEOSE(c.ID, msg.SubID)
 			s.subs.FinishSnapshot(c.ID, msg.SubID)
 			return nil
+		}
+	}
+	if effective != msg {
+		if err := validateNIP17REQ(s.cfg, c, effective.Filters); err != nil {
+			return c.sendClosed(msg.SubID, err.Error())
 		}
 	}
 
