@@ -140,7 +140,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   POST     /api/migration/target-preflight  — JSON target schema check (no DDL)
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
-	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart, relayID).ServeHTTP)
+	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
 	api.HandleFunc("GET /audit/kinds", HandleAuditKinds(store).ServeHTTP)
 	api.HandleFunc("GET /audit/connections/{ref}", HandleAuditConnectionsDetail(cfg, relaySrv, store))
@@ -152,7 +152,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
-	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart, relayID))
+	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart))
 	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
 	registerPluginRoutes(api, s)
 

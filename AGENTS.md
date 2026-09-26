@@ -13,7 +13,7 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 - `internal/storage/` — `Store` (`EventStore` + `MetaStore`); Turso/libSQL and PostgreSQL event stores and `sqlitemeta` (libSQL) for operational metadata (`congee-meta.db`).
 - `internal/db/` — opens and composes event + meta stores, legacy meta migration, merged `AdminStorageSnapshot`.
 - `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
-- `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`), derived pubkey / NIP-19 npub, NIP-11 pubkey reconciliation.
+- `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`) and derived NIP-11 `self` / NIP-19 npub. NIP-11 administrator `pubkey` is configured separately.
 - `internal/nips/` — NIP registry and loader (validators, hooks, message handlers).
 - `internal/audit/` — audit log writes and retention cleanup.
 - `internal/plugin/` — gRPC plugin **host** (Unix sockets, listen queues, REQ intercept, intercept log). Plugins are out-of-process; see [docs/plugin-architecture.md](docs/plugin-architecture.md).

@@ -207,7 +207,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if AcceptsNostrJSON(r) {
-		(&NIP11Handler{Cfg: s.cfg}).ServeHTTP(w, r)
+		(&NIP11Handler{Cfg: s.cfg, RelayID: s.relayID}).ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Connection", "Upgrade")

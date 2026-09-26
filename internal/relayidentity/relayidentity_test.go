@@ -11,7 +11,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/michmich112/congee/internal/config"
 )
 
 func TestResolvePathDefault(t *testing.T) {
@@ -109,61 +108,8 @@ func TestLoadKnownSecretDerivation(t *testing.T) {
 	}
 }
 
-func TestReconcileNIP11PubKey(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "relay.secrets.json")
-	priv, err := btcec.NewPrivateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteTestSecrets(path, hex.EncodeToString(priv.Serialize())); err != nil {
-		t.Fatal(err)
-	}
-	id, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := &config.Config{NIP11: config.NIP11Section{PubKey: "deadbeef"}}
-	if err := ReconcileNIP11PubKey(cfg, id); err == nil {
-		t.Fatal("expected mismatch error")
-	}
-	cfg2 := &config.Config{NIP11: config.NIP11Section{PubKey: ""}}
-	if err := ReconcileNIP11PubKey(cfg2, id); err != nil {
-		t.Fatal(err)
-	}
-	if cfg2.NIP11.PubKey != id.PubKeyHex() {
-		t.Fatalf("empty config pubkey not filled: %q", cfg2.NIP11.PubKey)
-	}
-	cfg3 := &config.Config{NIP11: config.NIP11Section{PubKey: strings.ToUpper(id.PubKeyHex())}}
-	if err := ReconcileNIP11PubKey(cfg3, id); err != nil {
-		t.Fatal(err)
-	}
-	if cfg3.NIP11.PubKey != id.PubKeyHex() {
-		t.Fatalf("case-insensitive match should canonicalize to lowercase derived hex")
-	}
-}
-
 func TestEncodeNpubLength(t *testing.T) {
 	if _, err := EncodeNpub([]byte{1, 2, 3}); err == nil {
 		t.Fatal("expected error for short pubkey")
-	}
-}
-
-func TestReconcileNilConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "relay.secrets.json")
-	priv, err := btcec.NewPrivateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteTestSecrets(path, hex.EncodeToString(priv.Serialize())); err != nil {
-		t.Fatal(err)
-	}
-	id, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ReconcileNIP11PubKey(nil, id); err == nil {
-		t.Fatal("expected error for nil config")
 	}
 }

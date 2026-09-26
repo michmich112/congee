@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,6 +12,75 @@ func TestLoadExampleValidates(t *testing.T) {
 	_, err := LoadJSON(filepath.Join("..", "..", "config.example.json"))
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNIP11ImagesConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig()
+	cfg.NIP11.Icon = "https://images.example/icon.png"
+	cfg.NIP11.Banner = "https://images.example/banner.jpg"
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.NIP11.Icon != cfg.NIP11.Icon || loaded.NIP11.Banner != cfg.NIP11.Banner {
+		t.Fatalf("NIP-11 image URLs did not survive config save/load: %+v", loaded.NIP11)
+	}
+}
+
+func TestNIP11AdministratorPubKeyValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.NIP11.AdminPubKey = strings.Repeat("a", 64)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid administrator key rejected: %v", err)
+	}
+	for _, invalid := range []string{"npub1example", "deadbeef", strings.Repeat("z", 64), " " + strings.Repeat("a", 64)} {
+		cfg.NIP11.AdminPubKey = invalid
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("invalid administrator key %q accepted", invalid)
+		}
+	}
+}
+
+func TestNIP11LegacyRelayPubKeyIsNotAdministratorContact(t *testing.T) {
+	legacyKey := strings.Repeat("b", 64)
+	base, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(base, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["nip11"].(map[string]any)["pubkey"] = legacyKey
+	legacyJSON, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.AdminPubKey != "" {
+		t.Fatalf("legacy relay key became administrator contact: %q", cfg.NIP11.AdminPubKey)
+	}
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), `"pubkey":`) {
+		t.Fatal("legacy relay pubkey survived config save")
 	}
 }
 

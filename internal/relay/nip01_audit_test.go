@@ -44,7 +44,7 @@ func testRelayConfig() *config.Config {
 		},
 		MaxSubscriptionIDLength: 128,
 		NIP11: config.NIP11Section{
-			Name: "t", Description: "t", PubKey: "", Contact: "", Software: "https://example.com",
+			Name: "t", Description: "t", AdminPubKey: "", Contact: "", Software: "https://example.com",
 		},
 		NIPs: config.NIPsSection{Enabled: []int{1, 11}},
 	}

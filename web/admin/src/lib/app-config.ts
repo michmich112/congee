@@ -37,7 +37,9 @@ export type AppConfig = {
 	nip11: {
 		name: string;
 		description: string;
-		pubkey: string;
+		banner?: string;
+		icon?: string;
+		admin_pubkey?: string;
 		contact: string;
 		software: string;
 		/** When true, relay adds CORS allowing any origin for GET / NIP-11 only. */
@@ -220,6 +222,8 @@ export function parseConfigJson(text: string): AppConfig {
 	if (typeof v !== 'object' || v === null) throw new Error('config root must be an object');
 	if (v.nip11 && typeof v.nip11 === 'object' && v.nip11 !== null) {
 		const n11 = v.nip11 as Record<string, unknown>;
+		// Older configs used pubkey for the relay's own key. Never reuse it as an admin contact.
+		delete n11.pubkey;
 		delete n11.supported_nips;
 		delete n11.version;
 	}

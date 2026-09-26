@@ -61,7 +61,7 @@ func writeIntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeTest",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -105,7 +105,7 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnCon
   "nip11": {
     "name": "CongeeNIP42",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -157,7 +157,7 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeNIP29",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -216,6 +216,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 	var (
 		tmpDir   string
 		cfg      *config.Config
+		rid      *relayidentity.Identity
 		st       storage.Store
 		srv      *relay.Server
 		ln       net.Listener
@@ -232,9 +233,8 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		cfg, err = config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
 		secPath := relayidentity.ResolvePath(cfgPath)
-		rid, err := relayidentity.Load(secPath)
+		rid, err = relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		var closeStore func() error
 		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
@@ -455,6 +455,17 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		var doc map[string]any
 		Expect(json.NewDecoder(resp.Body).Decode(&doc)).To(Succeed())
 		Expect(doc["name"]).To(Equal("CongeeTest"))
+		Expect(doc["self"]).To(Equal(rid.PubKeyHex()))
+		Expect(doc).NotTo(HaveKey("pubkey"))
+		limits, ok := doc["limitation"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(limits["max_message_length"]).To(Equal(float64(cfg.WebSocket.MaxMessageBytes)))
+		Expect(limits["max_subscriptions"]).To(Equal(float64(cfg.ConnectionLimits.MaxSubscriptionsPerConnection)))
+		Expect(limits["max_subid_length"]).To(Equal(float64(cfg.MaxSubscriptionIDLength)))
+		Expect(limits["default_limit"]).To(Equal(float64(config.EffectiveREQDefaultQueryLimit(cfg.ConnectionLimits.DefaultQueryLimit))))
+		Expect(limits["auth_required"]).To(BeFalse())
+		Expect(limits).NotTo(HaveKey("max_limit"))
+		Expect(limits).NotTo(HaveKey("max_event_tags"))
 	})
 
 	It("adds CORS for NIP-11 when nip11.cors_allow_any_origin is true", func() {
@@ -493,7 +504,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
   "nip11": {
     "name": "CorsRelay",
     "description": "cors test",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com",
     "cors_allow_any_origin": true
@@ -506,7 +517,6 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsSec := relayidentity.ResolvePath(cfgPath)
 		corsRid, err := relayidentity.Load(corsSec)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
 		corsSt, closeCors, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer closeCors()
@@ -593,7 +603,6 @@ var _ = Describe("NIP-42 authentication", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -689,7 +698,6 @@ var _ = Describe("NIP-42 authentication", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -771,7 +779,6 @@ var _ = Describe("NIP-42 authentication", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -851,7 +858,6 @@ var _ = Describe("NIP-29 relay groups", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())

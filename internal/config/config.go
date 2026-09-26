@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -51,7 +52,9 @@ func DefaultConfig() *Config {
 		NIP11: NIP11Section{
 			Name:               "Congee",
 			Description:        "Nostr relay (example metadata)",
-			PubKey:             "",
+			Banner:             "",
+			Icon:               "",
+			AdminPubKey:        "",
 			Contact:            "",
 			Software:           "https://github.com/michmich112/congee",
 			CORSAllowAnyOrigin: false,
@@ -202,6 +205,12 @@ func (c *Config) Validate() error {
 	}
 	if c.NIP11.Name == "" {
 		return errors.New("config: nip11.name is required")
+	}
+	if p := c.NIP11.AdminPubKey; p != "" {
+		decoded, err := hex.DecodeString(p)
+		if p != strings.TrimSpace(p) || err != nil || len(decoded) != 32 {
+			return errors.New("config: nip11.admin_pubkey must be a 32-byte hex administrator contact key")
+		}
 	}
 	if len(c.NIPs.Enabled) == 0 {
 		return errors.New("config: nips.enabled must be non-empty")

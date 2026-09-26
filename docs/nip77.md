@@ -53,7 +53,7 @@ Configure `nip77.upstreams` with `wss://` URLs, JSON filters, and `interval_seco
 
 Each newly stored import is delivered to plugins whose listen subscriptions match the event kind (`OnStoredEvent` and/or `Observe` EVENT), the same match rules as a client `EVENT`. Imports are not run through the WebSocket EVENT validator chain. Duplicate IDs already in the store are skipped. On multi-instance PostgreSQL, other processes receive the same plugin notify via imported-event fanout (same-origin LISTEN is filtered, so the importer notifies plugins at persist time).
 
-If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 pubkey) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
+If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 `self`) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
 
 ## Observability
 

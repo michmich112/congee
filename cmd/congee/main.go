@@ -64,9 +64,6 @@ func main() {
 	if err != nil {
 		panic("relay identity: " + err.Error())
 	}
-	if err := relayidentity.ReconcileNIP11PubKey(cfg, relayID); err != nil {
-		panic("relay identity: " + err.Error())
-	}
 	log := setupLogger(cfg)
 	if promotedSQLite {
 		log.Info().Int("dsn_len", len(cfg.Database.DSN)).Msg("sqlite config promoted to turso")
