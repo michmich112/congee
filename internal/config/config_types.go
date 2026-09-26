@@ -142,11 +142,12 @@ type WebSocketSection struct {
 }
 
 type NIP11Section struct {
-	Name               string `json:"name"`
-	Description        string `json:"description"`
-	Banner             string `json:"banner"`
-	Icon               string `json:"icon"`
-	PubKey             string `json:"pubkey"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Banner      string `json:"banner"`
+	Icon        string `json:"icon"`
+	// AdminPubKey is an optional contact identity. Legacy nip11.pubkey is ignored.
+	AdminPubKey        string `json:"admin_pubkey,omitempty"`
 	Contact            string `json:"contact"`
 	Software           string `json:"software"`
 	CORSAllowAnyOrigin bool   `json:"cors_allow_any_origin"`

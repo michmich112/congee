@@ -28,7 +28,7 @@ Related plans (under `docs/plans/` locally, if present): relay identity secrets,
 | Feature | Action | Pass criterion |
 |--------|--------|----------------|
 | Relay identity | Open admin dashboard | `npub` + hex pubkey match `GET /api/relay-identity` |
-| NIP-11 | `curl -H 'Accept: application/nostr+json' http://127.0.0.1:<port>/` | JSON includes `pubkey`, `supported_nips` |
+| NIP-11 | `curl -H 'Accept: application/nostr+json' http://127.0.0.1:<port>/` | JSON includes relay `self`, accurate `limitation`, and `supported_nips`; `pubkey` appears only when an administrator contact is set |
 | NIP-42 | Connect WS; if challenge on connect, sign 22242; `REQ` protected kinds | `CLOSED` → `auth-required:` then success after `AUTH` |
 | NIP-29 | Publish `h`-tagged event after 9007 bootstrap | Stored; `previous` invalid id → `OK` false; restricted group requires membership |
 
@@ -63,7 +63,7 @@ run-congee-e2e:
 
 | Feature | Layer 1 (Ginkgo/unit) | Layer 2 (manual) | Layer 3 (harness) |
 |---------|----------------------|------------------|-------------------|
-| Relay identity | `internal/relayidentity` tests; integration reconcile | Admin dashboard identity card; NIP-11 `pubkey` | `GET /api/relay-identity` vs file on disk |
+| Relay identity | `internal/relayidentity` tests; config legacy key test | Admin dashboard identity card; NIP-11 `self` | `GET /api/relay-identity` vs file on disk |
 | NIP-42 | AUTH + gated `REQ` integration | Client signs 22242; subscribe to kind 4 | Script: challenge → AUTH → REQ |
 | NIP-29 | SQLite store queries; extend Ginkgo for private `REQ` | Create group, post with `h`, test `previous` | Script: full group timeline |
 

@@ -49,7 +49,7 @@
     "description": "Nostr relay (example metadata)",
     "banner": "",
     "icon": "",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://github.com/michmich112/congee",
     "cors_allow_any_origin": false

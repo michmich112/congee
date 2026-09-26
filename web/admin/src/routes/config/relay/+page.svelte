@@ -75,7 +75,7 @@
 			</div>
 			<div class="md:col-span-2 space-y-4 rounded-lg border border-border bg-muted/20 px-4 py-4">
 				<div>
-					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>
+					<p class="text-sm font-medium">Relay identity (NIP-11 self)</p>
 					<p class="text-muted-foreground mt-1 text-xs">
 						Your public key is generated from your private key. The signing key file defaults to
 						<code class="rounded bg-muted px-1">relay.secrets.json</code> next to the JSON config (for example
@@ -123,10 +123,24 @@
 					</div>
 				{:else}
 					<p class="text-destructive text-sm">
-						Relay identity is not available (same as Dashboard). NIP-11 pubkey cannot be shown; fix relay
+						Relay identity is not available (same as Dashboard). NIP-11 self cannot be shown; fix relay
 						identity or retry after reload.
 					</p>
 				{/if}
+			</div>
+			<div class="space-y-2">
+				<Label for="n11-pubkey">Administrator contact pubkey (optional)</Label>
+				<Input
+					id="n11-pubkey"
+					class="font-mono text-xs"
+					spellcheck={false}
+					value={draft().nip11.admin_pubkey ?? ''}
+					oninput={(e) => {
+						draft().nip11.admin_pubkey = e.currentTarget.value;
+						ctx.markDirty();
+					}}
+				/>
+				<p class="text-xs text-muted-foreground">32-byte hex key for an administrator who accepts support messages. Leave blank to omit it.</p>
 			</div>
 			<div class="space-y-2">
 				<Label for="n11-contact">Contact</Label>

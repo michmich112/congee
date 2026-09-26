@@ -69,7 +69,7 @@ func TestHandleMigrationStartTursoToTurso(t *testing.T) {
 
 	var cfgMu sync.Mutex
 	api := http.NewServeMux()
-	api.HandleFunc("POST /migration/start", handleMigrationStart(zerolog.Nop(), cfgPath, &cfgMu, meta, nil, nil))
+	api.HandleFunc("POST /migration/start", handleMigrationStart(zerolog.Nop(), cfgPath, &cfgMu, meta, nil))
 	h := RequireAdminAuth(migrationTursoHTTPTestPassword, http.StripPrefix("/api", api))
 
 	payload := map[string]any{
