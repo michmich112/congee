@@ -3,7 +3,9 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,15 +22,30 @@ import (
 
 // JobStatus is the last run snapshot for one upstream entry.
 type JobStatus struct {
-	Name          string `json:"name"`
-	URL           string `json:"url"`
-	Enabled       bool   `json:"enabled"`
-	LastRunUnix   int64  `json:"last_run_unix,omitempty"`
-	NextRunUnix   int64  `json:"next_run_unix,omitempty"`
-	LastError     string `json:"last_error,omitempty"`
-	LastNeedCount int    `json:"last_need_count,omitempty"`
-	LastImported  int    `json:"last_imported,omitempty"`
-	Running       bool   `json:"running"`
+	Name              string `json:"name"`
+	URL               string `json:"url"`
+	Enabled           bool   `json:"enabled"`
+	LastRunUnix       int64  `json:"last_run_unix,omitempty"`
+	NextRunUnix       int64  `json:"next_run_unix,omitempty"`
+	LastError         string `json:"last_error,omitempty"`
+	LastNeedCount     int    `json:"last_need_count,omitempty"`
+	LastImported      int    `json:"last_imported,omitempty"`
+	LastSkipped       int    `json:"last_skipped,omitempty"`
+	LastFailed        int    `json:"last_failed,omitempty"`
+	LastFiltersFailed int    `json:"last_filters_failed,omitempty"`
+	Running           bool   `json:"running"`
+}
+
+type pullStats struct {
+	need, imported, skipped, failed, filtersFailed int
+}
+
+func (s *pullStats) add(other pullStats) {
+	s.need += other.need
+	s.imported += other.imported
+	s.skipped += other.skipped
+	s.failed += other.failed
+	s.filtersFailed += other.filtersFailed
 }
 
 // Scheduler runs configured upstream pull jobs.
@@ -152,15 +169,18 @@ func (sch *Scheduler) runOnce(ctx context.Context, u config.NIP77Upstream) {
 	jobLog.Info().Msg("upstream sync started")
 	t0 := time.Now()
 
-	needTotal, imported, err := sch.pullUpstream(ctx, u)
+	stats, err := sch.pullUpstream(ctx, u)
 	now := time.Now().Unix()
 
 	sch.mu.Lock()
 	st = sch.status[u.Name]
 	st.LastRunUnix = now
 	st.NextRunUnix = now + int64(u.IntervalSeconds)
-	st.LastNeedCount = needTotal
-	st.LastImported = imported
+	st.LastNeedCount = stats.need
+	st.LastImported = stats.imported
+	st.LastSkipped = stats.skipped
+	st.LastFailed = stats.failed
+	st.LastFiltersFailed = stats.filtersFailed
 	if err != nil {
 		st.LastError = err.Error()
 	} else {
@@ -168,6 +188,9 @@ func (sch *Scheduler) runOnce(ctx context.Context, u config.NIP77Upstream) {
 	}
 	sch.mu.Unlock()
 
+	if sch.srv != nil && sch.srv.Metrics() != nil {
+		sch.srv.Metrics().IncNegUpstreamImported(int64(stats.imported))
+	}
 	if err != nil {
 		if sch.srv != nil && sch.srv.Metrics() != nil {
 			sch.srv.Metrics().IncNegUpstreamFailure()
@@ -175,60 +198,60 @@ func (sch *Scheduler) runOnce(ctx context.Context, u config.NIP77Upstream) {
 		audit.Enqueue(storage.AuditEntry{
 			CreatedAt: now,
 			Action:    audit.ActionNegUpstreamSyncFailed,
-			Detail:    fmt.Sprintf("upstream=%s reason=%s", u.Name, audit.SanitizeAuditDetailFragment(err.Error())),
+			Detail:    fmt.Sprintf("upstream=%s need=%d imported=%d skipped=%d failed=%d filters_failed=%d reason=%s", u.Name, stats.need, stats.imported, stats.skipped, stats.failed, stats.filtersFailed, audit.SanitizeAuditDetailFragment(err.Error())),
 		})
-		jobLog.Warn().Err(err).Int64("duration_ms", time.Since(t0).Milliseconds()).Msg("upstream sync failed")
+		jobLog.Warn().Err(err).Int("need", stats.need).Int("imported", stats.imported).Int("skipped", stats.skipped).Int("failed", stats.failed).Int("filters_failed", stats.filtersFailed).Int64("duration_ms", time.Since(t0).Milliseconds()).Msg("upstream sync failed")
 		return
-	}
-	if sch.srv != nil && sch.srv.Metrics() != nil {
-		sch.srv.Metrics().IncNegUpstreamImported(int64(imported))
 	}
 	audit.Enqueue(storage.AuditEntry{
 		CreatedAt: now,
 		Action:    audit.ActionNegUpstreamSyncComplete,
-		Detail:    fmt.Sprintf("upstream=%s need=%d imported=%d duration_ms=%d", u.Name, needTotal, imported, time.Since(t0).Milliseconds()),
+		Detail:    fmt.Sprintf("upstream=%s need=%d imported=%d skipped=%d failed=%d duration_ms=%d", u.Name, stats.need, stats.imported, stats.skipped, stats.failed, time.Since(t0).Milliseconds()),
 	})
-	jobLog.Info().Int("need", needTotal).Int("imported", imported).Int64("duration_ms", time.Since(t0).Milliseconds()).Msg("upstream sync complete")
+	jobLog.Info().Int("need", stats.need).Int("imported", stats.imported).Int("skipped", stats.skipped).Int("failed", stats.failed).Int64("duration_ms", time.Since(t0).Milliseconds()).Msg("upstream sync complete")
 }
 
-func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) (needTotal, imported int, err error) {
+func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) (stats pullStats, err error) {
 	log := sch.log.With().Str("upstream", u.Name).Logger()
 
 	filters, err := parseUpstreamFilters(u.Filters)
 	if err != nil {
-		return 0, 0, err
+		return stats, err
 	}
 
 	log.Debug().Str("url", u.URL).Msg("upstream dialing")
 	c, err := dialUpstream(ctx, u.URL)
 	if err != nil {
-		return 0, 0, err
+		return stats, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	log.Info().Str("url", u.URL).Int("filters", len(filters)).Msg("upstream connected")
 
 	msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
 	authWait := time.Duration(config.EffectiveNIP77UpstreamAuthWait(sch.cfg)) * time.Second
 	if authWait > 0 {
 		if err := sch.handshakeAuth(ctx, log, c, u.URL, authWait, msgTimeout); err != nil {
-			return 0, 0, err
+			return stats, err
 		}
 	} else {
 		log.Debug().Msg("upstream AUTH wait 0; answering challenges in the message loop")
 	}
 
 	frameLimit := config.EffectiveNIP77FrameSizeLimit(sch.cfg)
+	var failures []error
 	for i, f := range filters {
 		log.Debug().Int("filter_index", i).Interface("filter", f).Msg("upstream syncing filter")
-		need, imp, err := syncFilter(ctx, sch, log, c, u.URL, f, frameLimit)
+		part, err := syncFilter(ctx, sch, log, &c, u.URL, f, frameLimit)
+		stats.add(part)
 		if err != nil {
-			return needTotal, imported, err
+			stats.filtersFailed++
+			if len(failures) < 5 {
+				failures = append(failures, fmt.Errorf("filter %d: %w", i, err))
+			}
 		}
-		log.Debug().Int("filter_index", i).Int("need", need).Int("imported", imp).Msg("upstream filter synced")
-		needTotal += need
-		imported += imp
+		log.Debug().Int("filter_index", i).Int("need", part.need).Int("imported", part.imported).Int("failed", part.failed).Msg("upstream filter finished")
 	}
-	return needTotal, imported, nil
+	return stats, errors.Join(failures...)
 }
 
 func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
@@ -249,10 +272,10 @@ func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
 	return out, nil
 }
 
-func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsClient, relayURL string, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
+func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c **wsClient, relayURL string, filter nostr.Filter, frameLimit int) (stats pullStats, err error) {
 	local, err := sch.store.QueryEventSyncItems(ctx, filter)
 	if err != nil {
-		return 0, 0, err
+		return stats, err
 	}
 	log.Debug().Int("local_events", len(local)).Msg("upstream local vector built")
 
@@ -261,8 +284,8 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 	subID := fmt.Sprintf("up-%d", time.Now().UnixNano())
 	initial := clientNeg.Start()
 
-	if err := c.sendJSON([]any{"NEG-OPEN", subID, filter, initial}); err != nil {
-		return 0, 0, err
+	if err := (*c).sendJSON([]any{"NEG-OPEN", subID, filter, initial}); err != nil {
+		return stats, err
 	}
 	log.Info().Str("sub_id", subID).Msg("upstream NEG-OPEN sent")
 
@@ -276,7 +299,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 			Int("timeout_seconds", int(msgTimeout.Seconds())).
 			Msg("upstream waiting for NEG-MSG")
 		waitStart := time.Now()
-		typ, payload, err := c.readMessage(ctx, msgTimeout)
+		typ, payload, err := (*c).readMessage(ctx, msgTimeout)
 		waitMS := time.Since(waitStart).Milliseconds()
 		if err != nil {
 			if isTimeoutErr(err) {
@@ -288,9 +311,9 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 					Int("timeout_seconds", int(msgTimeout.Seconds())).
 					Int64("waited_ms", waitMS).
 					Msg("upstream negentropy message timeout")
-				return needCount, imported, fmt.Errorf("negentropy message timeout after %s waiting for NEG-MSG (completed rounds %d)", msgTimeout, round)
+				return stats, fmt.Errorf("negentropy message timeout after %s waiting for NEG-MSG (completed rounds %d)", msgTimeout, round)
 			}
-			return needCount, imported, err
+			return stats, err
 		}
 		switch typ {
 		case "NEG-ERR":
@@ -299,7 +322,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 				_ = json.Unmarshal(payload[2], &reason)
 			}
 			log.Warn().Str("sub_id", subID).Str("reason", reason).Int64("waited_ms", waitMS).Msg("upstream NEG-ERR")
-			return needCount, imported, fmt.Errorf("upstream neg-err: %s", reason)
+			return stats, fmt.Errorf("upstream neg-err: %s", reason)
 		case "NEG-MSG":
 			round++
 			var msgHex string
@@ -308,7 +331,7 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 			}
 			out, err := clientNeg.Reconcile(strings.ToLower(msgHex))
 			if err != nil {
-				return needCount, imported, err
+				return stats, err
 			}
 			log.Info().
 				Str("sub_id", subID).
@@ -318,18 +341,18 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 				Bool("done", out == "").
 				Msg("upstream NEG-MSG round")
 			if out == "" {
-				_ = c.sendJSON([]any{"NEG-CLOSE", subID})
+				_ = (*c).sendJSON([]any{"NEG-CLOSE", subID})
 				goto fetch
 			}
-			if err := c.sendJSON([]any{"NEG-MSG", subID, out}); err != nil {
-				return needCount, imported, err
+			if err := (*c).sendJSON([]any{"NEG-MSG", subID, out}); err != nil {
+				return stats, err
 			}
 			log.Info().Str("sub_id", subID).Int("round", round).Msg("upstream NEG-MSG reply sent")
 		case "AUTH":
 			challenge := jsonStringAt(payload, 1)
 			log.Info().Str("sub_id", subID).Str("challenge", challenge).Int64("waited_ms", waitMS).Msg("upstream AUTH challenge")
-			if err := sch.answerAuth(c, log, relayURL, challenge); err != nil {
-				return needCount, imported, err
+			if err := sch.answerAuth(*c, log, relayURL, challenge); err != nil {
+				return stats, err
 			}
 		case "OK":
 			log.Info().
@@ -352,36 +375,87 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 
 fetch:
 	needIDs := clientNeg.NeedIDs()
-	needCount = len(needIDs)
+	stats.need = len(needIDs)
+	sort.Strings(needIDs)
 	log.Debug().
 		Str("sub_id", subID).
-		Int("need", needCount).
+		Int("need", stats.need).
 		Int("haves", clientNeg.HaveCount()).
 		Int("rounds", round).
 		Msg("upstream reconcile complete")
 
+	var failures []error
 	for _, id := range needIDs {
-		ev, err := c.reqEventByID(ctx, id)
+		ok, err := sch.fetchPersistWithRetry(ctx, log, c, relayURL, id)
 		if err != nil {
-			log.Debug().Str("id", id).Err(err).Msg("upstream fetch event failed")
-			continue
-		}
-		if err := ev.VerifySig(); err != nil {
-			log.Debug().Str("id", id).Err(err).Msg("upstream event sig invalid")
-			continue
-		}
-		ok, err := sch.persistImportedEvent(ctx, ev)
-		if err != nil {
-			log.Debug().Str("id", id).Err(err).Msg("upstream save event failed")
+			stats.failed++
+			if len(failures) < 3 {
+				failures = append(failures, err)
+			}
 			continue
 		}
 		if !ok {
+			stats.skipped++
 			continue
 		}
-		log.Debug().Str("id", id).Int("kind", ev.Kind).Msg("upstream event imported")
-		imported++
+		stats.imported++
 	}
-	return needCount, imported, nil
+	if stats.failed > 0 {
+		return stats, fmt.Errorf("%d of %d upstream events failed after retries: %w", stats.failed, stats.need, errors.Join(failures...))
+	}
+	return stats, nil
+}
+
+const maxFetchAttempts = 3
+
+// fetchPersistWithRetry retries only one missing event. A new connection is
+// required after a read timeout because websocket reads cannot recover from a
+// failed deadline. Each attempt also re-verifies the event before storage.
+func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL, id string) (bool, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+		if attempt > 1 {
+			pause := time.Duration(attempt-1) * 100 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return false, ctx.Err()
+			case <-time.After(pause):
+			}
+			next, err := dialUpstream(ctx, relayURL)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			authWait := time.Duration(config.EffectiveNIP77UpstreamAuthWait(sch.cfg)) * time.Second
+			if authWait > 0 {
+				msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
+				if err := sch.handshakeAuth(ctx, log, next, relayURL, authWait, msgTimeout); err != nil {
+					_ = next.Close()
+					lastErr = err
+					continue
+				}
+			}
+			_ = (*c).Close()
+			*c = next
+		}
+		fetchTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
+		ev, err := (*c).reqEventByID(ctx, id, fetchTimeout, func(challenge string) error {
+			return sch.answerAuth(*c, log, relayURL, challenge)
+		})
+		if err == nil {
+			err = ev.VerifySig()
+		}
+		if err == nil {
+			var stored bool
+			stored, err = sch.persistImportedEvent(ctx, ev)
+			if err == nil {
+				return stored, nil
+			}
+		}
+		lastErr = err
+		log.Warn().Str("id", id).Int("attempt", attempt).Err(err).Msg("upstream event import attempt failed")
+	}
+	return false, fmt.Errorf("event %s: %w", id, lastErr)
 }
 
 // persistImportedEvent saves a newly fetched upstream event and notifies plugins.

@@ -106,24 +106,34 @@ func (c *wsClient) readMessage(ctx context.Context, timeout time.Duration) (typ 
 	return typ, raw, nil
 }
 
-func (c *wsClient) reqEventByID(ctx context.Context, id string) (*nostr.Event, error) {
+func (c *wsClient) reqEventByID(ctx context.Context, id string, timeout time.Duration, answerAuth func(string) error) (*nostr.Event, error) {
 	// Short unique sub id: strfry rejects long ids, and an 8-hex prefix collides.
 	// A previous REQ's EOSE can still be buffered, so only this sub's frames count.
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	subID := fmt.Sprintf("f%x", c.fetchN.Add(1))
 	filter := map[string]any{"ids": []string{id}}
 	if err := c.sendJSON([]any{"REQ", subID, filter}); err != nil {
 		return nil, err
 	}
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
 	}
 	for time.Now().Before(deadline) {
-		typ, raw, err := c.readMessage(ctx, 30*time.Second)
+		typ, raw, err := c.readMessage(ctx, time.Until(deadline))
 		if err != nil {
 			return nil, err
 		}
 		switch typ {
+		case "AUTH":
+			if answerAuth == nil {
+				return nil, fmt.Errorf("upstream AUTH challenge during fetch")
+			}
+			if err := answerAuth(jsonStringAt(raw, 1)); err != nil {
+				return nil, err
+			}
 		case "EVENT":
 			if len(raw) < 3 || jsonStringAt(raw, 1) != subID {
 				continue
