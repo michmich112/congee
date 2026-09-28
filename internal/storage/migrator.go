@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/michmich112/congee/internal/nostr"
@@ -69,7 +70,15 @@ func Migrate(ctx context.Context, src, dst MigrationSource, progress func(Migrat
 			return nil
 		}
 		if err := dst.SaveEvent(ctx, ev); err != nil {
-			return fmt.Errorf("migration: save event %s: %w", ev.ID, err)
+			if !errors.Is(err, ErrStaleReplaceable) {
+				return fmt.Errorf("migration: save event %s: %w", ev.ID, err)
+			}
+			evSkipped++
+			done++
+			if srcCounts.Events > 0 {
+				report(fmt.Sprintf("events %d / %d (%d skipped)", evInserted+evSkipped, srcCounts.Events, evSkipped))
+			}
+			return nil
 		}
 		evInserted++
 		tagsAdded += int64(len(ev.Tags))

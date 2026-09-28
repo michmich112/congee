@@ -126,8 +126,7 @@ func (c *Conn) nip42EnsureChallengeLocked() string {
 
 // nip42EnqueueAuthChallenge ensures this connection has a challenge and sends
 // ["AUTH", challenge] at most once per connection (until the connection ends).
-// Used on connect when configured, and on auth-required responses when
-// send_challenge_on_connect is false.
+// Used when require_auth is connect, and on auth-required responses for protected kinds.
 func nip42EnqueueAuthChallenge(c *Conn, cfg *config.Config) error {
 	if !relayNIP42Enabled(cfg) || c == nil {
 		return nil
@@ -209,6 +208,33 @@ func (c *Conn) nip42HasAnyAuth() bool {
 	c.authMu.RLock()
 	defer c.authMu.RUnlock()
 	return len(c.nip42Pubkeys) > 0
+}
+
+func nip42ConnectGate(c *Conn) bool {
+	if c == nil || c.server == nil || !config.NIP11AuthRequired(c.server.cfg) {
+		return false
+	}
+	return !c.nip42HasAnyAuth()
+}
+
+const connectAuthRequired = "auth-required: authentication required"
+
+func (c *Conn) rejectUntilConnectAuth(msg any) {
+	_ = nip42EnqueueAuthChallenge(c, c.server.cfg)
+	switch m := msg.(type) {
+	case *nostr.EventMessage:
+		_ = c.sendOK(m.Event.ID, false, connectAuthRequired)
+	case *nostr.ReqMessage:
+		_ = c.sendClosed(m.SubID, connectAuthRequired)
+	case *nostr.NegOpenMessage:
+		_ = c.sendClosed(m.SubID, connectAuthRequired)
+	case *nostr.NegMsgMessage:
+		_ = c.sendClosed(m.SubID, connectAuthRequired)
+	case *nostr.NegCloseMessage:
+		_ = c.sendClosed(m.SubID, connectAuthRequired)
+	default:
+		_ = c.sendNotice(connectAuthRequired)
+	}
 }
 
 func (c *Conn) nip42AuthedPubkeys() []string {

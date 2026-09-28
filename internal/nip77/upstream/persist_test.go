@@ -95,6 +95,29 @@ func TestPersistImportedEventNotifiesPlugins(t *testing.T) {
 	if got := rt.ids(); len(got) != 1 {
 		t.Fatalf("duplicate should not re-notify plugins: %v", got)
 	}
+
+	// NIP-77 can fetch revisions out of order. Neither an older timestamp nor a
+	// higher ID at the same timestamp may replace or notify for the winner.
+	older := *ev
+	older.ID = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	older.CreatedAt = 0
+	for _, stale := range []*nostr.Event{&older, {
+		ID:     "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		PubKey: ev.PubKey, CreatedAt: ev.CreatedAt, Kind: ev.Kind,
+		Content: "tied loser", Sig: ev.Sig,
+	}} {
+		ok, err := sch.persistImportedEvent(ctx, stale)
+		if err != nil || ok {
+			t.Fatalf("stale import: stored=%v err=%v", ok, err)
+		}
+	}
+	if got := rt.ids(); len(got) != 1 {
+		t.Fatalf("stale revisions should not notify plugins: %v", got)
+	}
+	stored, err := st.QueryEvents(ctx, []nostr.Filter{{Authors: []string{ev.PubKey}, Kinds: []int{ev.Kind}}})
+	if err != nil || len(stored) != 1 || stored[0].ID != ev.ID {
+		t.Fatalf("wrong retained revision: %+v err=%v", stored, err)
+	}
 }
 
 func TestPersistImportedEventNilServer(t *testing.T) {

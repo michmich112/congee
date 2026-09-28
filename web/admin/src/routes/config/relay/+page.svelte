@@ -3,6 +3,8 @@
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import ClipCopy from '$lib/components/ClipCopy.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
+	import Nip11ImageField from '$lib/components/Nip11ImageField.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -14,6 +16,10 @@
 	function draft() {
 		return ctx.draft!;
 	}
+
+	const authRequired = $derived(
+		draft().nips.enabled.includes(42) && draft().nip42.require_auth === 'connect'
+	);
 </script>
 
 <section class="space-y-4">
@@ -47,9 +53,11 @@
 					}}
 				/>
 			</div>
+			<Nip11ImageField kind="icon" />
+			<Nip11ImageField kind="banner" />
 			<div class="md:col-span-2 space-y-4 rounded-lg border border-border bg-muted/20 px-4 py-4">
 				<div>
-					<p class="text-sm font-medium">Relay identity (NIP-11 pubkey)</p>
+					<p class="text-sm font-medium">Relay identity (NIP-11 self)</p>
 					<p class="text-muted-foreground mt-1 text-xs">
 						Your public key is generated from your private key. The signing key file defaults to
 						<code class="rounded bg-muted px-1">relay.secrets.json</code> next to the JSON config (for example
@@ -97,10 +105,24 @@
 					</div>
 				{:else}
 					<p class="text-destructive text-sm">
-						Relay identity is not available (same as Dashboard). NIP-11 pubkey cannot be shown; fix relay
+						Relay identity is not available (same as Dashboard). NIP-11 self cannot be shown; fix relay
 						identity or retry after reload.
 					</p>
 				{/if}
+			</div>
+			<div class="space-y-2">
+				<Label for="n11-pubkey">Administrator contact pubkey (optional)</Label>
+				<Input
+					id="n11-pubkey"
+					class="font-mono text-xs"
+					spellcheck={false}
+					value={draft().nip11.admin_pubkey ?? ''}
+					oninput={(e) => {
+						draft().nip11.admin_pubkey = e.currentTarget.value;
+						ctx.markDirty();
+					}}
+				/>
+				<p class="text-xs text-muted-foreground">32-byte hex key for an administrator who accepts support messages. Leave blank to omit it.</p>
 			</div>
 			<div class="space-y-2">
 				<Label for="n11-contact">Contact</Label>
@@ -142,11 +164,12 @@
 					<Label for="n11-cors" class="text-sm font-medium">NIP-11 CORS (any origin)</Label>
 					<p class="text-xs text-muted-foreground">
 						Sets <code class="rounded bg-muted px-1 text-[0.7rem]">Access-Control-Allow-Origin: *</code> on
-						NIP-11 JSON only (GET / with <code class="rounded bg-muted px-1 text-[0.7rem]">Accept:
+						NIP-11 JSON (GET / with <code class="rounded bg-muted px-1 text-[0.7rem]">Accept:
 							application/nostr+json</code>), plus OPTIONS preflight. Also sends
 						<code class="rounded bg-muted px-1 text-[0.7rem]">Access-Control-Allow-Private-Network: true</code> so
 						public sites (e.g. relay checkers) can reach relays on Tailscale or private IPs (Chrome Private
-						Network Access). WebSocket and other responses are unchanged.
+						Network Access). Hosted icon and banner responses get the same CORS headers. WebSocket responses
+						are unchanged.
 					</p>
 				</div>
 				<Switch
@@ -157,6 +180,17 @@
 						ctx.markDirty();
 					}}
 				/>
+			</div>
+			<div
+				class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+			>
+				<p class="text-sm">
+					<span class="font-medium">Auth Required</span>:
+					<span class="font-mono">{authRequired ? 'True' : 'False'}</span>
+				</p>
+				<Button href="/config/security#require-auth-on" variant="outline" size="sm">
+					Configure here
+				</Button>
 			</div>
 		</Card.Content>
 	</Card.Root>

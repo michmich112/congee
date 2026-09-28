@@ -57,7 +57,7 @@ func writeNIP77IntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeNIP77",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -100,7 +100,6 @@ var _ = Describe("NIP-77 negentropy", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		var closeStore func() error
 		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())

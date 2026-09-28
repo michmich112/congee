@@ -113,3 +113,44 @@ func TestMigrateSkipsExistingRowsOnDestination(t *testing.T) {
 		t.Fatalf("dst event: %v tags=%d", err, len(out[0].Tags))
 	}
 }
+
+func TestMigrateSkipsStaleReplaceableRevision(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	src, err := turso.Open(ctx, filepath.Join(dir, "src.db"), nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst, err := turso.Open(ctx, filepath.Join(dir, "dst.db"), nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	pk := strings.Repeat("b", 64)
+	old := &nostr.Event{ID: strings.Repeat("a", 64), PubKey: pk, CreatedAt: 5, Kind: 0, Sig: strings.Repeat("c", 128)}
+	newer := &nostr.Event{ID: strings.Repeat("d", 64), PubKey: pk, CreatedAt: 6, Kind: 0, Sig: strings.Repeat("c", 128)}
+	other := &nostr.Event{ID: strings.Repeat("e", 64), PubKey: strings.Repeat("f", 64), CreatedAt: 7, Kind: 0, Sig: strings.Repeat("c", 128)}
+	for _, ev := range []*nostr.Event{old, other} {
+		if err := src.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := dst.SaveEvent(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := storage.Migrate(ctx, src, dst, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.EventsInserted != 1 || summary.EventsSkipped != 1 {
+		t.Fatalf("summary: %+v", summary)
+	}
+	retained, err := dst.QueryEvents(ctx, []nostr.Filter{{Authors: []string{pk}, Kinds: []int{0}}})
+	if err != nil || len(retained) != 1 || retained[0].ID != newer.ID {
+		t.Fatalf("stale revision replaced destination: %+v err=%v", retained, err)
+	}
+}

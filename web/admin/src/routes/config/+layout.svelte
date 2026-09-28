@@ -125,12 +125,6 @@
 		saveMessage = null;
 	}
 
-	/** Keep NIP-11 pubkey aligned with GET /api/relay-identity (same source as the Dashboard). */
-	function syncNip11PubkeyFromIdentity() {
-		if (!draft || !relayIdentity) return;
-		draft.nip11.pubkey = relayIdentity.pubkey_hex;
-	}
-
 	function setNipEnabled(list: number[], nip: number, on: boolean, row: NipRow): number[] {
 		if (row.mandatory) return list;
 		if (!row.implemented && on) {
@@ -201,7 +195,6 @@
 			draft = parseConfigJson(text);
 			syncDefaultQueryLimitFieldFromDraft();
 			syncQueryPageSizeFieldFromDraft();
-			syncNip11PubkeyFromIdentity();
 			dirty = false;
 			await loadNipCatalog();
 		} catch (e) {
@@ -249,7 +242,6 @@
 			draft = next;
 			syncDefaultQueryLimitFieldFromDraft();
 			syncQueryPageSizeFieldFromDraft();
-			syncNip11PubkeyFromIdentity();
 			markDirty();
 			rawOpen = false;
 		} catch (e) {

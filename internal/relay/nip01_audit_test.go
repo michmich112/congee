@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func testRelayConfig() *config.Config {
 		},
 		MaxSubscriptionIDLength: 128,
 		NIP11: config.NIP11Section{
-			Name: "t", Description: "t", PubKey: "", Contact: "", Software: "https://example.com",
+			Name: "t", Description: "t", AdminPubKey: "", Contact: "", Software: "https://example.com",
 		},
 		NIPs: config.NIPsSection{Enabled: []int{1, 11}},
 	}
@@ -209,6 +210,63 @@ func TestHandleEVENT_AuditRejectSaveError(t *testing.T) {
 	row := auditWaitForRow(ctx, t, st, audit.ActionEventRejected)
 	if !strings.Contains(row.Detail, "reason=disk full") {
 		t.Fatalf("detail: %q", row.Detail)
+	}
+}
+
+func TestHandleEVENT_AuditRejectStaleReplaceable(t *testing.T) {
+	ctx := context.Background()
+	st, closeStore := openAuditTestStore(ctx, t, t.TempDir(), "r.db")
+	defer closeStore()
+	srv, err := NewServer(testRelayConfig(), st, zerolog.Nop(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	RegisterNIP01(srv, st)
+	c := testConn(t, srv)
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer := signedTestEvent(t, priv, 0)
+	if err := st.SaveEvent(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	older := *newer
+	older.CreatedAt--
+	older.Content = "older"
+	if _, err := older.ComputeID(); err != nil {
+		t.Fatal(err)
+	}
+	if err := older.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+	if err := handleEVENT(ctx, srv, st, c, &nostr.EventMessage{Event: older}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case raw := <-c.send:
+		var frame []json.RawMessage
+		if err := json.Unmarshal(raw, &frame); err != nil || len(frame) < 3 {
+			t.Fatalf("invalid OK frame: %s err=%v", raw, err)
+		}
+		var accepted bool
+		if err := json.Unmarshal(frame[2], &accepted); err != nil || accepted {
+			t.Fatalf("stale event must receive negative OK: %s err=%v", raw, err)
+		}
+	default:
+		t.Fatal("missing OK frame")
+	}
+	rejected := auditWaitForRow(ctx, t, st, audit.ActionEventRejected)
+	if !strings.Contains(rejected.Detail, "event_id="+older.ID) || !strings.Contains(rejected.Detail, storage.ErrStaleReplaceable.Error()) {
+		t.Fatalf("wrong rejection audit: %q", rejected.Detail)
+	}
+	storedRows, err := st.QueryAuditLog(ctx, storage.AuditQuery{Action: audit.ActionEventStored, Limit: 5})
+	if err != nil || len(storedRows) != 0 {
+		t.Fatalf("stale event produced stored audit: %+v err=%v", storedRows, err)
+	}
+	retained, err := st.QueryEvents(ctx, []nostr.Filter{{Authors: []string{newer.PubKey}, Kinds: []int{0}}})
+	if err != nil || len(retained) != 1 || retained[0].ID != newer.ID {
+		t.Fatalf("wrong retained revision: %+v err=%v", retained, err)
 	}
 }
 

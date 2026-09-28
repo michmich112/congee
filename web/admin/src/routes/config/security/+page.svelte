@@ -7,7 +7,6 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
 
@@ -162,34 +161,52 @@
 						}}
 					/>
 				</div>
-				<div
-					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
+				<fieldset
+					id="require-auth-on"
+					class="scroll-mt-8 space-y-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2"
 				>
-					<div class="space-y-1">
-						<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
-						<p class="text-xs text-muted-foreground">
-							<strong class="font-medium text-foreground">On:</strong> the relay sends
-							<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with a challenge as soon as the
-							WebSocket opens, so clients can authenticate before any gated
-							<code class="rounded bg-muted px-1 text-[0.7rem]">REQ</code> or
-							<code class="rounded bg-muted px-1 text-[0.7rem]">EVENT</code>.
-							<strong class="font-medium text-foreground">Off:</strong> the relay still sends
-							<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> immediately before a
-							<code class="rounded bg-muted px-1 text-[0.7rem]">CLOSED</code> or
-							<code class="rounded bg-muted px-1 text-[0.7rem]">OK</code> that returns
-							<code class="rounded bg-muted px-1 text-[0.7rem]">auth-required:</code>, so connections that
-							never touch protected kinds avoid an extra message (NIP-42 lazy auth).
-						</p>
-					</div>
-					<Switch
-						id="nip42-chal"
-						checked={draft().nip42.send_challenge_on_connect}
-						onCheckedChange={(on) => {
-							draft().nip42.send_challenge_on_connect = on;
-							ctx.markDirty();
-						}}
-					/>
-				</div>
+					<legend class="px-1 text-sm font-medium">Require AUTH on</legend>
+					<label class="flex items-start gap-2 text-sm">
+						<input
+							type="radio"
+							name="nip42-require-auth"
+							value="protected_kinds"
+							checked={draft().nip42.require_auth === 'protected_kinds'}
+							onchange={() => {
+								draft().nip42.require_auth = 'protected_kinds';
+								ctx.markDirty();
+							}}
+						/>
+						<span>
+							<span class="font-medium">Protected kinds</span>
+							<span class="mt-1 block text-xs text-muted-foreground">
+								Ordinary requests stay open. The relay sends
+								<code class="rounded bg-muted px-1">AUTH</code> when a subscribe or publish kind in the
+								lists below is hit. NIP-11 <code class="rounded bg-muted px-1">auth_required</code> is false.
+							</span>
+						</span>
+					</label>
+					<label class="flex items-start gap-2 text-sm">
+						<input
+							type="radio"
+							name="nip42-require-auth"
+							value="connect"
+							checked={draft().nip42.require_auth === 'connect'}
+							onchange={() => {
+								draft().nip42.require_auth = 'connect';
+								ctx.markDirty();
+							}}
+						/>
+						<span>
+							<span class="font-medium">Connect</span>
+							<span class="mt-1 block text-xs text-muted-foreground">
+								The relay sends <code class="rounded bg-muted px-1">AUTH</code> when the WebSocket opens
+								and rejects every command except AUTH until the client authenticates. NIP-11
+								<code class="rounded bg-muted px-1">auth_required</code> is true while NIP-42 is enabled.
+							</span>
+						</span>
+					</label>
+				</fieldset>
 				<div class="space-y-2">
 					<Label for="nip42-skew">Created-at skew (seconds)</Label>
 					<Input

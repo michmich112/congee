@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -51,10 +52,15 @@ func DefaultConfig() *Config {
 		NIP11: NIP11Section{
 			Name:               "Congee",
 			Description:        "Nostr relay (example metadata)",
-			PubKey:             "",
+			IconSource:         NIP11ImageSourceDefault,
+			BannerSource:       NIP11ImageSourceDefault,
+			AdminPubKey:        "",
 			Contact:            "",
 			Software:           "https://github.com/michmich112/congee",
 			CORSAllowAnyOrigin: false,
+		},
+		NIP42: NIP42Section{
+			RequireAuth: NIP42RequireAuthProtectedKinds,
 		},
 		NIPs:    NIPsSection{Enabled: []int{1, 11}},
 		Plugins: PluginsSection{InterceptTimeoutMs: DefaultPluginInterceptTimeoutMs},
@@ -203,6 +209,12 @@ func (c *Config) Validate() error {
 	if c.NIP11.Name == "" {
 		return errors.New("config: nip11.name is required")
 	}
+	if err := c.normalizeNIP11Identity(); err != nil {
+		return err
+	}
+	if err := c.normalizeNIP42RequireAuth(); err != nil {
+		return err
+	}
 	if len(c.NIPs.Enabled) == 0 {
 		return errors.New("config: nips.enabled must be non-empty")
 	}
@@ -288,6 +300,59 @@ func validateRelayInstanceIDField(s string) error {
 		return errors.New("config: relay.instance_id must not contain newline or null characters")
 	}
 	return nil
+}
+
+func (c *Config) normalizeNIP11Identity() error {
+	c.NIP11.Contact = strings.TrimSpace(c.NIP11.Contact)
+	c.NIP11.AdminPubKey = strings.ToLower(strings.TrimSpace(c.NIP11.AdminPubKey))
+	if p := c.NIP11.AdminPubKey; p != "" {
+		decoded, err := hex.DecodeString(p)
+		if err != nil || len(decoded) != 32 {
+			return errors.New("config: nip11.admin_pubkey must be a 32-byte hex administrator contact key")
+		}
+	}
+	if err := normalizeNIP11Image(&c.NIP11.IconSource, &c.NIP11.Icon, "nip11.icon"); err != nil {
+		return err
+	}
+	return normalizeNIP11Image(&c.NIP11.BannerSource, &c.NIP11.Banner, "nip11.banner")
+}
+
+func normalizeNIP11Image(source, raw *string, field string) error {
+	*source = strings.TrimSpace(*source)
+	*raw = strings.TrimSpace(*raw)
+	if *source == "" {
+		if *raw != "" {
+			*source = NIP11ImageSourceURL
+		} else {
+			*source = NIP11ImageSourceDefault
+		}
+	}
+	switch *source {
+	case NIP11ImageSourceDefault, NIP11ImageSourceUpload:
+		*raw = ""
+	case NIP11ImageSourceURL:
+		normalized, err := validateAbsoluteHTTPURL(field, *raw)
+		if err != nil {
+			return err
+		}
+		*raw = normalized
+	default:
+		return fmt.Errorf("config: %s_source must be default, upload, or url", field)
+	}
+	return nil
+}
+
+func (c *Config) normalizeNIP42RequireAuth() error {
+	c.NIP42.RequireAuth = strings.TrimSpace(c.NIP42.RequireAuth)
+	if c.NIP42.RequireAuth == "" {
+		c.NIP42.RequireAuth = NIP42RequireAuthProtectedKinds
+	}
+	switch c.NIP42.RequireAuth {
+	case NIP42RequireAuthProtectedKinds, NIP42RequireAuthConnect:
+		return nil
+	default:
+		return fmt.Errorf("config: nip42.require_auth must be %q or %q", NIP42RequireAuthProtectedKinds, NIP42RequireAuthConnect)
+	}
 }
 
 func ptrInt(v int) *int {

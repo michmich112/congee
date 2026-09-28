@@ -51,4 +51,4 @@ If your host is Apple Silicon and the published image is `linux/amd64` only, add
 
 ## License
 
-See repository license when added.
+Congee is licensed under the [MIT License](LICENSE).

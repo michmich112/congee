@@ -55,7 +55,7 @@ Each newly stored import is delivered to plugins whose listen subscriptions matc
 
 Each missing event gets at most three fetch, signature-verification, and save attempts, with short bounded delays. A failed WebSocket fetch reconnects before retrying. The job reports failure when any event remains incomplete; the next scheduled run reconciles again. Per-upstream status, logs, and audit entries aggregate needed, imported, skipped, and failed events. A failed run never emits a sync-complete audit entry.
 
-If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 pubkey) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
+If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 `self`) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
 
 ## Observability
 
