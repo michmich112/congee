@@ -13,9 +13,9 @@ type snapshotter interface {
 
 // compositeStore implements storage.Store by delegating events and metadata to separate backends.
 type compositeStore struct {
-	events storage.EventStore
-	meta   storage.MetaStore
-	evSnap snapshotter
+	events   storage.EventStore
+	meta     storage.MetaStore
+	evSnap   snapshotter
 	metaSnap snapshotter
 }
 

@@ -367,7 +367,7 @@ func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
 	return n > 0, err
 }
 
-// SearchEvents runs FTS5 on mirrored content (NIP-50), ordered by bm25 rank (lower is better).
+// SearchEvents runs Turso full-text search on event content (NIP-50), ordered by BM25 rank (higher is better).
 func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
 	q := strings.TrimSpace(searchQuery)
 	if q == "" {
@@ -382,11 +382,11 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	var sb strings.Builder
 	sb.WriteString(`SELECT events.id, events.pubkey, events.created_at, events.kind, events.content, events.sig, events.d_tag
 FROM events
-INNER JOIN event_fts ON event_fts.event_id = events.id
-WHERE event_fts MATCH ?`)
+WHERE fts_match(events.content, ?)`)
 	args := []interface{}{matchExpr}
 	sqliteAppendSearchFilter(&sb, &args, &cons)
-	sb.WriteString(` ORDER BY bm25(event_fts) ASC, events.id ASC`)
+	sb.WriteString(` ORDER BY fts_score(events.content, ?) DESC, events.id ASC`)
+	args = append(args, matchExpr)
 	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
 		sb.WriteString(fmt.Sprintf(" LIMIT %d", *lim))
 	}

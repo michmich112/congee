@@ -3,12 +3,13 @@ package sqlevent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
@@ -72,6 +73,11 @@ func runMigrations(ctx context.Context, db *bun.DB, engine string, log zerolog.L
 			if err := migrateV6ToV7(ctx, db, engine, log); err != nil {
 				return err
 			}
+		case 7:
+			log.Debug().Msg("schema: migrating v7 to v8")
+			if err := migrateV7ToV8(ctx, db, engine, log); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%s: unsupported schema version %d", engine, version)
 		}
@@ -109,8 +115,8 @@ func migrateFresh(ctx context.Context, db *bun.DB, engine string, log zerolog.Lo
 			return fmt.Errorf("%s: migrate: %w", engine, err)
 		}
 	}
-	log.Debug().Msg("schema: creating fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db, engine, log); err != nil {
+	log.Debug().Msg("schema: creating turso fts index")
+	if err := createTursoContentFTS(ctx, db, engine); err != nil {
 		return err
 	}
 	log.Debug().Int("schema_version", schemaVersion).Msg("schema: set user_version")
@@ -121,15 +127,7 @@ func migrateFresh(ctx context.Context, db *bun.DB, engine string, log zerolog.Lo
 }
 
 func migrateV1ToV2(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
-	log.Debug().Msg("schema v1->v2: fts5 and triggers")
-	if err := createFTS5AndTriggers(ctx, db, engine, log); err != nil {
-		return err
-	}
-	log.Debug().Msg("schema v1->v2: backfill event_fts")
-	if _, err := db.ExecContext(ctx, `INSERT INTO event_fts(event_id, content) SELECT id, content FROM events`); err != nil {
-		return fmt.Errorf("%s: backfill event_fts: %w", engine, err)
-	}
-	log.Debug().Msg("schema v1->v2: chain v2->v3")
+	log.Debug().Msg("schema v1->v2: skip fts5; turso fts is created at v8")
 	return migrateV2ToV3(ctx, db, engine, log)
 }
 
@@ -249,39 +247,130 @@ func migrateV6ToV7(ctx context.Context, db *bun.DB, engine string, log zerolog.L
 			return fmt.Errorf("%s: migrate v6->v7: %w", engine, err)
 		}
 	}
-	log.Debug().Int("schema_version", schemaVersion).Msg("schema v6->v7: set user_version")
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+	log.Debug().Msg("schema v6->v7: set user_version 7")
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 7`); err != nil {
 		return fmt.Errorf("%s: set user_version: %w", engine, err)
 	}
 	return nil
 }
 
-func createFTS5AndTriggers(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
-	fts := []string{
-		`CREATE VIRTUAL TABLE IF NOT EXISTS event_fts USING fts5(
-			event_id UNINDEXED,
-			content,
-			tokenize = 'porter unicode61'
-		)`,
-		`DROP TRIGGER IF EXISTS events_ai_fts`,
-		`CREATE TRIGGER events_ai_fts AFTER INSERT ON events BEGIN
-			INSERT INTO event_fts(event_id, content) VALUES (new.id, new.content);
-		END`,
-		`DROP TRIGGER IF EXISTS events_au_fts`,
-		`CREATE TRIGGER events_au_fts AFTER UPDATE ON events BEGIN
-			DELETE FROM event_fts WHERE event_id = old.id;
-			INSERT INTO event_fts(event_id, content) VALUES (new.id, new.content);
-		END`,
-		`DROP TRIGGER IF EXISTS events_ad_fts`,
-		`CREATE TRIGGER events_ad_fts AFTER DELETE ON events BEGIN
-			DELETE FROM event_fts WHERE event_id = old.id;
-		END`,
+func migrateV7ToV8(ctx context.Context, db *bun.DB, engine string, log zerolog.Logger) error {
+	var hasEvents int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='events'`).Scan(&hasEvents); err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: %w", engine, err)
 	}
-	for i := range fts {
-		log.Debug().Int("fts_step", i).Msg("schema: fts5/trigger ddl")
-		if _, err := db.ExecContext(ctx, fts[i]); err != nil {
-			return fmt.Errorf("%s: fts5: %w", engine, err)
+	if hasEvents == 0 {
+		log.Debug().Msg("schema v7->v8: no events table; set user_version 8")
+		if _, err := db.ExecContext(ctx, `PRAGMA user_version = 8`); err != nil {
+			return fmt.Errorf("%s: set user_version: %w", engine, err)
 		}
+		return nil
+	}
+	var ftsLeft int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE name = 'event_fts' OR name IN ('events_ai_fts', 'events_au_fts', 'events_ad_fts')`).Scan(&ftsLeft); err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: %w", engine, err)
+	}
+	if ftsLeft > 0 {
+		return fmt.Errorf("%s: migrate v7->v8: fts5 objects still present", engine)
+	}
+	before, err := eventAggregates(ctx, db)
+	if err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: %w", engine, err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP INDEX IF EXISTS event_content_fts`); err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: drop index: %w", engine, err)
+	}
+	log.Debug().Msg("schema v7->v8: create turso fts index")
+	if err := createTursoContentFTS(ctx, db, engine); err != nil {
+		return err
+	}
+	after, err := eventAggregates(ctx, db)
+	if err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: %w", engine, err)
+	}
+	if before != after {
+		return fmt.Errorf("%s: migrate v7->v8: event aggregates changed", engine)
+	}
+	if before.events > 0 {
+		if err := verifyFTSBackfill(ctx, db, engine); err != nil {
+			return err
+		}
+	}
+	log.Debug().Msg("schema v7->v8: set user_version 8")
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 8`); err != nil {
+		return fmt.Errorf("%s: set user_version: %w", engine, err)
+	}
+	return nil
+}
+
+type agg struct {
+	events       int64
+	tags         int64
+	contentBytes int64
+}
+
+func eventAggregates(ctx context.Context, db *bun.DB) (agg, error) {
+	var a agg
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events`).Scan(&a.events); err != nil {
+		return a, err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_tags`).Scan(&a.tags); err != nil {
+		return a, err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(LENGTH(content)), 0) FROM events`).Scan(&a.contentBytes); err != nil {
+		return a, err
+	}
+	return a, nil
+}
+
+func verifyFTSBackfill(ctx context.Context, db *bun.DB, engine string) error {
+	rows, err := db.QueryContext(ctx, `SELECT id, content FROM events`)
+	if err != nil {
+		return fmt.Errorf("%s: migrate v7->v8: read events: %w", engine, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, content string
+		if err := rows.Scan(&id, &content); err != nil {
+			return err
+		}
+		token := indexableToken(content)
+		if token == "" {
+			continue
+		}
+		phrase := `"` + strings.ReplaceAll(token, `"`, `""`) + `"`
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE id = ? AND fts_match(content, ?)`, id, phrase).Scan(&n); err != nil {
+			return fmt.Errorf("%s: migrate v7->v8: fts backfill: %w", engine, err)
+		}
+		if n != 1 {
+			return fmt.Errorf("%s: migrate v7->v8: existing event %s was not indexed", engine, id)
+		}
+		return nil
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func indexableToken(content string) string {
+	field := strings.FieldsFunc(content, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	})
+	for _, tok := range field {
+		if tok != "" && len(tok) <= 40 {
+			return tok
+		}
+	}
+	return ""
+}
+
+func createTursoContentFTS(ctx context.Context, db *bun.DB, engine string) error {
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS event_content_fts ON events USING fts (content)`); err != nil {
+		return fmt.Errorf("%s: turso fts: %w", engine, err)
 	}
 	return nil
 }

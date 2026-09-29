@@ -411,8 +411,7 @@ func (q *Queue) ping() error {
 	if sqldb == nil {
 		return errors.New("sql.DB is nil")
 	}
-	// Reads and writes share a single native SQLite connection. A busy pool is
-	// healthy: probing it must not close the handle underneath the active reader.
+	// A saturated pool is healthy: probing it must not close a handle underneath an active reader.
 	stats := sqldb.Stats()
 	if stats.MaxOpenConnections > 0 && stats.InUse >= stats.MaxOpenConnections {
 		return nil
