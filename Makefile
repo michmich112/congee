@@ -13,7 +13,11 @@ dev:
 run: build
 	./bin/congee
 
-test:
+.PHONY: overlay-turso-fts
+overlay-turso-fts:
+	./scripts/overlay-turso-fts.sh
+
+test: overlay-turso-fts
 	CGO_ENABLED=1 go test ./...
 	cd sdk/plugin && go test ./...
 
