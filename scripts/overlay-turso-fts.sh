@@ -63,9 +63,91 @@ has_fts() {
 	[[ -n "$hits" ]]
 }
 
+sha256_file() {
+	local file="$1"
+	if command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$file" | awk '{print $1}'
+	else
+		sha256sum "$file" | awk '{print $1}'
+	fi
+}
+
+# os.UserCacheDir, including its os.TempDir fallback when that call fails.
+go_user_cache_dir() {
+	case "$os" in
+	darwin)
+		if [[ -n "${HOME:-}" ]]; then
+			printf '%s\n' "${HOME}/Library/Caches"
+			return
+		fi
+		;;
+	linux)
+		if [[ -n "${XDG_CACHE_HOME:-}" ]]; then
+			case "$XDG_CACHE_HOME" in
+			/*)
+				printf '%s\n' "$XDG_CACHE_HOME"
+				return
+				;;
+			esac
+		elif [[ -n "${HOME:-}" ]]; then
+			printf '%s\n' "${HOME}/.cache"
+			return
+		fi
+		;;
+	esac
+	printf '%s\n' "${TMPDIR:-/tmp}"
+}
+
+# Seed the runtime cache tursogo reads in embeddedLibraryTryCreate
+# ($TURSO_GO_CACHE_DIR or os.UserCacheDir()/turso-go/<sha256[:8]>/<filename>).
+# The loader writes that file in place with no cross-process lock. go test -race
+# starts many packages together, so one process can stat a peer's partial extract
+# and panic on a hash mismatch. A complete file lets every process take the
+# existing-cache path.
+seed_runtime_cache() {
+	local digest hash_file recorded cache_root cache_dir library_path tmp existing
+	digest="$(sha256_file "$dest")"
+	hash_file="${dest}.sha256"
+	recorded=""
+	if [[ -f "$hash_file" ]]; then
+		recorded="$(tr -d '[:space:]' <"$hash_file")"
+	fi
+	if [[ "$recorded" != "$digest" ]]; then
+		printf '%s\n' "$digest" >"$hash_file"
+	fi
+
+	if [[ -n "${TURSO_GO_CACHE_DIR:-}" ]]; then
+		cache_root="$TURSO_GO_CACHE_DIR"
+	else
+		cache_root="$(go_user_cache_dir)"
+	fi
+	cache_dir="${cache_root}/turso-go/${digest:0:8}"
+	mkdir -p "$cache_dir"
+	library_path="${cache_dir}/${filename}"
+
+	if [[ -f "$library_path" ]]; then
+		existing="$(sha256_file "$library_path")"
+		if [[ "$existing" == "$digest" ]]; then
+			echo "turso runtime cache already seeded at $library_path"
+			return 0
+		fi
+	fi
+
+	tmp="$(mktemp "${cache_dir}/.${filename}.XXXXXX")"
+	chmod 0755 "$tmp"
+	if ! dd if="$dest" of="$tmp" bs=1048576 conv=fsync status=none; then
+		rm -f "$tmp"
+		echo "failed to write turso runtime cache at $library_path" >&2
+		exit 1
+	fi
+	mv -f "$tmp" "$library_path"
+	echo "seeded turso runtime cache at $library_path"
+}
+
 stamp="${dest}.fts-ref"
 if [[ -z "${TURSO_FTS_LIB:-}" ]] && has_fts "$dest" && [[ "$(cat "$stamp" 2>/dev/null || true)" == "$TURSO_REF" ]]; then
 	echo "turso FTS library already overlaid at $dest"
+	seed_runtime_cache
 	exit 0
 fi
 
@@ -109,10 +191,7 @@ fi
 
 chmod -R u+w "$dest_dir"
 cp "$lib" "$dest"
-if command -v shasum >/dev/null 2>&1; then
-	shasum -a 256 "$dest" | awk '{print $1}' >"${dest}.sha256"
-else
-	sha256sum "$dest" | awk '{print $1}' >"${dest}.sha256"
-fi
+printf '%s\n' "$(sha256_file "$dest")" >"${dest}.sha256"
 printf '%s\n' "$TURSO_REF" >"$stamp"
+seed_runtime_cache
 echo "overlaid FTS-enabled turso library at $dest"
