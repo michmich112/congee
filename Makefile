@@ -1,6 +1,6 @@
-.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e
+.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e bump-version check-version
 
-VERSION ?= 0.0.0-dev
+VERSION ?= $(shell tr -d '[:space:]' < VERSION)
 
 build:
 	mkdir -p bin && CGO_ENABLED=1 go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=$(VERSION)" -o bin/congee ./cmd/congee
@@ -39,7 +39,14 @@ lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; fi
 
 ui-dev:
-	cd web/admin && npm run dev
+	cd web/admin && PUBLIC_CONGEE_VERSION=$(VERSION) npm run dev
+
+check-version:
+	bash scripts/check-version.sh
+
+# PART=patch|minor|major. Updates VERSION and web/admin package.json / package-lock.json together.
+bump-version:
+	bash scripts/bump-version.sh $(PART)
 
 ui-build:
 	cd web/admin && npm ci && node ./node_modules/@sveltejs/kit/svelte-kit.js sync && npm run build

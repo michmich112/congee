@@ -1,0 +1,16 @@
+# Fail when VERSION is not plain semver or disagrees with the admin package.
+name: Version sync
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash scripts/check-version.sh
