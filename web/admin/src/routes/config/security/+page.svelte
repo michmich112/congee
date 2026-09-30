@@ -42,6 +42,54 @@
 		const n = queryPageSizeFieldParsed();
 		return n !== null && n < 1;
 	}
+
+	/**
+	 * Shared validation for a NIP-42 relay URL (canonical `relay_url` or one of
+	 * the `relay_aliases`). Returns a human-readable error or null when valid.
+	 */
+	function relayUrlError(raw: string): string | null {
+		const t = raw.trim();
+		if (t === '') return 'Relay URL is required';
+		let u: URL;
+		try {
+			u = new URL(t);
+		} catch {
+			return 'Relay URL is not a valid URL (e.g. wss://relay.example.com/)';
+		}
+		if (u.protocol !== 'ws:' && u.protocol !== 'wss:') {
+			return 'Relay URL scheme must be ws or wss';
+		}
+		if (u.hostname === '') return 'Relay URL must include a host';
+		return null;
+	}
+
+	function relayUrlInputHasError(): boolean {
+		return relayUrlError(draft().nip42.relay_url) !== null;
+	}
+
+	let relayAliasInput = $state('');
+	let relayAliasInputError = $state<string | null>(null);
+
+	function addRelayAlias() {
+		const err = relayUrlError(relayAliasInput);
+		if (err) {
+			relayAliasInputError = err;
+			return;
+		}
+		const aliases = draft().nip42.relay_aliases;
+		const alias = relayAliasInput.trim();
+		if (!aliases.includes(alias)) {
+			aliases.push(alias);
+			ctx.markDirty();
+		}
+		relayAliasInput = '';
+		relayAliasInputError = null;
+	}
+
+	function removeRelayAlias(idx: number) {
+		draft().nip42.relay_aliases.splice(idx, 1);
+		ctx.markDirty();
+	}
 </script>
 
 <div class="space-y-8">
@@ -155,12 +203,67 @@
 						id="nip42-relay-url"
 						class="font-mono text-xs"
 						spellcheck={false}
+						placeholder="wss://relay.example.com/"
 						value={draft().nip42.relay_url}
 						oninput={(e) => {
 							draft().nip42.relay_url = e.currentTarget.value;
 							ctx.markDirty();
 						}}
 					/>
+					{#if relayUrlInputHasError()}
+						<p role="alert" class="text-xs text-destructive">
+							{relayUrlError(draft().nip42.relay_url)}
+						</p>
+					{/if}
+				</div>
+				<div class="space-y-2 md:col-span-2">
+					<Label>Relay URL aliases</Label>
+					<p class="text-xs text-muted-foreground">
+						Additional relay URLs accepted in the NIP-42 <code class="rounded bg-muted px-1">relay</code> tag.
+						Each alias must be a valid ws / wss URL.
+					</p>
+					<div class="flex flex-wrap items-center gap-2">
+						{#each draft().nip42.relay_aliases as alias, idx (alias)}
+							<Badge variant="outline" class="font-mono text-xs">
+								{alias}
+								<button
+									type="button"
+									class="ml-1 rounded-full text-muted-foreground hover:text-destructive"
+									aria-label={`Remove relay alias ${alias}`}
+									onclick={() => removeRelayAlias(idx)}>×</button
+								>
+							</Badge>
+						{/each}
+					</div>
+					<div class="flex items-center gap-2">
+						<Input
+							id="nip42-relay-alias"
+							class="font-mono text-xs"
+							spellcheck={false}
+							placeholder="wss://alias.example.com/"
+							value={relayAliasInput}
+							oninput={(e) => {
+								relayAliasInput = e.currentTarget.value;
+								relayAliasInputError = null;
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									addRelayAlias();
+								}
+							}}
+						/>
+						<button
+							type="button"
+							class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/80"
+							onclick={addRelayAlias}
+						>
+							Add
+						</button>
+					</div>
+					{#if relayAliasInputError}
+						<p role="alert" class="text-xs text-destructive">{relayAliasInputError}</p>
+					{/if}
 				</div>
 				<div
 					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"

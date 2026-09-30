@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// ValidateNIP42RelayURL validates a single NIP-42 relay URL (the canonical
+// relay_url or one of its aliases). It is the shared validation used for both
+// fields so the relay_url and relay_aliases entries are checked identically.
+func ValidateNIP42RelayURL(raw string) error {
+	_, err := NormalizeNIP42RelayURL(raw)
+	return err
+}
+
 // NormalizeNIP42RelayURL returns a canonical relay URL string for NIP-42 relay tag comparison.
 // Scheme must be ws or wss; host is lowercased; path defaults to "/" and trailing slashes (except a lone "/") are trimmed.
 func NormalizeNIP42RelayURL(raw string) (string, error) {

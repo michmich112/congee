@@ -54,6 +54,7 @@
   },
   "nip42": {
     "relay_url": "",
+    "relay_aliases": [],
     "send_challenge_on_connect": false,
     "created_at_skew_seconds": 600,
     "require_auth_subscribe_kinds": [],

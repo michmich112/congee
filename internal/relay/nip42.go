@@ -78,7 +78,7 @@ func verifyNIP42AuthEvent(cfg *config.Config, ev *nostr.Event, challenge string,
 	if err := ev.VerifySig(); err != nil {
 		return err
 	}
-	wantRelay, err := config.NormalizeNIP42RelayURL(cfg.NIP42.RelayURL)
+	wantRelays, err := nip42RelayURLs(cfg)
 	if err != nil {
 		return fmt.Errorf("relay URL misconfigured: %w", err)
 	}
@@ -86,8 +86,8 @@ func verifyNIP42AuthEvent(cfg *config.Config, ev *nostr.Event, challenge string,
 	if err != nil || gotRelay == "" {
 		return fmt.Errorf("invalid or missing relay tag")
 	}
-	if gotRelay != wantRelay {
-		return fmt.Errorf("relay tag does not match configured relay URL")
+	if !slices.Contains(wantRelays, gotRelay) {
+		return fmt.Errorf("relay tag does not match configured relay URL or alias")
 	}
 	gotCh := tagFirst(ev.Tags, "challenge")
 	if gotCh == "" || gotCh != challenge {
@@ -102,6 +102,27 @@ func verifyNIP42AuthEvent(cfg *config.Config, ev *nostr.Event, challenge string,
 		return fmt.Errorf("created_at outside allowed skew")
 	}
 	return nil
+}
+
+// nip42RelayURLs returns the normalized set of relay URLs accepted in NIP-42
+// AUTH events: the canonical relay_url plus every relay alias.
+func nip42RelayURLs(cfg *config.Config) ([]string, error) {
+	urls := make([]string, 0, 1+len(cfg.NIP42.RelayAliases))
+	n, err := config.NormalizeNIP42RelayURL(cfg.NIP42.RelayURL)
+	if err != nil {
+		return nil, err
+	}
+	urls = append(urls, n)
+	for _, a := range cfg.NIP42.RelayAliases {
+		na, err := config.NormalizeNIP42RelayURL(a)
+		if err != nil {
+			return nil, err
+		}
+		if na != "" && !slices.Contains(urls, na) {
+			urls = append(urls, na)
+		}
+	}
+	return urls, nil
 }
 
 func tagFirst(tags [][]string, name string) string {

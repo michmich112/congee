@@ -223,8 +223,13 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(c.NIP42.RelayURL) == "" {
 			return errors.New("config: nip42.relay_url is required when NIP 42 is enabled")
 		}
-		if _, err := NormalizeNIP42RelayURL(c.NIP42.RelayURL); err != nil {
+		if err := ValidateNIP42RelayURL(c.NIP42.RelayURL); err != nil {
 			return fmt.Errorf("config: nip42.relay_url: %w", err)
+		}
+		for i, a := range c.NIP42.RelayAliases {
+			if err := ValidateNIP42RelayURL(a); err != nil {
+				return fmt.Errorf("config: nip42.relay_aliases[%d]: %w", i, err)
+			}
 		}
 	}
 	if c.NIP42.CreatedAtSkewSeconds < 0 {

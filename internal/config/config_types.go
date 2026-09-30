@@ -156,8 +156,11 @@ type NIPsSection struct {
 
 // NIP42Section configures NIP-42 client authentication (optional NIP).
 type NIP42Section struct {
-	RelayURL               string `json:"relay_url"`
-	SendChallengeOnConnect bool   `json:"send_challenge_on_connect"`
+	RelayURL string `json:"relay_url"`
+	// RelayAliases are additional relay URLs accepted in the NIP-42 AUTH event
+	// `relay` tag. They must each pass the same validation as RelayURL.
+	RelayAliases           []string `json:"relay_aliases"`
+	SendChallengeOnConnect bool     `json:"send_challenge_on_connect"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
 	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`

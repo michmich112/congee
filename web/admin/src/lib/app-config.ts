@@ -46,6 +46,8 @@ export type AppConfig = {
 	/** NIP-42 client authentication; required fields apply when NIP 42 is enabled. */
 	nip42: {
 		relay_url: string;
+		/** Additional relay URLs accepted in NIP-42 AUTH `relay` tags. */
+		relay_aliases: string[];
 		send_challenge_on_connect: boolean;
 		created_at_skew_seconds: number;
 		require_auth_subscribe_kinds: number[];
@@ -105,6 +107,7 @@ export function cloneConfig(c: AppConfig): AppConfig {
 
 const defaultNip42 = (): AppConfig['nip42'] => ({
 	relay_url: '',
+	relay_aliases: [],
 	send_challenge_on_connect: false,
 	created_at_skew_seconds: 600,
 	require_auth_subscribe_kinds: [],
@@ -149,6 +152,9 @@ export function ensureNip42Draft(cfg: AppConfig): void {
 	}
 	if (!Array.isArray(n.allowlisted_pubkeys)) {
 		n.allowlisted_pubkeys = [];
+	}
+	if (!Array.isArray(n.relay_aliases)) {
+		n.relay_aliases = [];
 	}
 }
 

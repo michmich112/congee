@@ -84,6 +84,55 @@ func TestVerifyNIP42AuthEvent(t *testing.T) {
 	}
 }
 
+func TestVerifyNIP42AuthEventAcceptsRelayAlias(t *testing.T) {
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := priv.PubKey()
+	pubHex := hex.EncodeToString(pub.SerializeCompressed()[1:])
+
+	cfg := &config.Config{
+		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
+		NIP42: config.NIP42Section{
+			RelayURL:     "wss://relay.example.com/",
+			RelayAliases: []string{"wss://alias.example.com/"},
+		},
+	}
+	challenge := "test-challenge-abc"
+	now := time.Unix(1700000000, 0)
+
+	mk := func(relay string) *nostr.Event {
+		ev := &nostr.Event{
+			PubKey:    pubHex,
+			CreatedAt: now.Unix(),
+			Kind:      nip42AuthEventKind,
+			Tags:      [][]string{{"relay", relay}, {"challenge", challenge}},
+			Content:   "",
+		}
+		if _, err := ev.ComputeID(); err != nil {
+			t.Fatal(err)
+		}
+		if err := ev.Sign(priv); err != nil {
+			t.Fatal(err)
+		}
+		return ev
+	}
+
+	// Canonical relay_url accepted.
+	if err := verifyNIP42AuthEvent(cfg, mk("wss://relay.example.com"), challenge, now); err != nil {
+		t.Fatal(err)
+	}
+	// Alias accepted.
+	if err := verifyNIP42AuthEvent(cfg, mk("wss://alias.example.com"), challenge, now); err != nil {
+		t.Fatal(err)
+	}
+	// Unrelated relay rejected.
+	if err := verifyNIP42AuthEvent(cfg, mk("wss://other.example.com"), challenge, now); err == nil {
+		t.Fatal("expected rejection for unrelated relay")
+	}
+}
+
 func TestValidateNIP42PublishPolicy(t *testing.T) {
 	cfg := &config.Config{
 		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
