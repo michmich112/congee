@@ -29,6 +29,7 @@ jobs:
           LLMATE_API_KEY: ${{ secrets.LLMATE_API_KEY }}
           LLMATE_BASE_URL: ${{ secrets.LLMATE_BASE_URL }}
           OPENCODE_CONFIG: .github/workflows/opencode.json
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_PAT }}
         with:
           model: llmate/Github
           # share: true
