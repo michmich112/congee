@@ -13,6 +13,7 @@ Congee is a Nostr relay written in Go with Turso/libSQL (default) or PostgreSQL 
 - [Plugins](docs/plugins.md) — gRPC plugin host, listen vs intercept, Conduit marketplace plugin
 - [Plugin architecture](docs/plugin-architecture.md) — host vs plugin binary; intercept log is host-side
 - [NIP-77 negentropy syncing](docs/nip77.md) — enable, limits, upstream pull, observability
+- [NIP-09 deletion requests](docs/nip09.md) — signed requests, durable tombstones, import behavior
 - [AGENTS.md](AGENTS.md) — project context and conventions for contributors and automation
 
 Phase implementation checklists live in [`docs/plans/`](docs/plans/).

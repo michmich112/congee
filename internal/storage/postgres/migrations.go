@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // CurrentSchemaVersion is the congee_schema_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
@@ -77,6 +77,10 @@ func runMigrations(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 			if err := migrateV6ToV7(ctx, db, log); err != nil {
 				return err
 			}
+		case 7:
+			if err := migrateV7ToV8(ctx, db); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("postgres: unsupported schema version %d", version)
 		}
@@ -116,6 +120,8 @@ func migrateFresh(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id ON event_tags (event_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value ON event_tags (name, value)`,
+		`CREATE TABLE IF NOT EXISTS deletion_ids (pubkey VARCHAR(128) NOT NULL, event_id VARCHAR(128) NOT NULL, deleted_at BIGINT NOT NULL, PRIMARY KEY (pubkey, event_id))`,
+		`CREATE TABLE IF NOT EXISTS deletion_addresses (pubkey VARCHAR(128) NOT NULL, kind INT NOT NULL, d_tag TEXT NOT NULL, deleted_at BIGINT NOT NULL, PRIMARY KEY (pubkey, kind, d_tag))`,
 	}
 
 	for i, s := range stmts {
@@ -263,8 +269,23 @@ func migrateV6ToV7(ctx context.Context, db *bun.DB, log zerolog.Logger) error {
 		}
 	}
 	log.Debug().Msg("schema v6->v7: bump schema version to 7")
-	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, schemaVersion); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, 7); err != nil {
 		return fmt.Errorf("postgres: bump schema version: %w", err)
+	}
+	return nil
+}
+
+func migrateV7ToV8(ctx context.Context, db *bun.DB) error {
+	for _, stmt := range []string{
+		`CREATE TABLE IF NOT EXISTS deletion_ids (pubkey VARCHAR(128) NOT NULL, event_id VARCHAR(128) NOT NULL, deleted_at BIGINT NOT NULL, PRIMARY KEY (pubkey, event_id))`,
+		`CREATE TABLE IF NOT EXISTS deletion_addresses (pubkey VARCHAR(128) NOT NULL, kind INT NOT NULL, d_tag TEXT NOT NULL, deleted_at BIGINT NOT NULL, PRIMARY KEY (pubkey, kind, d_tag))`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("postgres: migrate v7->v8: %w", err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE congee_schema_version SET version = ? WHERE id = 1`, 8); err != nil {
+		return err
 	}
 	return nil
 }

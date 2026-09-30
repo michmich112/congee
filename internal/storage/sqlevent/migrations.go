@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return schemaVersion }
@@ -72,6 +72,10 @@ func runMigrations(ctx context.Context, db *bun.DB, engine string, log zerolog.L
 			if err := migrateV6ToV7(ctx, db, engine, log); err != nil {
 				return err
 			}
+		case 7:
+			if err := migrateV7ToV8(ctx, db, engine); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("%s: unsupported schema version %d", engine, version)
 		}
@@ -102,6 +106,8 @@ func migrateFresh(ctx context.Context, db *bun.DB, engine string, log zerolog.Lo
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_event_id ON event_tags (event_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_tags_name_value ON event_tags (name, value)`,
+		`CREATE TABLE IF NOT EXISTS deletion_ids (pubkey TEXT NOT NULL, event_id TEXT NOT NULL, deleted_at INTEGER NOT NULL, PRIMARY KEY (pubkey, event_id))`,
+		`CREATE TABLE IF NOT EXISTS deletion_addresses (pubkey TEXT NOT NULL, kind INTEGER NOT NULL, d_tag TEXT NOT NULL, deleted_at INTEGER NOT NULL, PRIMARY KEY (pubkey, kind, d_tag))`,
 	}
 	for i := range stmts {
 		log.Debug().Int("ddl_step", i).Msg("schema: exec ddl statement")
@@ -249,9 +255,22 @@ func migrateV6ToV7(ctx context.Context, db *bun.DB, engine string, log zerolog.L
 			return fmt.Errorf("%s: migrate v6->v7: %w", engine, err)
 		}
 	}
-	log.Debug().Int("schema_version", schemaVersion).Msg("schema v6->v7: set user_version")
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+	log.Debug().Int("schema_version", 7).Msg("schema v6->v7: set user_version")
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 7`); err != nil {
 		return fmt.Errorf("%s: set user_version: %w", engine, err)
+	}
+	return nil
+}
+
+func migrateV7ToV8(ctx context.Context, db *bun.DB, engine string) error {
+	for _, stmt := range []string{
+		`CREATE TABLE IF NOT EXISTS deletion_ids (pubkey TEXT NOT NULL, event_id TEXT NOT NULL, deleted_at INTEGER NOT NULL, PRIMARY KEY (pubkey, event_id))`,
+		`CREATE TABLE IF NOT EXISTS deletion_addresses (pubkey TEXT NOT NULL, kind INTEGER NOT NULL, d_tag TEXT NOT NULL, deleted_at INTEGER NOT NULL, PRIMARY KEY (pubkey, kind, d_tag))`,
+		`PRAGMA user_version = 8`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("%s: migrate v7->v8: %w", engine, err)
+		}
 	}
 	return nil
 }
