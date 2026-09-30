@@ -1,0 +1,64 @@
+# Push to main: test, then publish GHCR tags <version> and latest.
+# The first push of a version also opens GitHub release v<version>.
+# Later pushes of the same version move the image tags and leave the git tag in place.
+name: Release (main)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: v
+        run: |
+          set -euo pipefail
+          bash scripts/check-version.sh
+          ver="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: version
+    uses: ./.github/workflows/reusable-go-test.yml
+    secrets: inherit
+
+  image:
+    needs: [version, test]
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      push: true
+      tag_latest: true
+      platforms: linux/amd64,linux/arm64
+      cache_scope: release
+    secrets: inherit
+
+  github_release:
+    needs: [version, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release if this version is new
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; image tags were updated and no new release was opened."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --generate-notes \
+            --title "$tag"
