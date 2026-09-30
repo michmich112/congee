@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -7,10 +8,26 @@ import { defineConfig } from 'vite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function resolveCongeeVersion(): string {
+	const fromEnv = process.env.PUBLIC_CONGEE_VERSION?.trim();
+	if (fromEnv) return fromEnv;
+	try {
+		return readFileSync(path.resolve(__dirname, '../../VERSION'), 'utf8').trim();
+	} catch {
+		return '';
+	}
+}
+
+const congeeVersion = resolveCongeeVersion();
+process.env.PUBLIC_CONGEE_VERSION = congeeVersion;
+
 /** When using `vite dev` alone, proxy /api to the Go admin server (see config admin.port). */
 const adminBackend = process.env.VITE_ADMIN_BACKEND ?? 'http://127.0.0.1:3335';
 
 export default defineConfig({
+	define: {
+		__CONGEE_VERSION__: JSON.stringify(congeeVersion)
+	},
 	resolve: {
 		alias: {
 			// `style-to-object` expects this peer; hoisting under `npm ci` can hide it from Rollup.

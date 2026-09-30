@@ -8,6 +8,9 @@ WORKDIR /src/web/admin
 COPY web/admin/package.json web/admin/package-lock.json ./
 RUN npm ci
 COPY web/admin/ ./
+COPY VERSION /src/VERSION
+ARG VERSION=0.0.0-dev
+ENV PUBLIC_CONGEE_VERSION=${VERSION}
 RUN npm run build
 
 FROM rust:1.88-bookworm AS turso-fts
