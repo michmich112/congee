@@ -32,6 +32,15 @@ jobs:
           go-version: ${{ inputs.go-version }}
           cache-dependency-path: go.sum
 
+      - uses: dtolnay/rust-toolchain@1.88
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/congee/turso-fts/target
+          key: turso-fts-36da5b2e-${{ runner.os }}-${{ runner.arch }}
+
+      - run: go mod download && ./scripts/overlay-turso-fts.sh
+
       - run: CGO_ENABLED=1 go test ./...
 
   test-race:
@@ -45,5 +54,14 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
           cache-dependency-path: go.sum
+
+      - uses: dtolnay/rust-toolchain@1.88
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/congee/turso-fts/target
+          key: turso-fts-36da5b2e-${{ runner.os }}-${{ runner.arch }}
+
+      - run: go mod download && ./scripts/overlay-turso-fts.sh
 
       - run: CGO_ENABLED=1 go test -race ./...

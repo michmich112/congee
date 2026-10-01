@@ -239,6 +239,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: nip42.relay_url: %w", err)
 		}
 	}
+	for _, alias := range c.NIP42.RelayAliases {
+		if _, err := NormalizeNIP42RelayURL(alias); err != nil {
+			return fmt.Errorf("config: nip42.relay_aliases: %w", err)
+		}
+	}
 	if c.NIP42.CreatedAtSkewSeconds < 0 {
 		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")
 	}

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go** 1.24 or newer with **CGO** (`CGO_ENABLED=1`) and a C toolchain (gcc/clang)
+- **Go** 1.24 or newer with **CGO** (`CGO_ENABLED=1`) and a C toolchain (gcc/clang). CGO stays required while the v7 FTS5 upgrade is linked into `congee`.
 - **Node.js** 24 or newer (for the admin UI build)
 - A Nostr client that supports `wss://` or `ws://` (for local testing, use `ws://`)
 

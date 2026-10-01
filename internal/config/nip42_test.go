@@ -32,3 +32,15 @@ func TestValidateNIP42RelayURLWhenEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateNIP42RelayAliases(t *testing.T) {
+	c := minimalValidConfig()
+	c.NIP42.RelayAliases = []string{"wss://alias.example/"}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.NIP42.RelayAliases = []string{"https://alias.example/"}
+	if err := c.Validate(); err == nil {
+		t.Fatal("accepted non-WebSocket alias")
+	}
+}

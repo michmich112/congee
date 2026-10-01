@@ -1,4 +1,4 @@
-# Run the same Go checks as release and nightly on every push to any branch (`go test ./...`
+# Run the same Go checks as the main and rc release workflows on every push to any branch (`go test ./...`
 # covers packages under ./test/..., including Ginkgo integration specs).
 name: Go test (push)
 

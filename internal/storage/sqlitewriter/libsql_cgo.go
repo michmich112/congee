@@ -77,6 +77,10 @@ func openLibsqlHandlesOnce(ctx context.Context, dsn string, log zerolog.Logger) 
 		{`PRAGMA busy_timeout = 5000;`, "busy_timeout"},
 		{`PRAGMA foreign_keys = ON;`, "foreign_keys"},
 		{`PRAGMA journal_mode = WAL;`, "journal_mode"},
+		// Scheduled statistics refreshes must not scan every index while holding
+		// the connection shared by public reads and writes. SQLite's bounded
+		// ANALYZE still supplies planner statistics and approximate row counts.
+		{`PRAGMA analysis_limit = 1000;`, "analysis_limit"},
 	} {
 		if err := ExecSQL(ctx, sqldb, stmt.sql); err != nil {
 			_ = sqldb.Close()

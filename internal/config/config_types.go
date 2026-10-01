@@ -191,10 +191,11 @@ const (
 
 // NIP42Section configures NIP-42 client authentication (optional NIP).
 type NIP42Section struct {
-	RelayURL string `json:"relay_url"`
+	RelayURL                  string   `json:"relay_url"`
+	RelayAliases              []string `json:"relay_aliases,omitempty"`
 	// RequireAuth is protected_kinds (lazy AUTH) or connect (reject traffic until AUTH).
 	// Legacy send_challenge_on_connect loads as protected_kinds.
-	RequireAuth string `json:"require_auth"`
+	RequireAuth               string `json:"require_auth"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
 	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`

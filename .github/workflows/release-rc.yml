@@ -1,0 +1,79 @@
+# Push to branch rc: test, then publish two images from VERSION.
+# Release candidate: tags <version>-rc and rc, version string <version>-rc.
+# Nightly: tags <version>-nightly and nightly, version string <version>-nightly.
+# The first push of a version also opens GitHub pre-release v<version>-rc.
+name: Release candidate (rc)
+
+on:
+  push:
+    branches: [rc]
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: v
+        run: |
+          set -euo pipefail
+          bash scripts/check-version.sh
+          ver="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: version
+    uses: ./.github/workflows/reusable-go-test.yml
+    secrets: inherit
+
+  image-rc:
+    needs: [version, test]
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: ${{ needs.version.outputs.version }}-rc
+      push: true
+      tag_latest: false
+      extra_tag_suffixes: rc
+      platforms: linux/amd64,linux/arm64
+      cache_scope: rc
+    secrets: inherit
+
+  image-nightly:
+    needs: [version, test]
+    uses: ./.github/workflows/reusable-docker-ghcr.yml
+    with:
+      version: ${{ needs.version.outputs.version }}-nightly
+      push: true
+      tag_latest: false
+      extra_tag_suffixes: nightly
+      platforms: linux/amd64,linux/arm64
+      cache_scope: nightly
+    secrets: inherit
+
+  github_prerelease:
+    needs: [version, image-rc, image-nightly]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub pre-release if this version is new
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}-rc"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Pre-release ${tag} already exists; image tags were updated and no new pre-release was opened."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --generate-notes \
+            --title "$tag"

@@ -8,7 +8,23 @@ WORKDIR /src/web/admin
 COPY web/admin/package.json web/admin/package-lock.json ./
 RUN npm ci
 COPY web/admin/ ./
+COPY VERSION /src/VERSION
+ARG VERSION=0.0.0-dev
+ENV PUBLIC_CONGEE_VERSION=${VERSION}
 RUN npm run build
+
+FROM rust:1.88-bookworm AS turso-fts
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends git ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+ARG TURSO_FTS_REF=36da5b2e435cb07bba3bed2c7e7eef236b6b2e64
+RUN git clone --depth 1 https://github.com/tursodatabase/turso.git turso \
+	&& git -C turso fetch --depth 1 origin ${TURSO_FTS_REF} \
+	&& git -C turso checkout --detach ${TURSO_FTS_REF} \
+	&& cargo build --manifest-path turso/Cargo.toml --profile lib-release --package turso_sync_sdk_kit --features fts \
+	&& mkdir -p /out \
+	&& cp turso/target/lib-release/libturso_sync_sdk_kit.so /out/libturso_sync_sdk_kit.so
 
 FROM golang:1.24-bookworm AS go-build
 WORKDIR /src
@@ -18,6 +34,10 @@ RUN apt-get update \
 COPY go.mod go.sum ./
 COPY sdk/plugin/go.mod sdk/plugin/go.sum ./sdk/plugin/
 RUN go mod download
+COPY scripts/overlay-turso-fts.sh ./scripts/overlay-turso-fts.sh
+COPY --from=turso-fts /out/libturso_sync_sdk_kit.so /tmp/turso-fts-lib.so
+RUN chmod +x ./scripts/overlay-turso-fts.sh \
+	&& TURSO_FTS_LIB=/tmp/turso-fts-lib.so ./scripts/overlay-turso-fts.sh
 COPY . .
 COPY --from=admin-ui /src/web/admin/build ./web/admin/build
 ENV CGO_ENABLED=1

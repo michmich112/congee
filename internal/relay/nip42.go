@@ -86,7 +86,15 @@ func verifyNIP42AuthEvent(cfg *config.Config, ev *nostr.Event, challenge string,
 	if err != nil || gotRelay == "" {
 		return fmt.Errorf("invalid or missing relay tag")
 	}
-	if gotRelay != wantRelay {
+	relayAllowed := gotRelay == wantRelay
+	for _, alias := range cfg.NIP42.RelayAliases {
+		normalized, err := config.NormalizeNIP42RelayURL(alias)
+		if err != nil {
+			return fmt.Errorf("relay alias misconfigured: %w", err)
+		}
+		relayAllowed = relayAllowed || gotRelay == normalized
+	}
+	if !relayAllowed {
 		return fmt.Errorf("relay tag does not match configured relay URL")
 	}
 	gotCh := tagFirst(ev.Tags, "challenge")

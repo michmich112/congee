@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/ftsv7detach"
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
 )
 
-// Store is a libSQL-backed storage.MetaStore with a single-writer queue and serialized reads.
+// Store is a local meta database with a single-writer queue and a read pool.
 type Store struct {
 	wq     *sqlitewriter.Queue
 	dbPath string
@@ -19,16 +20,30 @@ type Store struct {
 
 var _ storage.MetaStore = (*Store)(nil)
 
-// Open opens the meta libSQL database (WAL, Bun + go-libsql), runs migrations, and starts the writer loop.
+// Open opens the meta database, runs migrations, and starts the writer loop.
 func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 	log = log.With().Str("engine", "sqlitemeta").Logger()
 
 	normDSN := normalizeDSN(dsn)
+	dbPath, err := mainFilePath(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("sqlitemeta: resolve db path: %w", err)
+	}
+	counts, skipMetaCheck, err := ftsv7detach.PrepareMeta(ctx, dbPath, log)
+	if err != nil {
+		return nil, err
+	}
 
 	log.Debug().Int("dsn_len", len(strings.TrimSpace(dsn))).Msg("open: sql.Open")
-	sqldb, db, err := sqlitewriter.OpenLibsqlHandles(ctx, normDSN, log)
+	sqldb, db, err := sqlitewriter.OpenTursoHandles(ctx, normDSN, log)
 	if err != nil {
 		return nil, fmt.Errorf("sqlitemeta: %w", err)
+	}
+	if !skipMetaCheck {
+		if err := ftsv7detach.ConfirmMeta(ctx, sqldb, dbPath, counts, log); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 
 	if err := runMigrations(ctx, db, log); err != nil {
@@ -36,16 +51,11 @@ func Open(ctx context.Context, dsn string, log zerolog.Logger) (*Store, error) {
 		return nil, err
 	}
 
-	dbPath, err := mainFilePath(dsn)
-	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("sqlitemeta: resolve db path: %w", err)
-	}
 	wq := sqlitewriter.New(sqldb, db, sqlitewriter.Options{
 		Engine:      "sqlitemeta",
 		Log:         log,
 		DSN:         normDSN,
-		OpenHandles: sqlitewriter.OpenLibsqlHandles,
+		OpenHandles: sqlitewriter.OpenTursoHandles,
 	})
 	return &Store{wq: wq, dbPath: dbPath}, nil
 }

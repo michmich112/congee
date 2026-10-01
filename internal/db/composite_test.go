@@ -154,10 +154,7 @@ func TestCompositeConcurrentEventAndAuditWrites(t *testing.T) {
 }
 
 func analyzeSQLiteFile(ctx context.Context, path string) error {
-	if !sqlitewriter.HasLibsqlDriver() {
-		return nil
-	}
-	sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, zerolog.Nop())
+	sqldb, _, err := sqlitewriter.OpenTursoHandles(ctx, path, zerolog.Nop())
 	if err != nil {
 		return err
 	}

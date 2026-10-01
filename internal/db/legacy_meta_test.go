@@ -143,8 +143,8 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	if err := checkDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
 		t.Fatal(err)
 	}
-	if userVer != 7 {
-		t.Fatalf("events db user_version=%d want 7", userVer)
+	if userVer != 8 {
+		t.Fatalf("events db user_version=%d want 8", userVer)
 	}
 	var hasAudit bool
 	if err := checkDB.QueryRowContext(ctx,
@@ -210,26 +210,38 @@ func TestLegacyMetaMigrationIdempotentReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h.Close()
 
 	auditBefore, err := h.CountAuditLog(ctx, storage.AuditQuery{})
 	if err != nil || auditBefore != 1 {
+		_ = h.Close()
 		t.Fatalf("audit after first open: %d %v", auditBefore, err)
 	}
 	chBefore, err := h.QueryConfigChangelog(ctx, 5)
 	if err != nil || len(chBefore) != 1 {
+		_ = h.Close()
 		t.Fatalf("changelog after first open: %+v %v", chBefore, err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
 	}
 
 	meta, err := sqlitemeta.Open(ctx, metaPath, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer meta.Close()
-
 	if err := migrateLegacyMetaSQLite(ctx, eventsPath, metaPath, meta, zerolog.Nop()); err != nil {
+		_ = meta.Close()
 		t.Fatal(err)
 	}
+	if err := meta.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err = Open(ctx, sec, "", zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
 
 	auditAfter, err := h.CountAuditLog(ctx, storage.AuditQuery{})
 	if err != nil || auditAfter != 1 {

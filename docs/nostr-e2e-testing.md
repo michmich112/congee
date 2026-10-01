@@ -32,6 +32,32 @@ Related plans (under `docs/plans/` locally, if present): relay identity secrets,
 | NIP-42 | Connect WS. `require_auth: connect` challenges immediately and rejects commands until AUTH. `protected_kinds` challenges only for listed kinds | `CLOSED` or `OK` with `auth-required:` until AUTH, then the same command succeeds |
 | NIP-29 | Publish `h`-tagged event after 9007 bootstrap | Stored; `previous` invalid id → `OK` false; restricted group requires membership |
 
+### Multiple public hostnames
+
+When the same relay is reachable through a custom domain and a hosting-provider
+hostname, list additional URLs in `nip42.relay_aliases`:
+
+```json
+{
+  "nip42": {
+    "relay_url": "wss://relay.example.com/",
+    "relay_aliases": ["wss://example-relay.fly.dev/"]
+  }
+}
+```
+
+Clients can sign their AUTH event with the URL they use. The relay accepts only
+its canonical URL and explicitly configured aliases, using the same URL
+normalization for both. Signature, timestamp, connection challenge, and resource
+access checks remain unchanged. Existing single-URL configurations require no
+changes. Restart the relay after changing this configuration.
+
+For a domain migration, add the new URL before changing DNS, verify signed AUTH
+and protected subscriptions through both hostnames, then remove an alias only
+when clients no longer need it. An unrelated URL or wrong connection challenge
+must still be rejected. These aliases affect NIP-42 authentication only; DNS and
+TLS certificates must be configured separately.
+
 ### 3. Programmatic external harness (optional repo artifact)
 
 **Goal:** a **small Nostr client** (second process) that speaks the same wire protocol as Congee’s tests but is easy to run from the shell or in a separate CI job.

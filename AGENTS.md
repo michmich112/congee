@@ -2,7 +2,7 @@
 
 ## What this project is
 
-**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in **Turso/libSQL** (local on-disk) by default, or **PostgreSQL** for larger or multi-instance deployments. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`. Every binary requires **CGO** (events and `congee-meta.db` both use go-libsql). Existing `database.type=sqlite` configs are rewritten to `turso` on first boot of this version (same files).
+**Congee** is a [Nostr](https://github.com/nostr-protocol/nips) relay written in Go. It stores events in a local **Turso** database (tursogo, WAL) by default, or **PostgreSQL** for larger or multi-instance deployments. A **Svelte 5** admin UI runs on a separate HTTP port when `ENABLE_ADMIN_UI=true`. This release still requires **CGO** because upgrading an existing events file off SQLite FTS5 uses go-libsql inside the same binary (`internal/storage/ftsv7detach`). Existing `database.type=sqlite` configs are rewritten to `turso` on first boot of this version (same files).
 
 Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `REQ`, `CLOSE`, and relay replies such as `OK`, `EOSE`, `CLOSED`, `NOTICE`.
 
@@ -10,7 +10,7 @@ Nostr clients connect over **WebSocket** and exchange JSON messages: `EVENT`, `R
 
 - `cmd/congee/` — entrypoint: config, storage, NIP loader, relay server, optional admin server.
 - `internal/nostr/` — event, filter, message parsing, kind classification (NIP-01).
-- `internal/storage/` — `Store` (`EventStore` + `MetaStore`); Turso/libSQL and PostgreSQL event stores and `sqlitemeta` (libSQL) for operational metadata (`congee-meta.db`).
+- `internal/storage/` — `Store` (`EventStore` + `MetaStore`); Turso (tursogo) and PostgreSQL event stores and `sqlitemeta` for operational metadata (`congee-meta.db`). `ftsv7detach` is the one-shot upgrade off SQLite FTS5.
 - `internal/db/` — opens and composes event + meta stores, legacy meta migration, merged `AdminStorageSnapshot`.
 - `internal/relay/` — HTTP/WebSocket relay, subscription manager, validation chain, hooks, rate limiting, NIP-11, health.
 - `internal/relayidentity/` — relay secp256k1 secrets file (`relay.secrets.json`) and derived NIP-11 `self` / NIP-19 npub. NIP-11 administrator `pubkey` is configured separately.
@@ -54,7 +54,7 @@ See the main plan in `.cursor/plans/` and `docs/plans/` for phase-by-phase detai
 10. **Audit & logs**: Use **full pubkeys** in logs (never truncate). Persist relay activity to `audit_log` with configurable retention.
 11. **Logging style**: zerolog — production JSON, dev console when `CONGEE_ENV` is dev-like; lowercase terse messages; include `conn_id` on connection-scoped lines; `duration_ms` for DB/network; `.Err(err)` for errors.
 12. **Config file writes**: Atomic — write temp file in same directory, then `os.Rename`; serialize concurrent writes with a mutex.
-13. **libSQL**: WAL mode; all writes through a **single-writer goroutine**; `MaxOpenConns=1` so CGO calls never overlap. Build with `CGO_ENABLED=1`.
+13. **Local Turso**: WAL mode; all writes through a **single-writer goroutine**; readers use a connection pool (`MaxOpenConns=8`). Do not enable MVCC. This release still builds with `CGO_ENABLED=1` because `ftsv7detach` uses go-libsql. A failed database open exits before the relay listens.
 14. **Lint**: `go vet` and `golangci-lint` (see `Makefile`).
 15. **gRPC plugins**: listen is non-blocking; intercept is the only sync RPC and **fail-opens**. Intercept observability (rolling log, window size) is **host-side** — after intercept returns, never on the REQ path, never in the plugin binary/iframe/ABI. Do not implement that log in Conduit or `sdk/plugin`.
 
