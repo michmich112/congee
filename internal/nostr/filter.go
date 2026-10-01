@@ -9,17 +9,18 @@ import (
 
 // Filter is a NIP-01 subscription / query filter.
 type Filter struct {
-	IDs     []string            `json:"ids,omitempty"`
-	Authors []string            `json:"authors,omitempty"`
-	Kinds   []int               `json:"kinds,omitempty"`
-	Since   *int64              `json:"since,omitempty"`
-	Until   *int64              `json:"until,omitempty"`
-	Limit   *int                `json:"limit,omitempty"`
+	IDs     []string `json:"ids,omitempty"`
+	Authors []string `json:"authors,omitempty"`
+	Kinds   []int    `json:"kinds,omitempty"`
+	Since   *int64   `json:"since,omitempty"`
+	Until   *int64   `json:"until,omitempty"`
+	Limit   *int     `json:"limit,omitempty"`
 	// Search is NIP-50 full-text query text. When set to a non-empty trimmed string,
 	// historical REQ results are produced via SearchEvents; Matches ignores it (see Matches).
 	Search *string `json:"search,omitempty"`
 	// Tag filters: "#e", "#p", or "#" + single letter (a-zA-Z).
-	Tag map[string][]string `json:"-"`
+	Tag       map[string][]string `json:"-"`
+	ReadScope *ReadScope          `json:"-"`
 }
 
 // HasSearch reports whether this filter carries an active NIP-50 search string.
@@ -106,7 +107,7 @@ func (f *Filter) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON encodes the filter, including tag maps.
-func (f *Filter) MarshalJSON() ([]byte, error) {
+func (f Filter) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	if len(f.IDs) > 0 {
 		m["ids"] = f.IDs
@@ -144,7 +145,7 @@ func (f *Filter) Matches(e *Event) bool {
 	if f == nil || e == nil {
 		return false
 	}
-	if f.HasSearch() {
+	if f.HasSearch() || !f.ReadScope.Allows(e) {
 		return false
 	}
 	if len(f.IDs) > 0 {

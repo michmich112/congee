@@ -46,6 +46,9 @@ func CountFilterSubQuery(f *nostr.Filter) (sql string, args []interface{}, skip 
 		}
 		addWhere(col+" IN ("+ph+")", ifaces...)
 	}
+	if predicate, scopeArgs := ReadScopeSQL(f.ReadScope, ""); predicate != "" {
+		addWhere(predicate, scopeArgs...)
+	}
 	if len(f.IDs) > 0 {
 		appendIn("id", f.IDs)
 	}

@@ -15,8 +15,16 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 )
 
+// websocketConnection keeps protocol handling testable without a listening socket.
+type websocketConnection interface {
+	WriteJSON(any) error
+	ReadMessage() (int, []byte, error)
+	SetReadDeadline(time.Time) error
+	Close() error
+}
+
 type wsClient struct {
-	conn *websocket.Conn
+	conn websocketConnection
 }
 
 func dialUpstream(ctx context.Context, rawURL string) (*wsClient, error) {

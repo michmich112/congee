@@ -39,6 +39,36 @@ Clients send:
 
 The relay responds with `NEG-MSG` or `NEG-ERR`. After sync, clients use normal `REQ` / `EVENT` to transfer missing events.
 
+## Private inboxes and mixed requests
+
+Enabling NIP-17 protects kinds `1059` and `21059` without disabling public queries.
+Wildcard, ID-only, mixed-kind, and multi-filter `REQ`s return the events the
+connection may read. An anonymous request that combines products and gift wraps
+still receives its public products and `EOSE`; it does not receive gift wraps.
+The relay may issue an `AUTH` challenge alongside those public results. Only an
+explicit request entirely for authentication-gated kinds is rejected with
+`auth-required:`. After authenticating, clients can repeat the request to obtain
+historical inbox events. Existing broad live subscriptions use the connection's
+authenticated keys as they change.
+
+Gift wraps require one canonical recipient `p` tag. With NIP-17 enabled, any key
+successfully authenticated on the connection may read its own wrappers. Multiple
+authenticated keys remain supported. Previously stored wrappers remain hidden
+when NIP-17 is disabled. Kind `21059` is ephemeral and is protected on live
+delivery; it does not provide stored history.
+
+The same authorization applies to inbound Negentropy. Anonymous broad or mixed
+filters reconcile public events; authenticated recipients can reconcile their
+own stored `1059`s, including with an ID-only filter. Visibility is applied in
+storage before query limits and record counts, and rechecked before constructing
+the vector so protected IDs and timestamps are not exposed by reconciliation.
+
+Publishing a valid signed gift wrap does not require recipient authentication.
+The outer signing key is a random wrapper key, not proof of sender identity.
+An operator can still explicitly configure `nip42.require_auth_publish_kinds`;
+leave `1059` and `21059` out of that list to accept unauthenticated deliveries.
+The subscription policy does not imply a publishing policy.
+
 ## REQ priority
 
 NIP-77 is **best-effort background work**:
@@ -55,6 +85,16 @@ Each newly stored import is delivered to plugins whose listen subscriptions matc
 
 If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 `self`) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
 
+Configured wildcard, mixed-kind, and gift-wrap upstream filters remain available.
+Congee omits its local gift-wrap IDs and timestamps from the vector advertised
+upstream, while reconciling public events normally. It can import gift wraps the
+upstream offers and checks local presence before fetching an ID, so previously
+stored wraps are not downloaded again. The upstream may advertise those known
+IDs again on subsequent runs because they are intentionally absent from the
+local advertised vector. A relay identity does not authenticate as an inbox
+recipient; private upstream relays may withhold other users' messages. Sync can
+recover only history the selected upstreams retain and authorize for this client.
+
 ## Observability
 
 - **Logs**: `nip77 neg-open complete`, blocked sessions, upstream job results (`conn_id`, `sub_id`, `record_count`, `duration_ms`). Upstream NEG wait timeouts log `upstream negentropy message timeout` (`timeout_seconds`, `round`) then `upstream sync failed`.
@@ -65,5 +105,5 @@ If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync)
 ## Limitations
 
 - NIP-50 search filters are rejected for negentropy
-- NIP-29 per-connection visibility is not applied during sync (DB contents matching the filter are used)
+- NIP-29 membership is rechecked before inbound vector construction; the preliminary record cap is applied before that membership check
 - Persistent negentropy caches (strfry-style) are not implemented

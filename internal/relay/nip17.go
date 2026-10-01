@@ -13,9 +13,14 @@ import (
 )
 
 const (
-	nip17KindGiftWrap = 1059
-	nip17KindSeal     = 13
+	nip17KindGiftWrap          = 1059
+	nip59KindEphemeralGiftWrap = 21059
+	nip17KindSeal              = 13
 )
+
+func isGiftWrapKind(kind int) bool {
+	return kind == nip17KindGiftWrap || kind == nip59KindEphemeralGiftWrap
+}
 
 func nip17Enabled(cfg *config.Config) bool {
 	return cfg != nil && slices.Contains(cfg.NIPs.Enabled, 17)
@@ -39,13 +44,13 @@ func RegisterNIP17(s *Server, _ storage.Store) {
 }
 
 func nip17ValidateRejectGiftWrapWhenDisabled(cfg *config.Config, ev *nostr.Event) error {
-	if ev == nil || ev.Kind != nip17KindGiftWrap {
+	if ev == nil || !isGiftWrapKind(ev.Kind) {
 		return nil
 	}
 	if !config.NIP17RejectGiftWrapWhenDisabled(cfg) {
 		return nil
 	}
-	return fmt.Errorf("reject: kind %d not accepted (enable NIP-17 for private direct messages)", nip17KindGiftWrap)
+	return fmt.Errorf("reject: kind %d not accepted (enable NIP-17 for private direct messages)", ev.Kind)
 }
 
 func nip17ValidatePublishedEvent(ev *nostr.Event) error {
@@ -53,9 +58,9 @@ func nip17ValidatePublishedEvent(ev *nostr.Event) error {
 		return nil
 	}
 	switch ev.Kind {
-	case nip17KindGiftWrap:
-		if !nip17GiftWrapHasValidRecipientPTag(ev) {
-			return fmt.Errorf("invalid gift wrap: kind %d requires at least one valid \"p\" recipient tag", nip17KindGiftWrap)
+	case nip17KindGiftWrap, nip59KindEphemeralGiftWrap:
+		if _, ok := soleGiftWrapRecipient(ev); !ok {
+			return fmt.Errorf("invalid gift wrap: kind %d requires exactly one canonical \"p\" recipient tag", ev.Kind)
 		}
 	case nip17KindSeal:
 		if len(ev.Tags) != 0 {
@@ -65,20 +70,24 @@ func nip17ValidatePublishedEvent(ev *nostr.Event) error {
 	return nil
 }
 
-func nip17GiftWrapHasValidRecipientPTag(ev *nostr.Event) bool {
+func soleGiftWrapRecipient(ev *nostr.Event) (string, bool) {
+	if ev == nil {
+		return "", false
+	}
+	var recipient string
 	for _, t := range ev.Tags {
-		if len(t) < 2 || t[0] != "p" {
+		if len(t) == 0 || t[0] != "p" {
 			continue
 		}
-		if nip17ValidXOnlyPubKeyHex(t[1]) {
-			return true
+		if recipient != "" || len(t) < 2 || !nip17ValidXOnlyPubKeyHex(t[1]) || strings.ToLower(t[1]) != t[1] {
+			return "", false
 		}
+		recipient = t[1]
 	}
-	return false
+	return recipient, recipient != ""
 }
 
 func nip17ValidXOnlyPubKeyHex(s string) bool {
-	s = strings.TrimSpace(s)
 	if len(s) != 64 {
 		return false
 	}
@@ -86,35 +95,13 @@ func nip17ValidXOnlyPubKeyHex(s string) bool {
 	return err == nil && len(b) == 32
 }
 
-// nip17GiftWrapRecipientPubkeys returns each valid x-only hex pubkey from "p" tags (order preserved, deduped).
-func nip17GiftWrapRecipientPubkeys(ev *nostr.Event) []string {
-	if ev == nil {
-		return nil
-	}
-	var out []string
-	seen := make(map[string]struct{})
-	for _, t := range ev.Tags {
-		if len(t) < 2 || t[0] != "p" {
-			continue
-		}
-		pk := strings.TrimSpace(t[1])
-		if !nip17ValidXOnlyPubKeyHex(pk) {
-			continue
-		}
-		key := strings.ToLower(pk)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, pk)
-	}
-	return out
-}
-
 // nip17GiftWrapVisibleToSubscription reports whether a NIP-59 gift wrap may be shown on this connection (NIP-17 + NIP-42).
 func nip17GiftWrapVisibleToSubscription(s *Server, connID string, ev *nostr.Event) bool {
-	recipients := nip17GiftWrapRecipientPubkeys(ev)
-	if len(recipients) == 0 {
+	if !relayNIP42Enabled(s.cfg) {
+		return false
+	}
+	recipient, ok := soleGiftWrapRecipient(ev)
+	if !ok {
 		return false
 	}
 	v, ok := s.conns.Load(connID)
@@ -122,15 +109,12 @@ func nip17GiftWrapVisibleToSubscription(s *Server, connID string, ev *nostr.Even
 		return false
 	}
 	c := v.(*Conn)
-	authed := c.nip42AuthedPubkeys()
-	if len(authed) == 0 {
-		return false
+	if c.nip42HasPubkey(recipient) {
+		return true
 	}
-	for _, pk := range authed {
-		for _, r := range recipients {
-			if strings.EqualFold(pk, r) {
-				return true
-			}
+	for _, pubkey := range c.nip42AuthedPubkeys() {
+		if strings.EqualFold(pubkey, recipient) {
+			return true
 		}
 	}
 	return false

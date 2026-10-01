@@ -11,6 +11,7 @@ import (
 	"github.com/michmich112/congee/internal/config"
 	"github.com/michmich112/congee/internal/nip77"
 	"github.com/michmich112/congee/internal/nostr"
+	"github.com/michmich112/congee/internal/plugin"
 	"github.com/michmich112/congee/internal/storage"
 )
 
@@ -95,7 +96,7 @@ func validateNegFilter(cfg *config.Config, c *Conn, f *nostr.Filter) error {
 	if f.Limit != nil {
 		return fmt.Errorf("blocked: limit filters not supported for NEG-OPEN")
 	}
-	if subscribeAuthRequired(cfg, []nostr.Filter{*f}) && !c.nip42HasAnyAuth() {
+	if readRequiresAuth(cfg, c, []nostr.Filter{*f}) {
 		return fmt.Errorf("auth-required: subscription requires authentication")
 	}
 	return nil
@@ -118,7 +119,13 @@ func handleNEGOpen(ctx context.Context, s *Server, c *Conn, msg *nostr.NegOpenMe
 		return s.sendNegBlocked(c, subID, "blocked: too many sync sessions")
 	}
 	if err := validateNegFilter(s.cfg, c, &msg.Filter); err != nil {
+		if strings.HasPrefix(err.Error(), "auth-required:") {
+			_ = nip42EnqueueAuthChallenge(c, s.cfg)
+		}
 		return s.sendNegBlocked(c, subID, err.Error())
+	}
+	if !c.nip42HasAnyAuth() && readMayNeedAuth(s.cfg, []nostr.Filter{msg.Filter}) {
+		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 	}
 
 	if c.negSessions.close(subID) {
@@ -130,7 +137,9 @@ func handleNEGOpen(ctx context.Context, s *Server, c *Conn, msg *nostr.NegOpenMe
 	// releases it if no session ends up being created).
 	s.negActiveSessions.Add(1)
 
-	job := &negOpenJob{ctx: ctx, c: c, msg: msg}
+	cloned := *msg
+	cloned.Filter = queryReadFilters(s.cfg, c, []nostr.Filter{msg.Filter})[0]
+	job := &negOpenJob{ctx: ctx, c: c, msg: &cloned}
 	if !s.negQueue.Enqueue(job) {
 		s.negActiveSessions.Add(-1)
 		return s.sendNegBlocked(c, subID, "blocked: sync queue full")
@@ -176,6 +185,15 @@ func (s *Server) runNegOpenJob(job *negOpenJob) {
 	if err != nil {
 		s.negActiveSessions.Add(-1)
 		log.Warn().Err(err).Str("sub_id", subID).Msg("nip77 sync query failed")
+		_ = s.sendNegErr(c, subID, "error: query failed")
+		return
+	}
+	// Unlike EVENT delivery, reconciliation reveals IDs and timestamps directly.
+	// Hydrate the scoped references and apply the same final visibility guard.
+	items, err = s.visibleNegItems(job.ctx, c, msg.Filter, items)
+	if err != nil {
+		s.negActiveSessions.Add(-1)
+		log.Warn().Err(err).Str("sub_id", subID).Msg("nip77 visibility query failed")
 		_ = s.sendNegErr(c, subID, "error: query failed")
 		return
 	}
@@ -337,4 +355,26 @@ func negFilterKindsDetail(kinds []int) string {
 		parts[i] = fmt.Sprintf("%d", k)
 	}
 	return strings.Join(parts, ",")
+}
+
+// visibleNegItems also defends against a store returning unscoped references.
+func (s *Server) visibleNegItems(ctx context.Context, c *Conn, filter nostr.Filter, items []storage.SyncItem) ([]storage.SyncItem, error) {
+	out := make([]storage.SyncItem, 0, len(items))
+	for start := 0; start < len(items); start += 256 {
+		end := min(start+256, len(items))
+		ids := make([]string, 0, end-start)
+		for _, item := range items[start:end] {
+			ids = append(ids, item.ID)
+		}
+		events, err := plugin.GetEventsByIDs(ctx, s.store, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, ev := range events {
+			if filter.Matches(ev) && s.EventVisibleToSubscription(c.ID, ev) {
+				out = append(out, storage.SyncItem{ID: ev.ID, CreatedAt: ev.CreatedAt})
+			}
+		}
+	}
+	return out, nil
 }

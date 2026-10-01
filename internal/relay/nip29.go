@@ -317,8 +317,17 @@ func (s *Server) EventVisibleToSubscription(connID string, ev *nostr.Event) bool
 	if ev == nil {
 		return true
 	}
-	if nip17Enabled(s.cfg) && ev.Kind == nip17KindGiftWrap {
+	if isGiftWrapKind(ev.Kind) {
+		if !nip17Enabled(s.cfg) {
+			return false
+		}
 		return nip17GiftWrapVisibleToSubscription(s, connID, ev)
+	}
+	if relayNIP42Enabled(s.cfg) && slices.Contains(s.cfg.NIP42.RequireAuthSubscribeKinds, ev.Kind) {
+		v, ok := s.conns.Load(connID)
+		if !ok || !v.(*Conn).nip42HasAnyAuth() {
+			return false
+		}
 	}
 	if !nip29Enabled(s.cfg) || s.relayID == nil {
 		return true

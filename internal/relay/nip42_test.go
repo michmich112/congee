@@ -10,7 +10,7 @@ import (
 	"github.com/michmich112/congee/internal/nostr"
 )
 
-func TestSubscribeAuthRequired(t *testing.T) {
+func TestReadRequiresAuthOnlyForEntirelyProtectedRequests(t *testing.T) {
 	cfg := &config.Config{
 		NIPs: config.NIPsSection{Enabled: []int{1, 11, 42}},
 		NIP42: config.NIP42Section{
@@ -18,17 +18,17 @@ func TestSubscribeAuthRequired(t *testing.T) {
 			RequireAuthSubscribeKinds: []int{4, 40},
 		},
 	}
-	if subscribeAuthRequired(cfg, []nostr.Filter{{Kinds: []int{1}}}) {
+	if readRequiresAuth(cfg, &Conn{}, []nostr.Filter{{Kinds: []int{1}}}) {
 		t.Fatal("kind 1 alone should not require auth")
 	}
-	if !subscribeAuthRequired(cfg, []nostr.Filter{{Kinds: []int{4}}}) {
+	if !readRequiresAuth(cfg, &Conn{}, []nostr.Filter{{Kinds: []int{4}}}) {
 		t.Fatal("kind 4 should require auth")
 	}
-	if !subscribeAuthRequired(cfg, []nostr.Filter{{Kinds: []int{1, 4}}}) {
-		t.Fatal("mixed filter with 4 should require auth")
+	if readRequiresAuth(cfg, &Conn{}, []nostr.Filter{{Kinds: []int{1, 4}}}) {
+		t.Fatal("mixed filter must preserve public results")
 	}
-	if !subscribeAuthRequired(cfg, []nostr.Filter{{}}) {
-		t.Fatal("empty kinds should require auth when policy lists kinds")
+	if readRequiresAuth(cfg, &Conn{}, []nostr.Filter{{}}) {
+		t.Fatal("wildcard must preserve public results")
 	}
 }
 

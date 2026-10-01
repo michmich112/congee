@@ -246,19 +246,28 @@ func parseUpstreamFilters(raw []json.RawMessage) ([]nostr.Filter, error) {
 		if f.HasSearch() {
 			return nil, fmt.Errorf("filter %d: search not supported", i)
 		}
+		// Keep operator-configured recovery filters available. The local vector
+		// excludes gift wraps; the upstream enforces its own recipient policy.
 		out = append(out, f)
 	}
 	return out, nil
 }
 
 func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsClient, relayURL string, filter nostr.Filter, frameLimit int) (needCount, imported int, err error) {
-	local, err := sch.store.QueryEventSyncItems(ctx, filter)
+	// Pull gift wraps offered by the upstream without advertising local inbox
+	// IDs or timestamps back to it. Public kinds still reconcile normally.
+	localFilter := filter
+	localFilter.ReadScope = &nostr.ReadScope{ExcludedKinds: []int{1059, 21059}}
+	local, err := sch.store.QueryEventSyncItems(ctx, localFilter)
 	if err != nil {
 		return 0, 0, err
 	}
 	log.Debug().Int("local_events", len(local)).Msg("upstream local vector built")
 
 	clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(local), frameLimit)
+	collectCtx, cancelCollect := context.WithCancel(ctx)
+	defer cancelCollect()
+	missingIDs := collectNeedIDs(collectCtx, clientNeg)
 	subID := fmt.Sprintf("up-%d", time.Now().UnixNano())
 	initial := clientNeg.Start()
 
@@ -352,11 +361,25 @@ func syncFilter(ctx context.Context, sch *Scheduler, log zerolog.Logger, c *wsCl
 	}
 
 fetch:
-	needIDs := collectNeedIDs(clientNeg)
+	var needIDs []string
+	select {
+	case needIDs = <-missingIDs:
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	}
 	needCount = len(needIDs)
 	log.Debug().Str("sub_id", subID).Int("need", needCount).Int("rounds", round).Msg("upstream reconcile complete")
 
 	for _, id := range needIDs {
+		// Private imports are intentionally absent from our advertised vector.
+		// Avoid downloading them again on every sync cycle.
+		has, err := sch.store.HasEventID(ctx, id)
+		if err != nil {
+			return needCount, imported, err
+		}
+		if has {
+			continue
+		}
 		ev, err := c.reqEventByID(ctx, id)
 		if err != nil {
 			log.Debug().Str("id", id).Err(err).Msg("upstream fetch event failed")
@@ -406,15 +429,30 @@ func (sch *Scheduler) persistImportedEvent(ctx context.Context, ev *nostr.Event)
 	return true, nil
 }
 
-func collectNeedIDs(neg *negentropy.Negentropy) []string {
-	if neg == nil || neg.HaveNots == nil {
-		return nil
-	}
-	var ids []string
-	for id := range neg.HaveNots {
-		if id != "" {
-			ids = append(ids, id)
+// Negentropy emits differences on bounded channels while Reconcile runs. Drain
+// both channels concurrently so an inbox larger than the buffers cannot stall.
+func collectNeedIDs(ctx context.Context, neg *negentropy.Negentropy) <-chan []string {
+	result := make(chan []string, 1)
+	go func() {
+		var ids []string
+		haves, missing := neg.Haves, neg.HaveNots
+		for haves != nil || missing != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-haves:
+				if !ok {
+					haves = nil
+				}
+			case id, ok := <-missing:
+				if !ok {
+					missing = nil
+				} else if id != "" {
+					ids = append(ids, id)
+				}
+			}
 		}
-	}
-	return ids
+		result <- ids
+	}()
+	return result
 }

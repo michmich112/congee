@@ -268,6 +268,9 @@ func applyFilterQueryPrefix(q *bun.SelectQuery, f *nostr.Filter, prefix string) 
 		}
 		return prefix + name
 	}
+	if predicate, args := storage.ReadScopeSQL(f.ReadScope, prefix); predicate != "" {
+		q = q.Where(predicate, args...)
+	}
 	if len(f.IDs) > 0 {
 		q = q.Where(col("id")+" IN (?)", bun.In(f.IDs))
 	}
