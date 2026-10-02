@@ -41,6 +41,19 @@ func openLibsqlTestDB(t *testing.T, path string) *sql.DB {
 	return db
 }
 
+func openTursoTestDB(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	sqldb, bunDB, err := sqlitewriter.OpenTursoHandles(context.Background(), path, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = bunDB.Close()
+		_ = sqldb.Close()
+	})
+	return sqldb
+}
+
 func execLibsqlTest(t *testing.T, db *sql.DB, q string) {
 	t.Helper()
 	ctx := context.Background()
@@ -114,52 +127,59 @@ func TestLegacyMetaMigrationFromV6EventsDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h.Close()
 
 	n, err := h.CountAuditLog(ctx, storage.AuditQuery{})
 	if err != nil || n != 1 {
+		_ = h.Close()
 		t.Fatalf("audit after legacy migrate: %d %v", n, err)
 	}
 	ch, err := h.QueryConfigChangelog(ctx, 5)
 	if err != nil || len(ch) != 1 {
+		_ = h.Close()
 		t.Fatalf("changelog: %+v %v", ch, err)
 	}
 	buckets, err := h.QueryRelayMetricBuckets(ctx, storage.RelayMetricBucketQuery{MinBucketStartUnix: 0, Limit: 10})
 	if err != nil || len(buckets) != 1 || buckets[0].EventsStored != 3 {
+		_ = h.Close()
 		t.Fatalf("buckets: %+v %v", buckets, err)
 	}
 	wsN, err := h.CountWSConnectionSessions(ctx)
 	if err != nil || wsN != 1 {
+		_ = h.Close()
 		t.Fatalf("ws sessions after legacy migrate: %d %v", wsN, err)
 	}
 	sessions, err := h.QueryWSConnectionSessions(ctx, storage.WSConnectionSessionQuery{Limit: 10})
 	if err != nil || len(sessions) != 1 || sessions[0].ConnID != "conn-1" || sessions[0].StartedUnix != 100 {
+		_ = h.Close()
 		t.Fatalf("ws session rows: %+v %v", sessions, err)
 	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
 
+	// Schema version lives in the tursogo file. go-libsql does not read that
+	// WAL, so it still reports the pre-migration header while the file is open.
+	eventsDB := openTursoTestDB(t, eventsPath)
 	var userVer int
-	checkDB := openLibsqlTestDB(t, eventsPath)
-	defer checkDB.Close()
-	if err := checkDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
+	if err := eventsDB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVer); err != nil {
 		t.Fatal(err)
 	}
 	if userVer != 8 {
 		t.Fatalf("events db user_version=%d want 8", userVer)
 	}
-	var hasAudit bool
-	if err := checkDB.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log')`,
-	).Scan(&hasAudit); err != nil {
+	var auditTables int
+	if err := eventsDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='audit_log'`,
+	).Scan(&auditTables); err != nil {
 		t.Fatal(err)
 	}
-	if hasAudit {
+	if auditTables != 0 {
 		t.Fatal("audit_log should be dropped from events db after v7")
 	}
 
 	metaPath := filepath.Join(dir, "congee-meta.db")
+	metaDB := openTursoTestDB(t, metaPath)
 	var metaAudit int
-	metaDB := openLibsqlTestDB(t, metaPath)
-	defer metaDB.Close()
 	if err := metaDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_log`).Scan(&metaAudit); err != nil {
 		t.Fatalf("meta db: %v", err)
 	}
