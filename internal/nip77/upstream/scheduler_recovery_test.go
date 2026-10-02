@@ -123,3 +123,101 @@ func TestUpstreamPullFailureThenRecovery(t *testing.T) {
 		t.Fatalf("recovered event missing: %v %v", has, err)
 	}
 }
+
+func TestUpstreamReadFailureRedialsNextFilter(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "events.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+	key, _ := btcec.PrivKeyFromBytes([]byte{12})
+	ev := &nostr.Event{PubKey: hex.EncodeToString(key.PubKey().SerializeCompressed()[1:]), CreatedAt: 200, Kind: 1, Content: "second-filter"}
+	if err := ev.Sign(key); err != nil {
+		t.Fatal(err)
+	}
+	var conns atomic.Int32
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if conns.Add(1) == 1 {
+			for {
+				if _, _, err := conn.ReadMessage(); err != nil {
+					return
+				}
+			}
+		}
+		neg := nip77.NewServerNegentropy(nip77.BuildVector([]storage.SyncItem{{ID: ev.ID, CreatedAt: ev.CreatedAt}}), 1<<20)
+		for {
+			var raw []json.RawMessage
+			if err := conn.ReadJSON(&raw); err != nil {
+				return
+			}
+			if len(raw) < 2 {
+				continue
+			}
+			typ, sub := jsonStringAt(raw, 0), jsonStringAt(raw, 1)
+			switch typ {
+			case "NEG-OPEN":
+				if len(raw) < 4 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 3))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "NEG-MSG":
+				if len(raw) < 3 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 2))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "REQ":
+				if err := conn.WriteJSON([]any{"EVENT", sub, ev}); err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"EOSE", sub}); err != nil {
+					return
+				}
+			}
+		}
+	}))
+	defer upstream.Close()
+	cfg := config.DefaultConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 77}
+	cfg.NIP77.UpstreamEnabled = true
+	cfg.NIP77.UpstreamAuthWaitSeconds = 0
+	cfg.NIP77.UpstreamMessageTimeoutSeconds = 1
+	u := config.NIP77Upstream{Name: "two-filters", URL: "ws" + strings.TrimPrefix(upstream.URL, "http"), Enabled: true,
+		Filters: []json.RawMessage{
+			json.RawMessage(`{"kinds":[1]}`),
+			json.RawMessage(`{"kinds":[1]}`),
+		}}
+	sch := NewScheduler(cfg, st, nil, nil, zerolog.Nop())
+	sch.runOnce(ctx, u)
+	got := sch.Status()
+	if len(got) != 1 || got[0].LastFiltersFailed != 1 || got[0].LastImported != 1 || got[0].LastFailed != 0 {
+		t.Fatalf("second filter should import after the first read timeout: %+v", got)
+	}
+	if n := conns.Load(); n != 2 {
+		t.Fatalf("expected a redial for the second filter, connections=%d", n)
+	}
+	if has, err := st.HasEventID(ctx, ev.ID); err != nil || !has {
+		t.Fatalf("second-filter event missing: %v %v", has, err)
+	}
+}

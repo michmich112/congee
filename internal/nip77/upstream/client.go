@@ -17,7 +17,10 @@ import (
 )
 
 type wsClient struct {
-	conn    *websocket.Conn
+	conn *websocket.Conn
+	// readErr is the first websocket read failure. Later reads return it
+	// without touching the socket: a deadline leaves the stream desynchronized.
+	// Callers must dial a new wsClient to continue.
 	readErr error
 	fetchN  atomic.Uint64
 }

@@ -240,6 +240,18 @@ func (sch *Scheduler) pullUpstream(ctx context.Context, u config.NIP77Upstream) 
 	frameLimit := config.EffectiveNIP77FrameSizeLimit(sch.cfg)
 	var failures []error
 	for i, f := range filters {
+		// A read deadline poisons this socket for every later read. Fail this
+		// filter, then dial again so the next filter is not failed with it.
+		if i > 0 && c.readErr != nil {
+			log.Warn().Err(c.readErr).Int("filter_index", i).Msg("upstream redialing after read failure")
+			if err := sch.replaceUpstreamClient(ctx, log, &c, u.URL); err != nil {
+				stats.filtersFailed++
+				if len(failures) < 5 {
+					failures = append(failures, fmt.Errorf("filter %d: redial: %w", i, err))
+				}
+				break
+			}
+		}
 		log.Debug().Int("filter_index", i).Interface("filter", f).Msg("upstream syncing filter")
 		part, err := syncFilter(ctx, sch, log, &c, u.URL, f, frameLimit)
 		stats.add(part)
@@ -408,6 +420,28 @@ fetch:
 
 const maxFetchAttempts = 3
 
+// replaceUpstreamClient dials a new upstream connection and installs it in c.
+// The previous connection stays open until the dial and AUTH handshake succeed.
+func (sch *Scheduler) replaceUpstreamClient(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL string) error {
+	next, err := dialUpstream(ctx, relayURL)
+	if err != nil {
+		return err
+	}
+	authWait := time.Duration(config.EffectiveNIP77UpstreamAuthWait(sch.cfg)) * time.Second
+	if authWait > 0 {
+		msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
+		if err := sch.handshakeAuth(ctx, log, next, relayURL, authWait, msgTimeout); err != nil {
+			_ = next.Close()
+			return err
+		}
+	}
+	if *c != nil {
+		_ = (*c).Close()
+	}
+	*c = next
+	return nil
+}
+
 // fetchPersistWithRetry retries only one missing event. A new connection is
 // required after a read timeout because websocket reads cannot recover from a
 // failed deadline. Each attempt also re-verifies the event before storage.
@@ -421,22 +455,10 @@ func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Log
 				return false, ctx.Err()
 			case <-time.After(pause):
 			}
-			next, err := dialUpstream(ctx, relayURL)
-			if err != nil {
+			if err := sch.replaceUpstreamClient(ctx, log, c, relayURL); err != nil {
 				lastErr = err
 				continue
 			}
-			authWait := time.Duration(config.EffectiveNIP77UpstreamAuthWait(sch.cfg)) * time.Second
-			if authWait > 0 {
-				msgTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
-				if err := sch.handshakeAuth(ctx, log, next, relayURL, authWait, msgTimeout); err != nil {
-					_ = next.Close()
-					lastErr = err
-					continue
-				}
-			}
-			_ = (*c).Close()
-			*c = next
 		}
 		fetchTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
 		ev, err := (*c).reqEventByID(ctx, id, fetchTimeout, func(challenge string) error {
