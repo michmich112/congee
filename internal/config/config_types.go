@@ -67,6 +67,9 @@ type DatabaseSection struct {
 	Type    string `json:"type"`
 	DSN     string `json:"dsn"`
 	MetaDSN string `json:"meta_dsn,omitempty"`
+	// Analyze runs periodic SQLite ANALYZE so the admin dashboard can show on-disk size
+	// and approximate row counts. Off by default; the dashboard asks the operator to enable it.
+	Analyze bool `json:"analyze"`
 }
 
 type LoggingSection struct {
@@ -191,11 +194,11 @@ const (
 
 // NIP42Section configures NIP-42 client authentication (optional NIP).
 type NIP42Section struct {
-	RelayURL                  string   `json:"relay_url"`
-	RelayAliases              []string `json:"relay_aliases,omitempty"`
+	RelayURL     string   `json:"relay_url"`
+	RelayAliases []string `json:"relay_aliases,omitempty"`
 	// RequireAuth is protected_kinds (lazy AUTH) or connect (reject traffic until AUTH).
 	// Legacy send_challenge_on_connect loads as protected_kinds.
-	RequireAuth               string `json:"require_auth"`
+	RequireAuth string `json:"require_auth"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
 	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`

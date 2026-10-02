@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Shield from '@lucide/svelte/icons/shield';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { parseIntSafe } from '$lib/app-config';
+	import { relayWebSocketURL } from '$lib/relay-websocket-url';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
@@ -8,6 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	const ctx = getAdminConfig();
@@ -40,6 +43,43 @@
 	function queryPageSizeFieldShowsPagingDisabledPill(): boolean {
 		const n = queryPageSizeFieldParsed();
 		return n !== null && n < 1;
+	}
+
+	let aliasDraft = $state('');
+	let aliasError = $state<string | null>(null);
+
+	function canonicalURLProblem(): string | null {
+		const raw = draft().nip42.relay_url;
+		if (raw.trim() === '') return null;
+		const parsed = relayWebSocketURL(raw);
+		return 'error' in parsed ? parsed.error : null;
+	}
+
+	function addAlias() {
+		const parsed = relayWebSocketURL(aliasDraft);
+		if ('error' in parsed) {
+			aliasError = parsed.error;
+			return;
+		}
+		const canonical = relayWebSocketURL(draft().nip42.relay_url);
+		const canonicalURL = 'url' in canonical ? canonical.url : '';
+		const existing = draft().nip42.relay_aliases.map((alias) => {
+			const item = relayWebSocketURL(alias);
+			return 'url' in item ? item.url : alias;
+		});
+		if (parsed.url === canonicalURL || existing.includes(parsed.url)) {
+			aliasError = 'That relay URL is already listed.';
+			return;
+		}
+		draft().nip42.relay_aliases = [...draft().nip42.relay_aliases, parsed.url];
+		aliasDraft = '';
+		aliasError = null;
+		ctx.markDirty();
+	}
+
+	function removeAlias(url: string) {
+		draft().nip42.relay_aliases = draft().nip42.relay_aliases.filter((alias) => alias !== url);
+		ctx.markDirty();
 	}
 </script>
 
@@ -145,6 +185,7 @@
 					Used when NIP-42 is enabled under Enabled NIPs. Set the public WebSocket URL clients put in the
 					<code class="rounded bg-muted px-1 text-[0.7rem]">relay</code> tag (for example
 					<code class="rounded bg-muted px-1 text-[0.7rem]">wss://relay.example.com/</code>).
+					Aliases are other public URLs for the same relay, such as a hosting hostname beside a custom domain.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
@@ -154,12 +195,72 @@
 						id="nip42-relay-url"
 						class="font-mono text-xs"
 						spellcheck={false}
+						aria-invalid={canonicalURLProblem() != null}
 						value={draft().nip42.relay_url}
 						oninput={(e) => {
 							draft().nip42.relay_url = e.currentTarget.value;
 							ctx.markDirty();
 						}}
+						onblur={() => {
+							const parsed = relayWebSocketURL(draft().nip42.relay_url);
+							if ('url' in parsed && parsed.url !== draft().nip42.relay_url) {
+								draft().nip42.relay_url = parsed.url;
+								ctx.markDirty();
+							}
+						}}
 					/>
+					{#if canonicalURLProblem()}
+						<p role="alert" class="text-sm text-destructive">{canonicalURLProblem()}</p>
+					{/if}
+				</div>
+				<div class="space-y-2 md:col-span-2">
+					<Label for="nip42-alias">Relay URL aliases</Label>
+					<p class="text-xs text-muted-foreground">
+						Each alias uses the same WebSocket URL rules as the canonical relay URL. Add a URL, or remove one
+						that clients no longer use.
+					</p>
+					{#if draft().nip42.relay_aliases.length > 0}
+						<ul class="flex flex-wrap gap-2" aria-label="Relay URL aliases">
+							{#each draft().nip42.relay_aliases as alias (alias)}
+								<li>
+									<Badge variant="secondary" class="h-auto max-w-full gap-1 py-1 font-mono text-xs">
+										<span class="truncate">{alias}</span>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground rounded-full"
+											aria-label={`Remove ${alias}`}
+											onclick={() => removeAlias(alias)}
+										>
+											<XIcon />
+										</button>
+									</Badge>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<div class="flex gap-2">
+						<Input
+							id="nip42-alias"
+							class="font-mono text-xs"
+							spellcheck={false}
+							placeholder="wss://alias.example/"
+							aria-invalid={aliasError != null}
+							bind:value={aliasDraft}
+							oninput={() => {
+								aliasError = null;
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									addAlias();
+								}
+							}}
+						/>
+						<Button type="button" variant="outline" onclick={addAlias}>Add</Button>
+					</div>
+					{#if aliasError}
+						<p role="alert" class="text-sm text-destructive">{aliasError}</p>
+					{/if}
 				</div>
 				<fieldset
 					id="require-auth-on"

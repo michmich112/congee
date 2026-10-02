@@ -13,6 +13,7 @@ Congee stores local files with [tursogo](https://turso.tech/database/tursogo) (`
 - `database.type` must be `"turso"` (or leftover `"sqlite"` / empty, which is rewritten to `"turso"` on boot and on admin config writes).
 - `database.dsn` is a **local file path** for the events database.
 - Operational metadata (`audit_log`, `config_changelog`, metrics, WS sessions) is in `meta_dsn` (`congee-meta.db`).
+- `database.analyze` defaults to false. When true, the process periodically runs `ANALYZE` so the admin dashboard can show on-disk size and approximate row counts. While it is false, the dashboard tells the operator to turn analysis on under Config → Storage. A restart applies the change.
 
 ## Upgrading an existing database
 

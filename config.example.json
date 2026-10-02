@@ -8,7 +8,8 @@
   "database": {
     "type": "turso",
     "dsn": "./congee.db",
-    "meta_dsn": "./congee-meta.db"
+    "meta_dsn": "./congee-meta.db",
+    "analyze": false
   },
   "_comment_database": "Local files use type turso (libSQL). PostgreSQL uses type postgres. Legacy sqlite is rewritten to turso on boot.",
   "logging": {

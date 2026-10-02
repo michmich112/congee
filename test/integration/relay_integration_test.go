@@ -906,6 +906,104 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer cancel()
 		Expect(srv.Shutdown(ctx)).To(Succeed())
 	})
+
+	It("accepts AUTH when the relay tag matches a configured alias and rejects an unknown URL", func() {
+		tmpDir := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmpDir, "nip42-alias.db")
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer ln.Close()
+		port := ln.Addr().(*net.TCPAddr).Port
+		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthConnect)
+		raw, err := os.ReadFile(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		var doc map[string]any
+		Expect(json.Unmarshal(raw, &doc)).To(Succeed())
+		nip42 := doc["nip42"].(map[string]any)
+		nip42["relay_aliases"] = []string{"wss://Public.EXAMPLE/path/"}
+		rewritten, err := json.Marshal(doc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(cfgPath, rewritten, 0o600)).To(Succeed())
+
+		cfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.NIP42.RelayAliases).To(Equal([]string{"wss://public.example/path"}))
+
+		secPath := relayidentity.ResolvePath(cfgPath)
+		rid, err := relayidentity.Load(secPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
+		Expect(err).NotTo(HaveOccurred())
+		defer closeStore()
+
+		log := zerolog.Nop()
+		srv, err := relay.NewServer(cfg, st, log, rid)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
+
+		go func() { _ = srv.Serve(ln) }()
+		baseWS := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		time.Sleep(30 * time.Millisecond)
+
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+
+		_, data, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var authChal []any
+		Expect(json.Unmarshal(data, &authChal)).To(Succeed())
+		Expect(authChal[0]).To(Equal("AUTH"))
+		challenge, ok := authChal[1].(string)
+		Expect(ok).To(BeTrue())
+
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		unknown := nip42AuthEvent(priv, "wss://evil.example/", challenge, time.Now().Unix())
+		unknownPayload, err := json.Marshal([]any{"AUTH", unknown})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, unknownPayload)).To(Succeed())
+
+		_, rejData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var rej []any
+		Expect(json.Unmarshal(rejData, &rej)).To(Succeed())
+		Expect(rej[0]).To(Equal("OK"))
+		Expect(rej[1]).To(Equal(unknown.ID))
+		Expect(rej[2]).To(Equal(false))
+		rmsg, ok := rej[3].(string)
+		Expect(ok).To(BeTrue())
+		Expect(rmsg).To(ContainSubstring("relay tag does not match"))
+
+		aliasEv := nip42AuthEvent(priv, "wss://public.example/path/", challenge, time.Now().Unix())
+		aliasPayload, err := json.Marshal([]any{"AUTH", aliasEv})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, aliasPayload)).To(Succeed())
+
+		_, okData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okmsg []any
+		Expect(json.Unmarshal(okData, &okmsg)).To(Succeed())
+		Expect(okmsg[0]).To(Equal("OK"))
+		Expect(okmsg[1]).To(Equal(aliasEv.ID))
+		Expect(okmsg[2]).To(Equal(true))
+
+		reqPayload, err := json.Marshal([]any{"REQ", "sub-alias", map[string]any{"kinds": []int{1}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
+		_, eoseData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var eose []any
+		Expect(json.Unmarshal(eoseData, &eose)).To(Succeed())
+		Expect(eose[0]).To(Equal("EOSE"))
+		Expect(eose[1]).To(Equal("sub-alias"))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(srv.Shutdown(ctx)).To(Succeed())
+	})
 })
 
 var _ = Describe("NIP-29 relay groups", func() {

@@ -231,18 +231,8 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("config: nips.enabled must include mandatory nip %d", n)
 		}
 	}
-	if slices.Contains(c.NIPs.Enabled, 42) {
-		if strings.TrimSpace(c.NIP42.RelayURL) == "" {
-			return errors.New("config: nip42.relay_url is required when NIP 42 is enabled")
-		}
-		if _, err := NormalizeNIP42RelayURL(c.NIP42.RelayURL); err != nil {
-			return fmt.Errorf("config: nip42.relay_url: %w", err)
-		}
-	}
-	for _, alias := range c.NIP42.RelayAliases {
-		if _, err := NormalizeNIP42RelayURL(alias); err != nil {
-			return fmt.Errorf("config: nip42.relay_aliases: %w", err)
-		}
+	if err := ApplyNIP42RelayURLs(&c.NIP42.RelayURL, &c.NIP42.RelayAliases, slices.Contains(c.NIPs.Enabled, 42)); err != nil {
+		return err
 	}
 	if c.NIP42.CreatedAtSkewSeconds < 0 {
 		return errors.New("config: nip42.created_at_skew_seconds must be >= 0")

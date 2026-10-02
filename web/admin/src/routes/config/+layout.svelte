@@ -4,6 +4,7 @@
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { adminFetch } from '$lib/admin-api';
 	import { DEFAULT_QUERY_LIMIT_IF_UNSET, DEFAULT_QUERY_PAGE_SIZE_IF_UNSET, parseConfigJson, type AppConfig } from '$lib/app-config';
+	import { applyNip42RelayURLs } from '$lib/relay-websocket-url';
 	import {
 		ADMIN_CONFIG_CTX,
 		type AdminConfigContext,
@@ -296,6 +297,15 @@
 		}
 		const qpsNum = parseInt(qpsTrim, 10);
 		draft.connection_limits.query_page_size = qpsNum;
+
+		const nip42Err = applyNip42RelayURLs(draft.nip42, draft.nips.enabled.includes(42));
+		if (nip42Err) {
+			saveErr = nip42Err;
+			queueMicrotask(() =>
+				document.getElementById('section-nip42')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+			);
+			return;
+		}
 
 		saving = true;
 		try {
