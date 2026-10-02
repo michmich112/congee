@@ -163,7 +163,15 @@ else
 	fi
 	if [[ ! -d "$SRC/.git" ]]; then
 		mkdir -p "$(dirname "$SRC")"
-		git clone --depth 1 "https://github.com/tursodatabase/turso.git" "$SRC"
+		if [[ -d "$SRC" ]] && [[ -n "$(ls -A "$SRC" 2>/dev/null || true)" ]]; then
+			# actions/cache restores only $SRC/target, so this directory exists
+			# without a checkout. Initialize in place and keep the Cargo cache.
+			echo "initializing turso checkout in existing cache dir $SRC"
+			git -C "$SRC" init
+			git -C "$SRC" remote add origin "https://github.com/tursodatabase/turso.git"
+		else
+			git clone --depth 1 "https://github.com/tursodatabase/turso.git" "$SRC"
+		fi
 	fi
 	git -C "$SRC" fetch --depth 1 origin "$TURSO_REF"
 	git -C "$SRC" checkout --detach "$TURSO_REF"
