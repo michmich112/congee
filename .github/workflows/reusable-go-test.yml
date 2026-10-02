@@ -1,5 +1,8 @@
-# Reusable: run Go unit and integration tests (`go test ./...`).
-# Call from CI (PR/main), release, or other workflows via workflow_call.
+# Reusable: run every Go test that is part of the repo.
+# `go test ./...` does not enter the nested sdk/plugin module, does not set
+# TEST_POSTGRES_DSN, and does not pass the e2e build tag. Those run as extra steps.
+# -count=1 forces execution; setup-go's build cache would otherwise replay a previous pass.
+# //go:build bench benchmarks are not part of this workflow.
 name: Reusable — Go test
 
 on:
@@ -22,6 +25,19 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: congee
+          POSTGRES_DB: congee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,7 +46,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ inputs.go-version }}
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            sdk/plugin/go.sum
 
       - uses: dtolnay/rust-toolchain@1.88
 
@@ -41,9 +59,87 @@ jobs:
 
       - run: go mod download && ./scripts/overlay-turso-fts.sh
 
-      - run: CGO_ENABLED=1 go test ./...
+      - name: Go tests
+        run: CGO_ENABLED=1 go test -count=1 ./...
+
+      - name: Create database for legacy postgres meta tests
+        run: |
+          docker run --rm --network host postgres:16 \
+            psql "postgresql://postgres:congee@127.0.0.1:5432/congee?sslmode=disable" \
+            -c "CREATE DATABASE congee_legacy"
+
+      - name: Postgres store tests
+        env:
+          TEST_POSTGRES_DSN: postgres://postgres:congee@127.0.0.1:5432/congee?sslmode=disable
+        run: CGO_ENABLED=1 go test -count=1 -p 1 ./internal/storage/postgres/ -run 'TestPostgres'
+
+      - name: Postgres legacy meta tests
+        env:
+          TEST_POSTGRES_DSN: postgres://postgres:congee@127.0.0.1:5432/congee_legacy?sslmode=disable
+        run: CGO_ENABLED=1 go test -count=1 -p 1 ./internal/db/ -run 'TestLegacyMetaMigrationFromV6PostgresDB'
+
+      - name: Plugin SDK tests
+        run: cd sdk/plugin && go test -count=1 ./...
 
   test-race:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: congee
+          POSTGRES_DB: congee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: ${{ inputs.checkout-fetch-depth }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: |
+            go.sum
+            sdk/plugin/go.sum
+
+      - uses: dtolnay/rust-toolchain@1.88
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/congee/turso-fts/target
+          key: turso-fts-36da5b2e-${{ runner.os }}-${{ runner.arch }}
+
+      - run: go mod download && ./scripts/overlay-turso-fts.sh
+
+      - name: Go tests (race)
+        run: CGO_ENABLED=1 go test -race -count=1 ./...
+
+      - name: Create database for legacy postgres meta tests
+        run: |
+          docker run --rm --network host postgres:16 \
+            psql "postgresql://postgres:congee@127.0.0.1:5432/congee?sslmode=disable" \
+            -c "CREATE DATABASE congee_legacy"
+
+      - name: Postgres store tests (race)
+        env:
+          TEST_POSTGRES_DSN: postgres://postgres:congee@127.0.0.1:5432/congee?sslmode=disable
+        run: CGO_ENABLED=1 go test -race -count=1 -p 1 ./internal/storage/postgres/ -run 'TestPostgres'
+
+      - name: Postgres legacy meta tests (race)
+        env:
+          TEST_POSTGRES_DSN: postgres://postgres:congee@127.0.0.1:5432/congee_legacy?sslmode=disable
+        run: CGO_ENABLED=1 go test -race -count=1 -p 1 ./internal/db/ -run 'TestLegacyMetaMigrationFromV6PostgresDB'
+
+      - name: Plugin SDK tests (race)
+        run: cd sdk/plugin && go test -race -count=1 ./...
+
+  test-nip77-strfry-e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -62,6 +158,9 @@ jobs:
           path: ~/.cache/congee/turso-fts/target
           key: turso-fts-36da5b2e-${{ runner.os }}-${{ runner.arch }}
 
-      - run: go mod download && ./scripts/overlay-turso-fts.sh
+      - run: docker pull ghcr.io/hoytech/strfry:latest
 
-      - run: CGO_ENABLED=1 go test -race ./...
+      # make test-nip77-strfry-e2e builds bin/congee. That target overlays the
+      # FTS-enabled turso library first; without it the process exits on
+      # CREATE INDEX ... USING fts ("unknown module name 'fts'").
+      - run: make test-nip77-strfry-e2e

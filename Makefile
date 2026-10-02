@@ -1,8 +1,8 @@
-.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e bump-version check-version
+.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e test-nip77-strfry-e2e bump-version check-version
 
 VERSION ?= $(shell tr -d '[:space:]' < VERSION)
 
-build:
+build: overlay-turso-fts
 	mkdir -p bin && CGO_ENABLED=1 go build -ldflags "-X github.com/michmich112/congee/internal/version.Version=$(VERSION)" -o bin/congee ./cmd/congee
 
 # Run relay from source plus Vite admin UI (HMR) in one terminal, with colored [relay]/[admin] prefixes.
@@ -15,11 +15,12 @@ run: build
 
 .PHONY: overlay-turso-fts
 overlay-turso-fts:
+	go mod download
 	./scripts/overlay-turso-fts.sh
 
 test: overlay-turso-fts
-	CGO_ENABLED=1 go test ./...
-	cd sdk/plugin && go test ./...
+	CGO_ENABLED=1 go test -count=1 ./...
+	cd sdk/plugin && go test -count=1 ./...
 
 test-integration:
 	go run github.com/onsi/ginkgo/v2/ginkgo -r ./test/integration/...
@@ -33,6 +34,9 @@ proto:
 test-plugin-e2e: build
 	mkdir -p bin && CGO_ENABLED=1 go build -o bin/congee-plugin-fixture ./cmd/congee-plugin-fixture
 	cd test/plugin-e2e && npm install && node run.mjs
+
+test-nip77-strfry-e2e: build
+	CGO_ENABLED=1 go test -tags e2e -timeout 10m -count=1 ./test/nip77-strfry-e2e/
 
 lint:
 	go vet ./...
