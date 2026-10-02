@@ -15,6 +15,7 @@ run: build
 
 .PHONY: overlay-turso-fts
 overlay-turso-fts:
+	go mod download
 	./scripts/overlay-turso-fts.sh
 
 test: overlay-turso-fts
