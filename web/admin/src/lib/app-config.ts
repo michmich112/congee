@@ -8,7 +8,7 @@ export const DEFAULT_QUERY_PAGE_SIZE_IF_UNSET = 100;
 export type AppConfig = {
 	relay: { port: number; instance_id?: string };
 	admin: { port: number };
-	database: { type: string; dsn: string };
+	database: { type: string; dsn: string; meta_dsn?: string; analyze: boolean };
 	logging: { level: string; format: string };
 	audit: { retention_days: number };
 	rate_limits: {
@@ -50,6 +50,8 @@ export type AppConfig = {
 	/** NIP-42 client authentication; required fields apply when NIP 42 is enabled. */
 	nip42: {
 		relay_url: string;
+		/** Other public WebSocket URLs accepted in the NIP-42 AUTH relay tag. */
+		relay_aliases: string[];
 		/** protected_kinds challenges lazily; connect rejects every command until AUTH. */
 		require_auth: Nip42RequireAuth;
 		created_at_skew_seconds: number;
@@ -114,6 +116,7 @@ export function cloneConfig(c: AppConfig): AppConfig {
 
 const defaultNip42 = (): AppConfig['nip42'] => ({
 	relay_url: '',
+	relay_aliases: [],
 	require_auth: 'protected_kinds',
 	created_at_skew_seconds: 600,
 	require_auth_subscribe_kinds: [],
@@ -189,6 +192,17 @@ export function ensureNip42Draft(cfg: AppConfig): void {
 	}
 	if (!Array.isArray(n.allowlisted_pubkeys)) {
 		n.allowlisted_pubkeys = [];
+	}
+	if (!Array.isArray(n.relay_aliases)) {
+		n.relay_aliases = [];
+	}
+}
+
+/** Ensures database.analyze exists. Omitted JSON means off. */
+export function ensureDatabaseDraft(cfg: AppConfig): void {
+	cfg.database ??= { type: 'turso', dsn: './congee.db', analyze: false };
+	if (typeof cfg.database.analyze !== 'boolean') {
+		cfg.database.analyze = false;
 	}
 }
 
@@ -273,6 +287,7 @@ export function parseConfigJson(text: string): AppConfig {
 	ensureNip77Draft(cfg);
 	ensureNipsDraft(cfg);
 	ensureRelayDraft(cfg);
+	ensureDatabaseDraft(cfg);
 	ensureConnectionLimitsDraft(cfg);
 	return cfg;
 }

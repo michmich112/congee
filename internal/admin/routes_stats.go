@@ -50,10 +50,13 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 		dbCtx, cancel := context.WithTimeout(r.Context(), statsDBTimeout)
 		defer cancel()
 
+		analyze := cfg != nil && cfg.Database.Analyze
 		snap := storage.AdminStorageSnapshot{}
 		var persisted []storage.RelayMetricBucket
 		if store != nil {
-			snap, _ = store.AdminStorageSnapshot(dbCtx)
+			if analyze {
+				snap, _ = store.AdminStorageSnapshot(dbCtx)
+			}
 
 			bucketCtx, bucketCancel := context.WithTimeout(r.Context(), statsDBTimeout)
 			since := time.Now().Add(-24 * time.Hour).Unix()
@@ -69,27 +72,35 @@ func handleStats(cfg *config.Config, relaySrv *relay.Server, store storage.Store
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"open_connections":   oc,
-			"relay_port":         cfg.Relay.Port,
-			"admin_port":         cfg.Admin.Port,
-			"relay_version":      version.Version,
-			"subscriptions_open": subs,
-			"started_at_unix":    started,
-			"uptime_sec":         uptime,
-			"relay_counters":     relayCounters,
+			"open_connections":     oc,
+			"relay_port":           cfg.Relay.Port,
+			"admin_port":           cfg.Admin.Port,
+			"relay_version":        version.Version,
+			"subscriptions_open":   subs,
+			"started_at_unix":      started,
+			"uptime_sec":           uptime,
+			"relay_counters":       relayCounters,
 			"recent_query_latency": recentLatency,
-			"storage": map[string]any{
-				"bytes":      snap.Bytes,
-				"meta_bytes": snap.MetaBytes,
-				"events":     snap.Events,
-				"tags":       snap.Tags,
-				"audit":      snap.Audit,
-			},
+			"storage":              storageStatsJSON(analyze, snap),
 			"series": map[string]any{
 				"bucket_sec": 60,
 				"buckets":    bucketsJSON,
 			},
 		})
+	}
+}
+
+func storageStatsJSON(analyze bool, snap storage.AdminStorageSnapshot) map[string]any {
+	if !analyze {
+		return map[string]any{"analysis_enabled": false}
+	}
+	return map[string]any{
+		"analysis_enabled": true,
+		"bytes":            snap.Bytes,
+		"meta_bytes":       snap.MetaBytes,
+		"events":           snap.Events,
+		"tags":             snap.Tags,
+		"audit":            snap.Audit,
 	}
 }
 
@@ -132,14 +143,14 @@ func mergeSeriesBuckets(persisted []storage.RelayMetricBucket, partialStart int6
 
 func relayBucketToJSON(b storage.RelayMetricBucket) map[string]any {
 	m := map[string]any{
-		"bucket_start_unix":     b.BucketStartUnix,
-		"events_stored":         b.EventsStored,
-		"events_rejected":       b.EventsRejected,
-		"req_count":             b.ReqCount,
-		"close_count":           b.CloseCount,
-		"query_ms_sum":          b.QueryMsSum,
-		"query_ms_count":        b.QueryMsCount,
-		"subscriptions_open":    b.SubscriptionsOpen,
+		"bucket_start_unix":  b.BucketStartUnix,
+		"events_stored":      b.EventsStored,
+		"events_rejected":    b.EventsRejected,
+		"req_count":          b.ReqCount,
+		"close_count":        b.CloseCount,
+		"query_ms_sum":       b.QueryMsSum,
+		"query_ms_count":     b.QueryMsCount,
+		"subscriptions_open": b.SubscriptionsOpen,
 	}
 	if b.QueryMsCount > 0 {
 		m["query_ms_avg"] = float64(b.QueryMsSum) / float64(b.QueryMsCount)

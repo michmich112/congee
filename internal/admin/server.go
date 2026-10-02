@@ -13,7 +13,7 @@
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
-//	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage snapshot, series.buckets (UTC minutes), recent_query_latency; ports + relay_version
+//	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage (size details only when database.analyze is on), series.buckets (UTC minutes), recent_query_latency; ports + relay_version
 //	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
 //	GET    /api/relay-assets/icon|banner — hosted NIP-11 image preview (default art or upload)
 //	POST   /api/relay-assets/icon|banner — multipart file upload; sets that image source to upload
@@ -60,7 +60,7 @@ import (
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
-//	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{bytes,events,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
+//	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{analysis_enabled,bytes?,events?,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
 //	GET      /relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
 //	GET      /relay-assets/icon|banner — hosted NIP-11 image bytes for the admin preview
 //	POST     /relay-assets/icon|banner — multipart upload; writes the file and sets source to upload

@@ -72,6 +72,7 @@
 		relay_counters?: Record<string, number>;
 		recent_query_latency?: LatencySample[];
 		storage?: {
+			analysis_enabled?: boolean;
 			bytes?: number;
 			meta_bytes?: number;
 			events?: number;
@@ -233,44 +234,55 @@
 				<Card.Header class="pb-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<Card.Description>Storage (DB)</Card.Description>
-						<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage}>
-							{#snippet content()}
-								<table class="w-full border-collapse text-xs">
-									<thead>
-										<tr class="text-muted-foreground border-border border-b">
-											<th class="pr-4 pb-1.5 text-left font-medium"></th>
-											<th class="pr-4 pb-1.5 text-right font-medium">Size</th>
-											<th class="pb-1.5 text-right font-medium">Rows (approx.)</th>
-										</tr>
-									</thead>
-									<tbody class="text-popover-foreground">
-										<tr>
-											<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Events DB</td>
-											<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
-												{formatBytes(stats.storage?.bytes ?? 0)}
-											</td>
-											<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
-												{formatCompactCount(stats.storage?.events ?? 0)} events ·
-												{formatCompactCount(stats.storage?.tags ?? 0)} tags
-											</td>
-										</tr>
-										<tr>
-											<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Meta DB</td>
-											<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
-												{formatBytes(stats.storage?.meta_bytes ?? 0)}
-											</td>
-											<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
-												{formatCompactCount(stats.storage?.audit ?? 0)} audit
-											</td>
-										</tr>
-									</tbody>
-								</table>
-							{/snippet}
-						</StatInfoIcon>
+						{#if stats.storage?.analysis_enabled}
+							<StatInfoIcon info={DASHBOARD_METRIC_INFO.storage}>
+								{#snippet content()}
+									<table class="w-full border-collapse text-xs">
+										<thead>
+											<tr class="text-muted-foreground border-border border-b">
+												<th class="pr-4 pb-1.5 text-left font-medium"></th>
+												<th class="pr-4 pb-1.5 text-right font-medium">Size</th>
+												<th class="pb-1.5 text-right font-medium">Rows (approx.)</th>
+											</tr>
+										</thead>
+										<tbody class="text-popover-foreground">
+											<tr>
+												<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Events DB</td>
+												<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
+													{formatBytes(stats?.storage?.bytes ?? 0)}
+												</td>
+												<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
+													{formatCompactCount(stats?.storage?.events ?? 0)} events ·
+													{formatCompactCount(stats?.storage?.tags ?? 0)} tags
+												</td>
+											</tr>
+											<tr>
+												<td class="pr-4 pt-1.5 font-medium whitespace-nowrap">Meta DB</td>
+												<td class="pr-4 pt-1.5 text-right tabular-nums whitespace-nowrap">
+													{formatBytes(stats?.storage?.meta_bytes ?? 0)}
+												</td>
+												<td class="pt-1.5 text-right tabular-nums whitespace-nowrap">
+													{formatCompactCount(stats?.storage?.audit ?? 0)} audit
+												</td>
+											</tr>
+										</tbody>
+									</table>
+								{/snippet}
+							</StatInfoIcon>
+						{/if}
 					</div>
-					<Card.Title class="text-xl tabular-nums leading-snug">
-						{formatBytes((stats.storage?.bytes ?? 0) + (stats.storage?.meta_bytes ?? 0))}
-					</Card.Title>
+					{#if stats.storage?.analysis_enabled}
+						<Card.Title class="text-xl tabular-nums leading-snug">
+							{formatBytes((stats.storage?.bytes ?? 0) + (stats.storage?.meta_bytes ?? 0))}
+						</Card.Title>
+					{:else}
+						<p class="text-sm leading-snug text-muted-foreground">
+							Turn on database analysis to see the size of this relay's information.
+						</p>
+						<Button href="/config/storage" variant="outline" size="sm" class="mt-2 w-fit">
+							Open Storage settings
+						</Button>
+					{/if}
 				</Card.Header>
 			</Card.Root>
 		</div>

@@ -9,6 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
+	import { Switch } from '$lib/components/ui/switch';
 
 	const ctx = getAdminConfig();
 
@@ -57,6 +58,36 @@
 						value={draft().database.dsn}
 						oninput={(e) => {
 							draft().database.dsn = e.currentTarget.value;
+							ctx.markDirty();
+						}}
+					/>
+				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="text-base">Database analysis</Card.Title>
+				<Card.Description>
+					Off by default. When on, the relay periodically analyzes its databases so the dashboard can show the
+					size of this relay's information. Saving restarts the relay.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<div
+					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="space-y-1">
+						<Label for="db-analyze" class="text-sm font-medium">Analyze the database</Label>
+						<p class="text-xs text-muted-foreground">
+							Leave this off unless you want storage size and approximate row counts on the dashboard.
+						</p>
+					</div>
+					<Switch
+						id="db-analyze"
+						checked={draft().database.analyze}
+						onCheckedChange={(on) => {
+							draft().database.analyze = on;
 							ctx.markDirty();
 						}}
 					/>
