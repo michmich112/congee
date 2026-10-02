@@ -1,5 +1,6 @@
-# Run the same Go checks as the main and rc release workflows on every push to any branch (`go test ./...`
-# covers packages under ./test/..., including Ginkgo integration specs).
+# Run the same Go checks as the main and rc release workflows on every push to any branch.
+# That includes `go test -count=1 ./...` (Ginkgo specs under ./test/...), the plugin SDK module,
+# PostgreSQL tests, and the NIP-77 strfry end-to-end test. `//go:build bench` benchmarks stay out of this workflow.
 name: Go test (push)
 
 on:

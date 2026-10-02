@@ -268,7 +268,8 @@ func TestPostgresFilterLimit(t *testing.T) {
 		}
 	}
 
-	f := nostr.Filter{Kinds: []int{1}}
+	author := nostrRepeat('b', 64)
+	f := nostr.Filter{Kinds: []int{1}, Authors: []string{author}}
 	out, err := st.QueryEvents(ctx, []nostr.Filter{f})
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +279,7 @@ func TestPostgresFilterLimit(t *testing.T) {
 	}
 
 	lim := 3
-	f = nostr.Filter{Kinds: []int{1}, Limit: &lim}
+	f = nostr.Filter{Kinds: []int{1}, Authors: []string{author}, Limit: &lim}
 	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +289,7 @@ func TestPostgresFilterLimit(t *testing.T) {
 	}
 
 	zero := 0
-	f = nostr.Filter{Kinds: []int{1}, Limit: &zero}
+	f = nostr.Filter{Kinds: []int{1}, Authors: []string{author}, Limit: &zero}
 	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +299,7 @@ func TestPostgresFilterLimit(t *testing.T) {
 	}
 
 	neg := -1
-	f = nostr.Filter{Kinds: []int{1}, Limit: &neg}
+	f = nostr.Filter{Kinds: []int{1}, Authors: []string{author}, Limit: &neg}
 	out, err = st.QueryEvents(ctx, []nostr.Filter{f})
 	if err != nil {
 		t.Fatal(err)
