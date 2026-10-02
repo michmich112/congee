@@ -18,8 +18,11 @@ fi
 
 MOD="$(go env GOMODCACHE)/github.com/tursodatabase/turso-go-platform-libs@${PLATFORM_LIBS_VERSION}"
 if [[ ! -d "$MOD/libs" ]]; then
+	echo "platform libs module is not downloaded at $MOD; running go mod download" >&2
+	go mod download
+fi
+if [[ ! -d "$MOD/libs" ]]; then
 	echo "platform libs module is not downloaded at $MOD" >&2
-	echo "run: go mod download" >&2
 	exit 1
 fi
 

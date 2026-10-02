@@ -72,4 +72,4 @@ If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync)
 
 ## Testing upstream sync
 
-`make test-nip77-strfry-e2e` builds Congee, starts `ghcr.io/hoytech/strfry:latest` with 1100 imported events, and checks that a fresh Congee upstream job imports them. It needs Docker. The same job runs in GitHub Actions on pull requests to `main`. Default `go test ./...` does not start strfry.
+`make test-nip77-strfry-e2e` builds Congee (after the Turso FTS overlay), starts `ghcr.io/hoytech/strfry:latest` with 1100 imported events, and checks that a fresh Congee upstream job imports them. It needs Docker. The same job runs in GitHub Actions on every push, and on pull requests to `main` or `develop`. Default `go test ./...` does not start strfry because those files use the `e2e` build tag.

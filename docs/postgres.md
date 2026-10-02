@@ -54,7 +54,7 @@ Stop: `docker stop congee-pg`.
 
 ## Tests
 
-Integration tests for the PostgreSQL store and notifier run only when **`TEST_POSTGRES_DSN`** is set to a reachable database (schema is created automatically). Without it, those tests are skipped; `go test ./...` still passes.
+Integration tests for the PostgreSQL store and notifier run only when **`TEST_POSTGRES_DSN`** is set to a reachable database (schema is created automatically). Without it, those tests are skipped; `go test ./...` still passes. GitHub Actions starts Postgres 16 and sets that variable, so the tests run on every push.
 
 `TestPostgresManyTagsJSONBRoundTrip` saves a kind **5**-style event with many `e` tags and asserts `SaveEvent` + `QueryEvents` round-trips `event_tags.full_json` as a JSON **array** (guards against Bun double-encoding JSONB when using a plain `string` field).
 
