@@ -14,7 +14,8 @@ func TestBuildVectorReconcileRoundTrip(t *testing.T) {
 	}
 	server := NewServerNegentropy(BuildVector(items), 1<<20)
 
-	client := NewClientNegentropy(BuildVector(items[:2]), 1<<20)
+	client := NewSyncClient(BuildVector(items[:2]), 1<<20)
+	defer client.Stop()
 	clientStart := client.Start()
 
 	out, err := server.Reconcile(clientStart)
@@ -38,9 +39,10 @@ func TestBuildVectorEmpty(t *testing.T) {
 		t.Fatalf("want 0 items, got %d", vec.Size())
 	}
 	neg := NewServerNegentropy(vec, 1<<20)
-	client := NewClientNegentropy(BuildVector([]storage.SyncItem{
+	client := NewSyncClient(BuildVector([]storage.SyncItem{
 		{ID: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", CreatedAt: 1},
 	}), 1<<20)
+	defer client.Stop()
 	out, err := neg.Reconcile(client.Start())
 	if err != nil {
 		t.Fatal(err)

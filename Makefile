@@ -1,4 +1,4 @@
-.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e bump-version check-version
+.PHONY: build run dev test test-integration test-perf lint ui-dev ui-build docker-build proto test-plugin-e2e test-nip77-strfry-e2e bump-version check-version
 
 VERSION ?= $(shell tr -d '[:space:]' < VERSION)
 
@@ -33,6 +33,9 @@ proto:
 test-plugin-e2e: build
 	mkdir -p bin && CGO_ENABLED=1 go build -o bin/congee-plugin-fixture ./cmd/congee-plugin-fixture
 	cd test/plugin-e2e && npm install && node run.mjs
+
+test-nip77-strfry-e2e: build
+	CGO_ENABLED=1 go test -tags e2e -timeout 10m -count=1 ./test/nip77-strfry-e2e/
 
 lint:
 	go vet ./...

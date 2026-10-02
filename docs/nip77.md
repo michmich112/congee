@@ -26,7 +26,7 @@ Restart the relay after changing NIPs.
 | `backpressure_req_queue_depth` | `64` | Reject NEG-OPEN when REQ queue depth exceeds (`0` = off) |
 | `upstream_enabled` | `true` | Master switch for scheduled upstream pull |
 | `upstream_pause_when_busy` | `true` | Skip upstream jobs when relay is under REQ backpressure |
-| `upstream_message_timeout_seconds` | `60` | How long to wait for each upstream `NEG-MSG` (including the first after `NEG-OPEN`). `0` = default 60. Does not apply to inbound sessions (`session_idle_timeout_seconds`) or post-sync `REQ` fetches. |
+| `upstream_message_timeout_seconds` | `60` | How long to wait for each upstream `NEG-MSG` and post-sync `REQ` fetch. `0` = default 60. Does not apply to inbound sessions (`session_idle_timeout_seconds`). |
 | `upstreams[]` | `[]` | Scheduled pull from other relays |
 
 ## Protocol (inbound)
@@ -53,6 +53,8 @@ Configure `nip77.upstreams` with `wss://` URLs, JSON filters, and `interval_seco
 
 Each newly stored import is delivered to plugins whose listen subscriptions match the event kind (`OnStoredEvent` and/or `Observe` EVENT), the same match rules as a client `EVENT`. Imports are not run through the WebSocket EVENT validator chain. Duplicate IDs already in the store are skipped. On multi-instance PostgreSQL, other processes receive the same plugin notify via imported-event fanout (same-origin LISTEN is filtered, so the importer notifies plugins at persist time).
 
+Each missing event gets at most three fetch, signature-verification, and save attempts, with short bounded delays. A failed WebSocket fetch reconnects before retrying. A read failure on one filter reconnects before the next filter, so that timeout does not fail the rest of the pull. The job reports failure when any event remains incomplete; the next scheduled run reconciles again. Per-upstream status, logs, and audit entries aggregate needed, imported, skipped, and failed events. A failed run never emits a sync-complete audit entry.
+
 If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync), Congee signs a kind-22242 AUTH event with **this relay’s** identity (`relay.secrets.json` / NIP-11 `self`) and replies. Relays that do not challenge are unchanged (a 2s wait after connect). The upstream may still reject AUTH if it only allows listed pubkeys.
 
 ## Observability
@@ -67,3 +69,7 @@ If the upstream sends a NIP-42 `["AUTH", challenge]` (on connect or during sync)
 - NIP-50 search filters are rejected for negentropy
 - NIP-29 per-connection visibility is not applied during sync (DB contents matching the filter are used)
 - Persistent negentropy caches (strfry-style) are not implemented
+
+## Testing upstream sync
+
+`make test-nip77-strfry-e2e` builds Congee, starts `ghcr.io/hoytech/strfry:latest` with 1100 imported events, and checks that a fresh Congee upstream job imports them. It needs Docker. The same job runs in GitHub Actions on pull requests to `main`. Default `go test ./...` does not start strfry.

@@ -21,8 +21,3 @@ func BuildVector(items []storage.SyncItem) *vector.Vector {
 func NewServerNegentropy(vec *vector.Vector, frameSizeLimit int) *negentropy.Negentropy {
 	return negentropy.New(vec, frameSizeLimit)
 }
-
-// NewClientNegentropy wraps a sealed vector for client-side reconciliation (upstream pull).
-func NewClientNegentropy(vec *vector.Vector, frameSizeLimit int) *negentropy.Negentropy {
-	return negentropy.New(vec, frameSizeLimit)
-}
