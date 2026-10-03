@@ -221,3 +221,95 @@ func TestUpstreamReadFailureRedialsNextFilter(t *testing.T) {
 		t.Fatalf("second-filter event missing: %v %v", has, err)
 	}
 }
+
+func TestUpstreamRedialFailureKeepsFetchError(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "events.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+	key, _ := btcec.PrivKeyFromBytes([]byte{13})
+	ev := &nostr.Event{PubKey: hex.EncodeToString(key.PubKey().SerializeCompressed()[1:]), CreatedAt: 300, Kind: 1, Content: "missing"}
+	if err := ev.Sign(key); err != nil {
+		t.Fatal(err)
+	}
+	var fetches atomic.Int32
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		neg := nip77.NewServerNegentropy(nip77.BuildVector([]storage.SyncItem{{ID: ev.ID, CreatedAt: ev.CreatedAt}}), 1<<20)
+		for {
+			var raw []json.RawMessage
+			if err := conn.ReadJSON(&raw); err != nil {
+				return
+			}
+			if len(raw) < 2 {
+				continue
+			}
+			typ, sub := jsonStringAt(raw, 0), jsonStringAt(raw, 1)
+			switch typ {
+			case "NEG-OPEN":
+				if len(raw) < 4 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 3))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "NEG-MSG":
+				if len(raw) < 3 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 2))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "REQ":
+				fetches.Add(1)
+				if err := conn.WriteJSON([]any{"EOSE", sub}); err != nil {
+					return
+				}
+				// The client CLOSEs after EOSE. Stop accepting dials only after that
+				// frame is in, so the fetch error is the missing event, not a torn read.
+				_, _, _ = conn.ReadMessage()
+				_ = upstream.Listener.Close()
+				return
+			}
+		}
+	}))
+	defer upstream.Close()
+	cfg := config.DefaultConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 77}
+	cfg.NIP77.UpstreamEnabled = true
+	cfg.NIP77.UpstreamAuthWaitSeconds = 0
+	cfg.NIP77.UpstreamMessageTimeoutSeconds = 1
+	u := config.NIP77Upstream{Name: "redial-down", URL: "ws" + strings.TrimPrefix(upstream.URL, "http"), Enabled: true,
+		Filters: []json.RawMessage{json.RawMessage(`{"kinds":[1]}`)}}
+	sch := NewScheduler(cfg, st, nil, nil, zerolog.Nop())
+	sch.runOnce(ctx, u)
+	got := sch.Status()
+	if len(got) != 1 || got[0].LastFailed != 1 || got[0].LastImported != 0 {
+		t.Fatalf("redial failure should still count the missing event: %+v", got)
+	}
+	if !strings.Contains(got[0].LastError, "event not found") {
+		t.Fatalf("fetch error should survive a failed redial, got %q", got[0].LastError)
+	}
+	if n := fetches.Load(); n != 1 {
+		t.Fatalf("failed redials must not send more REQs, got %d", n)
+	}
+}
