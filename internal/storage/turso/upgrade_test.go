@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -106,6 +108,33 @@ func TestUpgradeV7FTS5KeepsEvents(t *testing.T) {
 	}
 }
 
+func TestUpgradeV7FTSUnicodeProbe(t *testing.T) {
+	skipNoDriver(t)
+	if !sqlitewriter.HasLibsqlDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "events.db")
+	writeV7Rows(t, ctx, path, []v7Row{{id: "id-cafe", content: "café"}})
+
+	st, err := Open(ctx, path, nil, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var uv int
+	if err := st.DB().QueryRowContext(ctx, `PRAGMA user_version`).Scan(&uv); err != nil {
+		t.Fatal(err)
+	}
+	if uv != 8 {
+		t.Fatalf("user_version %d", uv)
+	}
+	found, err := st.SearchEvents(ctx, "café", nostr.Filter{})
+	if err != nil || len(found) != 1 || found[0].ID != "id-cafe" {
+		t.Fatalf("café search: %+v %v", found, err)
+	}
+}
+
 func TestSearchNoPorterStem(t *testing.T) {
 	skipNoDriver(t)
 	ctx := context.Background()
@@ -170,6 +199,19 @@ func TestConcurrentReadsDuringWrite(t *testing.T) {
 
 func writeV7Events(t *testing.T, ctx context.Context, path string) {
 	t.Helper()
+	writeV7Rows(t, ctx, path, []v7Row{
+		{id: "id-hello", content: "say hello world"},
+		{id: "id-run", content: "running late"},
+	})
+}
+
+type v7Row struct {
+	id      string
+	content string
+}
+
+func writeV7Rows(t *testing.T, ctx context.Context, path string, rows []v7Row) {
+	t.Helper()
 	db, _, err := sqlitewriter.OpenLibsqlHandles(ctx, path, zerolog.Nop())
 	if err != nil {
 		t.Fatal(err)
@@ -197,13 +239,24 @@ func writeV7Events(t *testing.T, ctx context.Context, path string) {
 		`CREATE TRIGGER events_ai_fts AFTER INSERT ON events BEGIN
 			INSERT INTO event_fts(event_id, content) VALUES (new.id, new.content);
 		END`,
-		`INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES ('id-hello', 'pk', 1, 1, 'say hello world', 'sig')`,
-		`INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES ('id-run', 'pk', 2, 1, 'running late', 'sig')`,
-		`PRAGMA user_version = 7`,
 	}
 	for _, q := range stmts {
 		if err := sqlitewriter.ExecSQL(ctx, db, q); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for i, row := range rows {
+		q := fmt.Sprintf(
+			`INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES ('%s', 'pk', %d, 1, '%s', 'sig')`,
+			strings.ReplaceAll(row.id, "'", "''"),
+			i+1,
+			strings.ReplaceAll(row.content, "'", "''"),
+		)
+		if err := sqlitewriter.ExecSQL(ctx, db, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sqlitewriter.ExecSQL(ctx, db, `PRAGMA user_version = 7`); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/rs/zerolog"
 	"github.com/uptrace/bun"
@@ -336,16 +337,23 @@ func verifyFTSBackfill(ctx context.Context, db *bun.DB, engine string) error {
 		if err := rows.Scan(&id, &content); err != nil {
 			return err
 		}
-		token := indexableToken(content)
-		if token == "" {
+		tokens := indexableTokens(content)
+		if len(tokens) == 0 {
 			continue
 		}
-		phrase := `"` + strings.ReplaceAll(token, `"`, `""`) + `"`
-		var n int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE id = ? AND fts_match(content, ?)`, id, phrase).Scan(&n); err != nil {
-			return fmt.Errorf("%s: migrate v7->v8: fts backfill: %w", engine, err)
+		matched := false
+		for _, token := range tokens {
+			phrase := `"` + strings.ReplaceAll(token, `"`, `""`) + `"`
+			var n int
+			if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE id = ? AND fts_match(content, ?)`, id, phrase).Scan(&n); err != nil {
+				return fmt.Errorf("%s: migrate v7->v8: fts backfill: %w", engine, err)
+			}
+			if n == 1 {
+				matched = true
+				break
+			}
 		}
-		if n != 1 {
+		if !matched {
 			return fmt.Errorf("%s: migrate v7->v8: existing event %s was not indexed", engine, id)
 		}
 		return nil
@@ -356,16 +364,32 @@ func verifyFTSBackfill(ctx context.Context, db *bun.DB, engine string) error {
 	return nil
 }
 
-func indexableToken(content string) string {
-	field := strings.FieldsFunc(content, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
-	})
-	for _, tok := range field {
-		if tok != "" && len(tok) <= 40 {
-			return tok
+// indexableTokens returns tokens the Turso default FTS tokenizer would keep:
+// Unicode letters and digits, lowercased, at most 40 bytes. ASCII-only slicing
+// turns "café" into "caf", which is not an indexed token and fails this check.
+func indexableTokens(content string) []string {
+	var tokens []string
+	var b strings.Builder
+	flush := func() {
+		if b.Len() == 0 {
+			return
 		}
+		tok := strings.ToLower(b.String())
+		b.Reset()
+		if len(tok) > 40 {
+			return
+		}
+		tokens = append(tokens, tok)
 	}
-	return ""
+	for _, r := range content {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return tokens
 }
 
 func createTursoContentFTS(ctx context.Context, db *bun.DB, engine string) error {
