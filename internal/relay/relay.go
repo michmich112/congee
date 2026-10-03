@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -51,6 +50,8 @@ type Server struct {
 
 	plugins plugin.Runtime
 
+	configPath string
+
 	negQueue          *NegQueue
 	negLoadSlots      chan struct{}
 	negActiveSessions atomic.Int32
@@ -89,16 +90,35 @@ func NewServer(cfg *config.Config, store storage.Store, log zerolog.Logger, rela
 		}
 		return nil
 	})
-	mux := http.NewServeMux()
-	mux.Handle("/health", &HealthHandler{Store: store})
-	mux.HandleFunc("/", s.handleRoot)
 	s.http = &http.Server{
-		Handler: mux,
+		Handler: s.routes(),
 		// Hijacked WebSocket connections manage their own deadlines.
 		ReadTimeout:  0,
 		WriteTimeout: 0,
 	}
 	return s, nil
+}
+
+// SetConfigPath records the JSON config path so uploaded NIP-11 images can be read
+// from nip11-assets beside that file.
+func (s *Server) SetConfigPath(path string) {
+	if s == nil {
+		return
+	}
+	s.configPath = path
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /assets/icon", func(w http.ResponseWriter, r *http.Request) {
+		s.serveNIP11Asset(w, r, config.NIP11AssetIcon)
+	})
+	mux.HandleFunc("GET /assets/banner", func(w http.ResponseWriter, r *http.Request) {
+		s.serveNIP11Asset(w, r, config.NIP11AssetBanner)
+	})
+	mux.Handle("/health", &HealthHandler{Store: s.store})
+	mux.HandleFunc("/", s.handleRoot)
+	return mux
 }
 
 // SetPluginRuntime attaches the plugin manager (nil-safe). Listen enqueue never blocks the relay.
@@ -207,7 +227,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if AcceptsNostrJSON(r) {
-		(&NIP11Handler{Cfg: s.cfg}).ServeHTTP(w, r)
+		(&NIP11Handler{Cfg: s.cfg, RelayID: s.relayID}).ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Connection", "Upgrade")
@@ -405,7 +425,7 @@ func (s *Server) serveWS(nc net.Conn, r *http.Request, resolvedPeerIP string, us
 	})
 
 	go c.writeLoop()
-	if slices.Contains(s.cfg.NIPs.Enabled, 42) && s.cfg.NIP42.SendChallengeOnConnect {
+	if config.NIP11AuthRequired(s.cfg) {
 		_ = nip42EnqueueAuthChallenge(c, s.cfg)
 	}
 	if useFlate {

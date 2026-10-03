@@ -1,10 +1,10 @@
-# Pull requests targeting main: verify the Docker image builds for the same
-# platforms as nightly. Does not push to GHCR.
-name: PR — Docker build (main)
+# Pull requests targeting main or rc: verify the Docker image builds for
+# linux/amd64 and linux/arm64. Does not push to GHCR.
+name: PR — Docker build
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, rc]
 
 permissions:
   contents: read
@@ -20,3 +20,4 @@ jobs:
       push: false
       tag_latest: false
       platforms: linux/amd64,linux/arm64
+      cache_scope: pr

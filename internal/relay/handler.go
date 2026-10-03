@@ -278,6 +278,15 @@ func (c *Conn) dispatchPayload(payload []byte) {
 		_ = c.sendNotice("invalid message")
 		return
 	}
+	// Reject before idle accounting and rate limits. A refused EVENT must not
+	// exempt the connection from the idle sweep, and a refused REQ must not
+	// consume the same budget AUTH uses.
+	if nip42ConnectGate(c) {
+		if _, ok := msg.(*nostr.AuthMessage); !ok {
+			c.rejectUntilConnectAuth(msg)
+			return
+		}
+	}
 	c.noteInboundAfterParse(msg)
 	switch msg.(type) {
 	case *nostr.EventMessage:

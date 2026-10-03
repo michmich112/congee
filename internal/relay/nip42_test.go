@@ -109,3 +109,33 @@ func TestValidateNIP42PublishPolicy(t *testing.T) {
 		t.Fatal("expected restricted")
 	}
 }
+
+func TestVerifyNIP42ConfiguredAliases(t *testing.T) {
+	priv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	cfg := &config.Config{NIP42: config.NIP42Section{RelayURL: "wss://primary.example/", RelayAliases: []string{"wss://alias.example/"}}}
+	for _, tc := range []struct {
+		url, challenge string
+		allowed        bool
+	}{
+		{"wss://primary.example/", "challenge", true},
+		{"wss://alias.example/", "challenge", true},
+		{"wss://untrusted.example/", "challenge", false},
+		{"wss://alias.example/", "wrong", false},
+	} {
+		ev := nostr.Event{PubKey: hex.EncodeToString(priv.PubKey().SerializeCompressed()[1:]), Kind: nip42AuthEventKind, CreatedAt: now.Unix(), Tags: [][]string{{"relay", tc.url}, {"challenge", tc.challenge}}}
+		if _, err := ev.ComputeID(); err != nil {
+			t.Fatal(err)
+		}
+		if err := ev.Sign(priv); err != nil {
+			t.Fatal(err)
+		}
+		err := verifyNIP42AuthEvent(cfg, &ev, "challenge", now)
+		if (err == nil) != tc.allowed {
+			t.Errorf("url %s challenge %s: allowed=%v err=%v", tc.url, tc.challenge, tc.allowed, err)
+		}
+	}
+}

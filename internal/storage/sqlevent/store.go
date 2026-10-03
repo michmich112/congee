@@ -63,17 +63,20 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 	}
 	err := s.runWrite(ctx, "SaveEvent", func(ctx context.Context, db bun.IDB) error {
 		return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			conditionalInsert := false
 			switch nostr.ClassifyKind(ev.Kind) {
 			case nostr.KindReplaceable:
+				conditionalInsert = true
 				if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
-					Where("pubkey = ? AND kind = ?", ev.PubKey, ev.Kind).
+					Where("pubkey = ? AND kind = ? AND (created_at < ? OR (created_at = ? AND id > ?))", ev.PubKey, ev.Kind, ev.CreatedAt, ev.CreatedAt, ev.ID).
 					Exec(ctx); err != nil {
 					return err
 				}
 			case nostr.KindAddressable:
+				conditionalInsert = true
 				dt := extractDTag(ev.Tags)
 				if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
-					Where("pubkey = ? AND kind = ? AND d_tag = ?", ev.PubKey, ev.Kind, dt).
+					Where("pubkey = ? AND kind = ? AND d_tag = ? AND (created_at < ? OR (created_at = ? AND id > ?))", ev.PubKey, ev.Kind, dt, ev.CreatedAt, ev.CreatedAt, ev.ID).
 					Exec(ctx); err != nil {
 					return err
 				}
@@ -88,7 +91,26 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 				Sig:       ev.Sig,
 				DTag:      extractDTag(ev.Tags),
 			}
-			if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
+			if conditionalInsert {
+				where := "pubkey = ? AND kind = ?"
+				args := []any{row.ID, row.Pubkey, row.CreatedAt, row.Kind, row.Content, row.Sig, row.DTag, row.Pubkey, row.Kind}
+				if nostr.ClassifyKind(ev.Kind) == nostr.KindAddressable {
+					where += " AND d_tag = ?"
+					args = append(args, row.DTag)
+				}
+				result, err := tx.ExecContext(ctx,
+					"INSERT INTO events (id, pubkey, created_at, kind, content, sig, d_tag) SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM events WHERE "+where+")", args...)
+				if err != nil {
+					return err
+				}
+				inserted, err := result.RowsAffected()
+				if err != nil {
+					return err
+				}
+				if inserted == 0 {
+					return storage.ErrStaleReplaceable
+				}
+			} else if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
 				return err
 			}
 			tags := make([]storage.EventTagRow, 0, len(ev.Tags))
@@ -345,7 +367,7 @@ func (s *Store) HasEventID(ctx context.Context, id string) (bool, error) {
 	return n > 0, err
 }
 
-// SearchEvents runs FTS5 on mirrored content (NIP-50), ordered by bm25 rank (lower is better).
+// SearchEvents runs Turso full-text search on event content (NIP-50), ordered by BM25 rank (higher is better).
 func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraints nostr.Filter) ([]*nostr.Event, error) {
 	q := strings.TrimSpace(searchQuery)
 	if q == "" {
@@ -360,11 +382,11 @@ func (s *Store) SearchEvents(ctx context.Context, searchQuery string, constraint
 	var sb strings.Builder
 	sb.WriteString(`SELECT events.id, events.pubkey, events.created_at, events.kind, events.content, events.sig, events.d_tag
 FROM events
-INNER JOIN event_fts ON event_fts.event_id = events.id
-WHERE event_fts MATCH ?`)
+WHERE fts_match(events.content, ?)`)
 	args := []interface{}{matchExpr}
 	sqliteAppendSearchFilter(&sb, &args, &cons)
-	sb.WriteString(` ORDER BY bm25(event_fts) ASC, events.id ASC`)
+	sb.WriteString(` ORDER BY fts_score(events.content, ?) DESC, events.id ASC`)
+	args = append(args, matchExpr)
 	if lim := storage.FilterSQLLimit(&cons, true); lim != nil {
 		sb.WriteString(fmt.Sprintf(" LIMIT %d", *lim))
 	}

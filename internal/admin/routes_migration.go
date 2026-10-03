@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 
 	"github.com/michmich112/congee/internal/config"
-	"github.com/michmich112/congee/internal/relayidentity"
 	"github.com/michmich112/congee/internal/storage"
 	"github.com/michmich112/congee/internal/storage/postgres"
 	"github.com/michmich112/congee/internal/storage/turso"
@@ -156,7 +155,7 @@ func openMigrationSource(ctx context.Context, dbType, dsn, congeeInstanceID stri
 // applyPostMigrationDatabaseConfig updates database.type and database.dsn in the JSON config
 // to match the migration target, records a changelog row on the running relay meta store, and
 // returns whether the running relay must restart to pick up the new file.
-func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, target migrationEndpoint, relayID *relayidentity.Identity) (restartNeeded bool, err error) {
+func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, target migrationEndpoint) (restartNeeded bool, err error) {
 	cfgMu.Lock()
 	defer cfgMu.Unlock()
 
@@ -176,11 +175,6 @@ func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu
 	cfg.Database.DSN = strings.TrimSpace(target.DSN)
 	if err := cfg.Validate(); err != nil {
 		return false, err
-	}
-	if relayID != nil {
-		if p := strings.TrimSpace(cfg.NIP11.PubKey); p != "" && !strings.EqualFold(p, relayID.PubKeyHex()) {
-			return false, fmt.Errorf("nip11.pubkey must match relay identity %s or be empty", relayID.PubKeyHex())
-		}
 	}
 
 	needRestart := configRestartNeeded(prev, cfg)
@@ -202,7 +196,7 @@ func applyPostMigrationDatabaseConfig(ctx context.Context, cfgPath string, cfgMu
 	return needRestart, nil
 }
 
-func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, scheduleRestart func(), relayID *relayidentity.Identity) http.HandlerFunc {
+func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex, meta storage.MetaStore, scheduleRestart func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -320,7 +314,7 @@ func handleMigrationStart(log zerolog.Logger, cfgPath string, cfgMu *sync.Mutex,
 		var cfgErr error
 		if req.MakeTargetPrimary {
 			l.Debug().Msg("make_target_primary: updating config file to target database")
-			restartNeeded, cfgErr = applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, meta, req.Target, relayID)
+			restartNeeded, cfgErr = applyPostMigrationDatabaseConfig(ctx, cfgPath, cfgMu, meta, req.Target)
 			if cfgErr != nil {
 				l.Warn().Err(cfgErr).Msg("migration copy ok but config update failed")
 			} else if restartNeeded && scheduleRestart != nil {

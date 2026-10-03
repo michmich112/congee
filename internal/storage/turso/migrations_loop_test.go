@@ -23,7 +23,7 @@ func execOnLibsqlFile(t *testing.T, ctx context.Context, path string, stmts []st
 	}
 }
 
-// TestRunMigrationsLoopsV6ToV7 builds a v7 file, re-adds ws_connection_sessions with user_version 6, and checks Open drops meta tables.
+// TestRunMigrationsLoopsV6ToV7 builds a v6 events file that still has meta tables and checks Open drops them.
 func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	skipNoDriver(t)
 	ctx := context.Background()
@@ -31,16 +31,25 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "loop.db")
 
-	s, err := Open(ctx, path, nil, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-
 	execOnLibsqlFile(t, ctx, path, []string{
-		`CREATE TABLE IF NOT EXISTS ws_connection_sessions (
+		`CREATE TABLE events (
+			id TEXT NOT NULL PRIMARY KEY,
+			pubkey TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			kind INTEGER NOT NULL,
+			content TEXT NOT NULL,
+			sig TEXT NOT NULL,
+			d_tag TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE event_tags (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id TEXT NOT NULL,
+			pos INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT NOT NULL DEFAULT '',
+			full_json TEXT NOT NULL
+		)`,
+		`CREATE TABLE ws_connection_sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			conn_id TEXT NOT NULL,
 			peer_ip TEXT NOT NULL,
@@ -52,7 +61,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 			series_json TEXT NOT NULL DEFAULT '[]',
 			subs_json TEXT NOT NULL DEFAULT '[]'
 		)`,
-		`CREATE TABLE IF NOT EXISTS audit_log (
+		`CREATE TABLE audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			created_at INTEGER NOT NULL,
 			action TEXT NOT NULL,
@@ -84,7 +93,7 @@ func TestRunMigrationsLoopsV6ToV7(t *testing.T) {
 	}
 }
 
-// TestRunMigrationsLoopsFakeV5ToV7 keeps a v7 events schema but sets user_version to 5 with legacy meta tables present.
+// TestRunMigrationsLoopsFakeV5ToV7 keeps an events schema but sets user_version to 5 with legacy meta tables present.
 func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 	skipNoDriver(t)
 	ctx := context.Background()
@@ -92,15 +101,24 @@ func TestRunMigrationsLoopsFakeV5ToV7(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "multistep.db")
 
-	s, err := Open(ctx, path, nil, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-
 	execOnLibsqlFile(t, ctx, path, []string{
+		`CREATE TABLE events (
+			id TEXT NOT NULL PRIMARY KEY,
+			pubkey TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			kind INTEGER NOT NULL,
+			content TEXT NOT NULL,
+			sig TEXT NOT NULL,
+			d_tag TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE event_tags (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id TEXT NOT NULL,
+			pos INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT NOT NULL DEFAULT '',
+			full_json TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS audit_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			created_at INTEGER NOT NULL,

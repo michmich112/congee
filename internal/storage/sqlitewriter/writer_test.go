@@ -257,3 +257,71 @@ func TestIsReconnectable(t *testing.T) {
 		t.Fatal("constraint errors should not trigger reconnect")
 	}
 }
+
+func TestBusyReadConnectionDoesNotReconnectWriter(t *testing.T) {
+	ctx := context.Background()
+	var reconnects atomic.Int32
+	q := newTestQueue(t, t.TempDir()+"/busy-read.db", Options{OpenHandles: func(context.Context, string, zerolog.Logger) (*sql.DB, *bun.DB, error) {
+		reconnects.Add(1)
+		return nil, nil, errors.New("healthy database must not reconnect for pool contention")
+	}})
+	defer q.Close()
+	original := q.DB()
+	if _, err := original.ExecContext(ctx, "CREATE TABLE writer_contention_test (value INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := q.sqldb.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	released := make(chan struct{})
+	go func() { time.Sleep(6 * time.Second); conn.Close(); close(released) }()
+	err = q.RunWrite(ctx, "write-after-busy-read", func(ctx context.Context, db bun.IDB) error {
+		_, err := db.ExecContext(ctx, "INSERT INTO writer_contention_test VALUES (1)")
+		return err
+	})
+	<-released
+	if err != nil {
+		t.Fatalf("busy reader caused write failure: %v", err)
+	}
+	if reconnects.Load() != 0 {
+		t.Fatalf("reconnected a healthy busy database %d times", reconnects.Load())
+	}
+	if q.DB() != original {
+		t.Fatal("replaced database handle during ordinary contention")
+	}
+	var count int
+	if err := original.QueryRowContext(ctx, "SELECT COUNT(*) FROM writer_contention_test").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("write was not retained: count=%d err=%v", count, err)
+	}
+}
+
+func TestLibsqlAnalyzeUsesBoundedSampling(t *testing.T) {
+	ctx := context.Background()
+	q := newTestQueue(t, t.TempDir()+"/analyze.db", Options{})
+	defer q.Close()
+	var limit int
+	if err := q.DB().QueryRowContext(ctx, "PRAGMA analysis_limit").Scan(&limit); err != nil {
+		t.Fatal(err)
+	}
+	if limit <= 0 || limit > 1000 {
+		t.Fatalf("scheduled ANALYZE must sample at most 1000 rows per index; limit=%d", limit)
+	}
+	if _, err := q.DB().ExecContext(ctx, "CREATE TABLE analyze_test (id INTEGER PRIMARY KEY, value INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.DB().ExecContext(ctx, "CREATE INDEX analyze_test_value ON analyze_test(value)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.DB().ExecContext(ctx, "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO analyze_test SELECT x, x%10 FROM n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.DB().ExecContext(ctx, "ANALYZE analyze_test"); err != nil {
+		t.Fatal(err)
+	}
+	var stat string
+	if err := q.DB().QueryRowContext(ctx, "SELECT stat FROM sqlite_stat1 WHERE idx='analyze_test_value'").Scan(&stat); err != nil || stat == "" {
+		t.Fatalf("bounded ANALYZE must still populate planner statistics: stat=%q err=%v", stat, err)
+	}
+}

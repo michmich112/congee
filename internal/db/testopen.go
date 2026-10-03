@@ -15,7 +15,7 @@ import (
 // MetaDSN is pinned beside the events file so CONGEE_DATA_DIR cannot redirect tests at a live congee-meta.db.
 func OpenForTest(ctx context.Context, eventsDSN string, log zerolog.Logger) (*Handle, error) {
 	if !turso.HasDriver() {
-		return nil, errors.New("turso: libsql driver not available (build with CGO_ENABLED=1)")
+		return nil, errors.New("turso: driver not available (build with CGO_ENABLED=1)")
 	}
 	eventsPath := eventsDSN
 	if abs, err := filepath.Abs(eventsDSN); err == nil {

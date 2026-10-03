@@ -117,17 +117,26 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 		return errors.New("postgres: ephemeral events are not stored")
 	}
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		conditionalInsert := false
 		switch nostr.ClassifyKind(ev.Kind) {
 		case nostr.KindReplaceable:
+			conditionalInsert = true
+			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", fmt.Sprintf("%s:%d", ev.PubKey, ev.Kind)); err != nil {
+				return err
+			}
 			if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
-				Where("pubkey = ? AND kind = ?", ev.PubKey, ev.Kind).
+				Where("pubkey = ? AND kind = ? AND (created_at < ? OR (created_at = ? AND id > ?))", ev.PubKey, ev.Kind, ev.CreatedAt, ev.CreatedAt, ev.ID).
 				Exec(ctx); err != nil {
 				return err
 			}
 		case nostr.KindAddressable:
+			conditionalInsert = true
 			dt := extractDTag(ev.Tags)
+			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", fmt.Sprintf("%s:%d:%s", ev.PubKey, ev.Kind, dt)); err != nil {
+				return err
+			}
 			if _, err := tx.NewDelete().Model((*storage.EventRow)(nil)).
-				Where("pubkey = ? AND kind = ? AND d_tag = ?", ev.PubKey, ev.Kind, dt).
+				Where("pubkey = ? AND kind = ? AND d_tag = ? AND (created_at < ? OR (created_at = ? AND id > ?))", ev.PubKey, ev.Kind, dt, ev.CreatedAt, ev.CreatedAt, ev.ID).
 				Exec(ctx); err != nil {
 				return err
 			}
@@ -142,7 +151,26 @@ func (s *Store) SaveEvent(ctx context.Context, ev *nostr.Event) error {
 			Sig:       ev.Sig,
 			DTag:      extractDTag(ev.Tags),
 		}
-		if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
+		if conditionalInsert {
+			where := "pubkey = ? AND kind = ?"
+			args := []any{row.ID, row.Pubkey, row.CreatedAt, row.Kind, row.Content, row.Sig, row.DTag, row.Pubkey, row.Kind}
+			if nostr.ClassifyKind(ev.Kind) == nostr.KindAddressable {
+				where += " AND d_tag = ?"
+				args = append(args, row.DTag)
+			}
+			result, err := tx.ExecContext(ctx,
+				"INSERT INTO events (id, pubkey, created_at, kind, content, sig, d_tag) SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM events WHERE "+where+")", args...)
+			if err != nil {
+				return err
+			}
+			inserted, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if inserted == 0 {
+				return storage.ErrStaleReplaceable
+			}
+		} else if _, err := tx.NewInsert().Model(&row).Exec(ctx); err != nil {
 			return err
 		}
 		tags := make([]eventTagInsert, 0, len(ev.Tags))

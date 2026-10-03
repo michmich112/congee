@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,6 +12,200 @@ func TestLoadExampleValidates(t *testing.T) {
 	_, err := LoadJSON(filepath.Join("..", "..", "config.example.json"))
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNIP11ImagesConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig()
+	cfg.NIP11.IconSource = NIP11ImageSourceURL
+	cfg.NIP11.BannerSource = NIP11ImageSourceURL
+	cfg.NIP11.Icon = "https://images.example/icon.png"
+	cfg.NIP11.Banner = "https://images.example/banner.jpg"
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.NIP11.IconSource != NIP11ImageSourceURL || loaded.NIP11.BannerSource != NIP11ImageSourceURL {
+		t.Fatalf("existing image URLs should become url mode: %+v", loaded.NIP11)
+	}
+	if loaded.NIP11.Icon != "https://images.example/icon.png" || loaded.NIP11.Banner != "https://images.example/banner.jpg" {
+		t.Fatalf("NIP-11 image URLs did not survive config save/load: %+v", loaded.NIP11)
+	}
+}
+
+func TestNIP11AdministratorPubKeyValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.NIP11.AdminPubKey = strings.ToUpper(strings.Repeat("a", 64))
+	cfg.NIP11.Contact = "  operator@example.com  "
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid administrator key rejected: %v", err)
+	}
+	if cfg.NIP11.AdminPubKey != strings.Repeat("a", 64) {
+		t.Fatalf("administrator key not canonicalized: %q", cfg.NIP11.AdminPubKey)
+	}
+	if cfg.NIP11.Contact != "operator@example.com" {
+		t.Fatalf("contact not trimmed: %q", cfg.NIP11.Contact)
+	}
+	cfg.NIP11.AdminPubKey = " \t" + strings.Repeat("B", 64) + " "
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.AdminPubKey != strings.Repeat("b", 64) {
+		t.Fatalf("trimmed key: %q", cfg.NIP11.AdminPubKey)
+	}
+	cfg.NIP11.Contact = " \n "
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.Contact != "" {
+		t.Fatalf("whitespace contact should be stored empty: %q", cfg.NIP11.Contact)
+	}
+	for _, invalid := range []string{"npub1example", "deadbeef", strings.Repeat("z", 64)} {
+		cfg.NIP11.AdminPubKey = invalid
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("invalid administrator key %q accepted", invalid)
+		}
+	}
+}
+
+func TestNIP11BareImageURLInfersURLSource(t *testing.T) {
+	base, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(base, &raw); err != nil {
+		t.Fatal(err)
+	}
+	nip11 := raw["nip11"].(map[string]any)
+	delete(nip11, "icon_source")
+	delete(nip11, "banner_source")
+	nip11["icon"] = "https://images.example/icon.png"
+	nip11["banner"] = "https://images.example/banner.jpg"
+	body, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := ParseConfigJSON(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.IconSource != NIP11ImageSourceURL || cfg.NIP11.Icon != "https://images.example/icon.png" {
+		t.Fatalf("bare icon URL: %+v", cfg.NIP11)
+	}
+	if cfg.NIP11.BannerSource != NIP11ImageSourceURL || cfg.NIP11.Banner != "https://images.example/banner.jpg" {
+		t.Fatalf("bare banner URL: %+v", cfg.NIP11)
+	}
+}
+
+func TestNIP11ImageSourceValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.NIP11.IconSource = NIP11ImageSourceDefault
+	cfg.NIP11.Icon = "not a url"
+	cfg.NIP11.BannerSource = NIP11ImageSourceUpload
+	cfg.NIP11.Banner = "https://images.example/banner.jpg"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.Icon != "" || cfg.NIP11.Banner != "" {
+		t.Fatalf("non-url modes should clear stored URLs: %+v", cfg.NIP11)
+	}
+	cfg.NIP11.IconSource = NIP11ImageSourceURL
+	cfg.NIP11.Icon = "/relative.png"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("relative url accepted")
+	}
+	cfg.NIP11.Icon = "ftp://images.example/icon.png"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("ftp url accepted")
+	}
+	cfg.NIP11.IconSource = "file"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("unknown image source accepted")
+	}
+}
+
+func TestLegacySendChallengeOnConnectLoadsAsProtectedKinds(t *testing.T) {
+	base, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(base, &raw); err != nil {
+		t.Fatal(err)
+	}
+	nip42 := raw["nip42"].(map[string]any)
+	delete(nip42, "require_auth")
+	nip42["send_challenge_on_connect"] = true
+	legacyJSON, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP42.RequireAuth != NIP42RequireAuthProtectedKinds {
+		t.Fatalf("require_auth: %q", cfg.NIP42.RequireAuth)
+	}
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "send_challenge_on_connect") {
+		t.Fatal("legacy challenge flag survived config save")
+	}
+	if !strings.Contains(string(saved), `"require_auth": "protected_kinds"`) {
+		t.Fatalf("saved config: %s", saved)
+	}
+}
+
+func TestNIP11LegacyRelayPubKeyIsNotAdministratorContact(t *testing.T) {
+	legacyKey := strings.Repeat("b", 64)
+	base, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(base, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["nip11"].(map[string]any)["pubkey"] = legacyKey
+	legacyJSON, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, legacyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadJSON(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NIP11.AdminPubKey != "" {
+		t.Fatalf("legacy relay key became administrator contact: %q", cfg.NIP11.AdminPubKey)
+	}
+	if err := WriteConfigAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), `"pubkey":`) {
+		t.Fatal("legacy relay pubkey survived config save")
 	}
 }
 

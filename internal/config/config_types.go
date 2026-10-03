@@ -67,6 +67,9 @@ type DatabaseSection struct {
 	Type    string `json:"type"`
 	DSN     string `json:"dsn"`
 	MetaDSN string `json:"meta_dsn,omitempty"`
+	// Analyze runs periodic SQLite ANALYZE so the admin dashboard can show on-disk size
+	// and approximate row counts. Off by default; the dashboard asks the operator to enable it.
+	Analyze bool `json:"analyze"`
 }
 
 type LoggingSection struct {
@@ -141,10 +144,35 @@ type WebSocketSection struct {
 	MaxMessageBytes    int  `json:"max_message_bytes"`
 }
 
+const (
+	// NIP11ImageSourceDefault serves the built-in Congee artwork.
+	NIP11ImageSourceDefault = "default"
+	// NIP11ImageSourceUpload serves a file stored beside the JSON config.
+	NIP11ImageSourceUpload = "upload"
+	// NIP11ImageSourceURL publishes an external absolute http(s) URL and does not serve a local file.
+	NIP11ImageSourceURL = "url"
+)
+
+const (
+	NIP11AssetIcon   = "icon"
+	NIP11AssetBanner = "banner"
+)
+
+// Upload size caps for operator-supplied NIP-11 images.
+const (
+	NIP11IconMaxBytes   = 512 * 1024
+	NIP11BannerMaxBytes = 2 * 1024 * 1024
+)
+
 type NIP11Section struct {
-	Name               string `json:"name"`
-	Description        string `json:"description"`
-	PubKey             string `json:"pubkey"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Banner       string `json:"banner,omitempty"`
+	Icon         string `json:"icon,omitempty"`
+	IconSource   string `json:"icon_source,omitempty"`
+	BannerSource string `json:"banner_source,omitempty"`
+	// AdminPubKey is an optional contact identity. Legacy nip11.pubkey is ignored.
+	AdminPubKey        string `json:"admin_pubkey,omitempty"`
 	Contact            string `json:"contact"`
 	Software           string `json:"software"`
 	CORSAllowAnyOrigin bool   `json:"cors_allow_any_origin"`
@@ -154,16 +182,43 @@ type NIPsSection struct {
 	Enabled []int `json:"enabled"`
 }
 
+const (
+	// NIP42RequireAuthProtectedKinds sends AUTH only when a protected kind is hit.
+	// Ordinary requests stay open. NIP-11 auth_required is false.
+	NIP42RequireAuthProtectedKinds = "protected_kinds"
+	// NIP42RequireAuthConnect challenges on WebSocket open and rejects every
+	// client command except AUTH until the connection authenticates.
+	// NIP-11 auth_required is true when NIP-42 is enabled.
+	NIP42RequireAuthConnect = "connect"
+)
+
 // NIP42Section configures NIP-42 client authentication (optional NIP).
 type NIP42Section struct {
-	RelayURL               string `json:"relay_url"`
-	SendChallengeOnConnect bool   `json:"send_challenge_on_connect"`
+	RelayURL     string   `json:"relay_url"`
+	RelayAliases []string `json:"relay_aliases,omitempty"`
+	// RequireAuth is protected_kinds (lazy AUTH) or connect (reject traffic until AUTH).
+	// Legacy send_challenge_on_connect loads as protected_kinds.
+	RequireAuth string `json:"require_auth"`
 	// CreatedAtSkewSeconds is the maximum allowed |now - event.created_at| for AUTH events (seconds).
 	// Values <= 0 mean the relay uses its runtime default (600s).
 	CreatedAtSkewSeconds      int      `json:"created_at_skew_seconds"`
 	RequireAuthSubscribeKinds []int    `json:"require_auth_subscribe_kinds"`
 	RequireAuthPublishKinds   []int    `json:"require_auth_publish_kinds"`
 	AllowlistedPubkeys        []string `json:"allowlisted_pubkeys"`
+}
+
+// NIP11AuthRequired reports whether the NIP-11 limitation field auth_required is true.
+// Connect mode locks the relay only when NIP-42 itself is enabled.
+func NIP11AuthRequired(cfg *Config) bool {
+	if cfg == nil || cfg.NIP42.RequireAuth != NIP42RequireAuthConnect {
+		return false
+	}
+	for _, n := range cfg.NIPs.Enabled {
+		if n == 42 {
+			return true
+		}
+	}
+	return false
 }
 
 // NIP17Section configures NIP-17 private direct messages (optional NIP).

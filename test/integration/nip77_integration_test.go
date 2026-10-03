@@ -57,7 +57,7 @@ func writeNIP77IntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeNIP77",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -100,7 +100,6 @@ var _ = Describe("NIP-77 negentropy", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		var closeStore func() error
 		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
@@ -136,7 +135,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"kinds": []int{1}}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg1", filter, initial})
@@ -170,10 +170,7 @@ var _ = Describe("NIP-77 negentropy", func() {
 			}
 		}
 	done:
-		var need []string
-		for id := range clientNeg.HaveNots {
-			need = append(need, id)
-		}
+		need := clientNeg.NeedIDs()
 		Expect(need).NotTo(BeEmpty())
 	})
 
@@ -182,7 +179,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"search": "test"}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg2", filter, initial})
@@ -206,7 +204,8 @@ var _ = Describe("NIP-77 negentropy", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer c.Close()
 
-		clientNeg := nip77.NewClientNegentropy(nip77.BuildVector(nil), 1<<20)
+		clientNeg := nip77.NewSyncClient(nip77.BuildVector(nil), 1<<20)
+		defer clientNeg.Stop()
 		initial := clientNeg.Start()
 		filter := map[string]any{"kinds": []int{1}, "limit": 10}
 		openPayload, err := json.Marshal([]any{"NEG-OPEN", "neg3", filter, initial})

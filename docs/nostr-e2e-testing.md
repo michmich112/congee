@@ -28,9 +28,35 @@ Related plans (under `docs/plans/` locally, if present): relay identity secrets,
 | Feature | Action | Pass criterion |
 |--------|--------|----------------|
 | Relay identity | Open admin dashboard | `npub` + hex pubkey match `GET /api/relay-identity` |
-| NIP-11 | `curl -H 'Accept: application/nostr+json' http://127.0.0.1:<port>/` | JSON includes `pubkey`, `supported_nips` |
-| NIP-42 | Connect WS; if challenge on connect, sign 22242; `REQ` protected kinds | `CLOSED` → `auth-required:` then success after `AUTH` |
+| NIP-11 | `curl -H 'Accept: application/nostr+json' http://127.0.0.1:<port>/` | JSON includes relay `self`, accurate `limitation`, and `supported_nips`; `pubkey` appears only when an administrator contact is set |
+| NIP-42 | Connect WS. `require_auth: connect` challenges immediately and rejects commands until AUTH. `protected_kinds` challenges only for listed kinds | `CLOSED` or `OK` with `auth-required:` until AUTH, then the same command succeeds |
 | NIP-29 | Publish `h`-tagged event after 9007 bootstrap | Stored; `previous` invalid id → `OK` false; restricted group requires membership |
+
+### Multiple public hostnames
+
+When the same relay is reachable through a custom domain and a hosting-provider
+hostname, list additional URLs in `nip42.relay_aliases`:
+
+```json
+{
+  "nip42": {
+    "relay_url": "wss://relay.example.com/",
+    "relay_aliases": ["wss://example-relay.fly.dev/"]
+  }
+}
+```
+
+Clients can sign their AUTH event with the URL they use. The relay accepts only
+its canonical URL and explicitly configured aliases, using the same URL
+normalization for both. Signature, timestamp, connection challenge, and resource
+access checks remain unchanged. Existing single-URL configurations require no
+changes. Restart the relay after changing this configuration.
+
+For a domain migration, add the new URL before changing DNS, verify signed AUTH
+and protected subscriptions through both hostnames, then remove an alias only
+when clients no longer need it. An unrelated URL or wrong connection challenge
+must still be rejected. These aliases affect NIP-42 authentication only; DNS and
+TLS certificates must be configured separately.
 
 ### 3. Programmatic external harness (optional repo artifact)
 
@@ -63,7 +89,7 @@ run-congee-e2e:
 
 | Feature | Layer 1 (Ginkgo/unit) | Layer 2 (manual) | Layer 3 (harness) |
 |---------|----------------------|------------------|-------------------|
-| Relay identity | `internal/relayidentity` tests; integration reconcile | Admin dashboard identity card; NIP-11 `pubkey` | `GET /api/relay-identity` vs file on disk |
+| Relay identity | `internal/relayidentity` tests; config legacy key test | Admin dashboard identity card; NIP-11 `self` | `GET /api/relay-identity` vs file on disk |
 | NIP-42 | AUTH + gated `REQ` integration | Client signs 22242; subscribe to kind 4 | Script: challenge → AUTH → REQ |
 | NIP-29 | SQLite store queries; extend Ginkgo for private `REQ` | Create group, post with `h`, test `previous` | Script: full group timeline |
 

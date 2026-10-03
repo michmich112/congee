@@ -51,15 +51,14 @@ func Open(ctx context.Context, sec config.DatabaseSection, relayInstanceID strin
 			return nil, err
 		}
 		store := newCompositeStore(st, meta, st, meta)
-		analyzeCtx, analyzeCancel := context.WithCancel(context.Background())
-		StartSQLiteAnalyzeLoop(analyzeCtx, []sqliteStatsAnalyzer{
+		stopAnalyze := startSQLiteAnalyzeIfEnabled(sec, []sqliteStatsAnalyzer{
 			{label: "meta", run: meta.AnalyzeStatsTables},
 		}, log)
 		return &Handle{
 			Store:         store,
 			EventNotifier: st.Notifier(),
 			closeFn: func() error {
-				analyzeCancel()
+				stopAnalyze()
 				err1 := meta.Close()
 				err2 := st.Close()
 				if err1 != nil {
@@ -89,8 +88,7 @@ func openTurso(ctx context.Context, sec config.DatabaseSection, log zerolog.Logg
 		return nil, err
 	}
 	store := newCompositeStore(ev, meta, ev, meta)
-	analyzeCtx, analyzeCancel := context.WithCancel(context.Background())
-	StartSQLiteAnalyzeLoop(analyzeCtx, []sqliteStatsAnalyzer{
+	stopAnalyze := startSQLiteAnalyzeIfEnabled(sec, []sqliteStatsAnalyzer{
 		{label: "events", run: ev.AnalyzeStatsTables},
 		{label: "meta", run: meta.AnalyzeStatsTables},
 	}, log)
@@ -98,7 +96,7 @@ func openTurso(ctx context.Context, sec config.DatabaseSection, log zerolog.Logg
 		Store:         store,
 		EventNotifier: storage.NoopNotifier{},
 		closeFn: func() error {
-			analyzeCancel()
+			stopAnalyze()
 			err1 := meta.Close()
 			err2 := ev.Close()
 			if err1 != nil {
@@ -107,4 +105,14 @@ func openTurso(ctx context.Context, sec config.DatabaseSection, log zerolog.Logg
 			return err2
 		},
 	}, nil
+}
+
+// startSQLiteAnalyzeIfEnabled runs the admin stats ANALYZE loop only when database.analyze is set.
+func startSQLiteAnalyzeIfEnabled(sec config.DatabaseSection, analyzers []sqliteStatsAnalyzer, log zerolog.Logger) context.CancelFunc {
+	if !sec.Analyze {
+		return func() {}
+	}
+	analyzeCtx, cancel := context.WithCancel(context.Background())
+	StartSQLiteAnalyzeLoop(analyzeCtx, analyzers, log)
+	return cancel
 }

@@ -1,0 +1,33 @@
+# Pull requests targeting main or develop: Congee NIP-77 upstream sync against a real strfry.
+# Pushes run the same test through reusable-go-test.yml. The binary is built after
+# scripts/overlay-turso-fts.sh so CREATE INDEX ... USING fts succeeds.
+name: PR — NIP-77 strfry e2e
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  nip77-strfry-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: go.sum
+
+      - uses: dtolnay/rust-toolchain@1.88
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/congee/turso-fts/target
+          key: turso-fts-36da5b2e-${{ runner.os }}-${{ runner.arch }}
+
+      - run: docker pull ghcr.io/hoytech/strfry:latest
+
+      - run: make test-nip77-strfry-e2e
