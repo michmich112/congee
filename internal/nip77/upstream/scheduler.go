@@ -418,7 +418,10 @@ fetch:
 	return stats, nil
 }
 
-const maxFetchAttempts = 3
+const (
+	maxFetchAttempts  = 3
+	maxRedialAttempts = 3
+)
 
 // replaceUpstreamClient dials a new upstream connection and installs it in c.
 // The previous connection stays open until the dial and AUTH handshake succeed.
@@ -442,22 +445,53 @@ func (sch *Scheduler) replaceUpstreamClient(ctx context.Context, log zerolog.Log
 	return nil
 }
 
-// fetchPersistWithRetry retries only one missing event. A new connection is
-// required after a read timeout because websocket reads cannot recover from a
-// failed deadline. Each attempt also re-verifies the event before storage.
-func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL, id string) (bool, error) {
+// redialUpstream dials until a new connection is installed or the redial budget
+// is spent. Failures here are not fetch attempts: the caller still has to REQ
+// the event, and a dial error must not replace the fetch error that caused the retry.
+func (sch *Scheduler) redialUpstream(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL string) error {
 	var lastErr error
-	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+	for attempt := 1; attempt <= maxRedialAttempts; attempt++ {
 		if attempt > 1 {
 			pause := time.Duration(attempt-1) * 100 * time.Millisecond
 			select {
 			case <-ctx.Done():
-				return false, ctx.Err()
+				return ctx.Err()
 			case <-time.After(pause):
 			}
-			if err := sch.replaceUpstreamClient(ctx, log, c, relayURL); err != nil {
-				lastErr = err
-				continue
+		}
+		if err := sch.replaceUpstreamClient(ctx, log, c, relayURL); err != nil {
+			lastErr = err
+			log.Warn().Int("redial_attempt", attempt).Err(err).Msg("upstream redial failed")
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+// fetchPersistWithRetry retries only one missing event. A new connection is
+// required after a read timeout because websocket reads cannot recover from a
+// failed deadline. Each attempt also re-verifies the event before storage.
+func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL, id string) (bool, error) {
+	var lastFetchErr error
+	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+		// A previous read failure sticks to this socket. Redial before spending
+		// a fetch attempt on it, including the first attempt of the next event.
+		poisoned := *c != nil && (*c).readErr != nil
+		if attempt > 1 || poisoned {
+			if attempt > 1 {
+				pause := time.Duration(attempt-1) * 100 * time.Millisecond
+				select {
+				case <-ctx.Done():
+					return false, ctx.Err()
+				case <-time.After(pause):
+				}
+			}
+			if err := sch.redialUpstream(ctx, log, c, relayURL); err != nil {
+				if lastFetchErr == nil {
+					return false, fmt.Errorf("event %s: redial: %w", id, err)
+				}
+				return false, fmt.Errorf("event %s: %w; redial: %v", id, lastFetchErr, err)
 			}
 		}
 		fetchTimeout := time.Duration(config.EffectiveNIP77UpstreamMessageTimeout(sch.cfg)) * time.Second
@@ -474,10 +508,10 @@ func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Log
 				return stored, nil
 			}
 		}
-		lastErr = err
+		lastFetchErr = err
 		log.Warn().Str("id", id).Int("attempt", attempt).Err(err).Msg("upstream event import attempt failed")
 	}
-	return false, fmt.Errorf("event %s: %w", id, lastErr)
+	return false, fmt.Errorf("event %s: %w", id, lastFetchErr)
 }
 
 // persistImportedEvent saves a newly fetched upstream event and notifies plugins.

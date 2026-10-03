@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -220,4 +222,253 @@ func TestUpstreamReadFailureRedialsNextFilter(t *testing.T) {
 	if has, err := st.HasEventID(ctx, ev.ID); err != nil || !has {
 		t.Fatalf("second-filter event missing: %v %v", has, err)
 	}
+}
+
+func TestUpstreamRedialFailureKeepsFetchError(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "events.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+	key, _ := btcec.PrivKeyFromBytes([]byte{13})
+	ev := &nostr.Event{PubKey: hex.EncodeToString(key.PubKey().SerializeCompressed()[1:]), CreatedAt: 300, Kind: 1, Content: "missing"}
+	if err := ev.Sign(key); err != nil {
+		t.Fatal(err)
+	}
+	var fetches atomic.Int32
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		neg := nip77.NewServerNegentropy(nip77.BuildVector([]storage.SyncItem{{ID: ev.ID, CreatedAt: ev.CreatedAt}}), 1<<20)
+		for {
+			var raw []json.RawMessage
+			if err := conn.ReadJSON(&raw); err != nil {
+				return
+			}
+			if len(raw) < 2 {
+				continue
+			}
+			typ, sub := jsonStringAt(raw, 0), jsonStringAt(raw, 1)
+			switch typ {
+			case "NEG-OPEN":
+				if len(raw) < 4 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 3))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "NEG-MSG":
+				if len(raw) < 3 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 2))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "REQ":
+				fetches.Add(1)
+				if err := conn.WriteJSON([]any{"EOSE", sub}); err != nil {
+					return
+				}
+				// The client CLOSEs after EOSE. Stop accepting dials only after that
+				// frame is in, so the fetch error is the missing event, not a torn read.
+				_, _, _ = conn.ReadMessage()
+				_ = upstream.Listener.Close()
+				return
+			}
+		}
+	}))
+	defer upstream.Close()
+	cfg := config.DefaultConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 77}
+	cfg.NIP77.UpstreamEnabled = true
+	cfg.NIP77.UpstreamAuthWaitSeconds = 0
+	cfg.NIP77.UpstreamMessageTimeoutSeconds = 1
+	u := config.NIP77Upstream{Name: "redial-down", URL: "ws" + strings.TrimPrefix(upstream.URL, "http"), Enabled: true,
+		Filters: []json.RawMessage{json.RawMessage(`{"kinds":[1]}`)}}
+	sch := NewScheduler(cfg, st, nil, nil, zerolog.Nop())
+	sch.runOnce(ctx, u)
+	got := sch.Status()
+	if len(got) != 1 || got[0].LastFailed != 1 || got[0].LastImported != 0 {
+		t.Fatalf("redial failure should still count the missing event: %+v", got)
+	}
+	if !strings.Contains(got[0].LastError, "event not found") {
+		t.Fatalf("fetch error should survive a failed redial, got %q", got[0].LastError)
+	}
+	if n := fetches.Load(); n != 1 {
+		t.Fatalf("failed redials must not send more REQs, got %d", n)
+	}
+}
+
+func TestUpstreamPoisonedClientRedialsBeforeNextFetch(t *testing.T) {
+	if !turso.HasDriver() {
+		t.Skip("libsql driver not available")
+	}
+	ctx := context.Background()
+	st, closeFn, err := db.OpenTestStore(ctx, filepath.Join(t.TempDir(), "events.db"), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeFn()
+	evs := make([]*nostr.Event, 2)
+	for i := range evs {
+		key, _ := btcec.PrivKeyFromBytes([]byte{byte(20 + i)})
+		evs[i] = &nostr.Event{
+			PubKey:    hex.EncodeToString(key.PubKey().SerializeCompressed()[1:]),
+			CreatedAt: int64(400 + i),
+			Kind:      1,
+			Content:   "poison",
+		}
+		if err := evs[i].Sign(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := []string{evs[0].ID, evs[1].ID}
+	sort.Strings(ids)
+	timedOut, served := ids[0], ids[1]
+	byID := map[string]*nostr.Event{evs[0].ID: evs[0], evs[1].ID: evs[1]}
+
+	type reqOnConn struct {
+		conn int32
+		id   string
+	}
+	var (
+		mu    sync.Mutex
+		logs  []reqOnConn
+		conns atomic.Int32
+	)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		n := conns.Add(1)
+		var neg interface {
+			Reconcile(string) (string, error)
+		}
+		if n == 1 {
+			neg = nip77.NewServerNegentropy(nip77.BuildVector([]storage.SyncItem{
+				{ID: evs[0].ID, CreatedAt: evs[0].CreatedAt},
+				{ID: evs[1].ID, CreatedAt: evs[1].CreatedAt},
+			}), 1<<20)
+		}
+		for {
+			var raw []json.RawMessage
+			if err := conn.ReadJSON(&raw); err != nil {
+				return
+			}
+			if len(raw) < 2 {
+				continue
+			}
+			typ, sub := jsonStringAt(raw, 0), jsonStringAt(raw, 1)
+			switch typ {
+			case "NEG-OPEN":
+				if neg == nil || len(raw) < 4 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 3))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "NEG-MSG":
+				if neg == nil || len(raw) < 3 {
+					return
+				}
+				out, err := neg.Reconcile(jsonStringAt(raw, 2))
+				if err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"NEG-MSG", sub, out}); err != nil {
+					return
+				}
+			case "REQ":
+				id := reqFilterID(raw)
+				mu.Lock()
+				logs = append(logs, reqOnConn{conn: n, id: id})
+				mu.Unlock()
+				if id != served {
+					continue
+				}
+				if err := conn.WriteJSON([]any{"EVENT", sub, byID[id]}); err != nil {
+					return
+				}
+				if err := conn.WriteJSON([]any{"EOSE", sub}); err != nil {
+					return
+				}
+			}
+		}
+	}))
+	defer upstream.Close()
+	cfg := config.DefaultConfig()
+	cfg.NIPs.Enabled = []int{1, 11, 77}
+	cfg.NIP77.UpstreamEnabled = true
+	cfg.NIP77.UpstreamAuthWaitSeconds = 0
+	cfg.NIP77.UpstreamMessageTimeoutSeconds = 1
+	u := config.NIP77Upstream{Name: "poison", URL: "ws" + strings.TrimPrefix(upstream.URL, "http"), Enabled: true,
+		Filters: []json.RawMessage{json.RawMessage(`{"kinds":[1]}`)}}
+	sch := NewScheduler(cfg, st, nil, nil, zerolog.Nop())
+	sch.runOnce(ctx, u)
+
+	got := sch.Status()
+	if len(got) != 1 || got[0].LastFailed != 1 || got[0].LastImported != 1 {
+		t.Fatalf("expected one failed id and one import: %+v", got)
+	}
+	if has, err := st.HasEventID(ctx, served); err != nil || !has {
+		t.Fatalf("served event missing: %v %v", has, err)
+	}
+	if has, err := st.HasEventID(ctx, timedOut); err != nil || has {
+		t.Fatalf("timed-out event should be absent: %v %v", has, err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var servedConn, maxTimedOutConn int32
+	for _, l := range logs {
+		if l.id == served && servedConn == 0 {
+			servedConn = l.conn
+		}
+		if l.id == timedOut && l.conn > maxTimedOutConn {
+			maxTimedOutConn = l.conn
+		}
+	}
+	if servedConn == 0 || maxTimedOutConn == 0 {
+		t.Fatalf("missing REQ log: %+v", logs)
+	}
+	if servedConn <= maxTimedOutConn {
+		t.Fatalf("next event reused a connection with a failed read: served conn %d, last timed-out conn %d, log %+v", servedConn, maxTimedOutConn, logs)
+	}
+}
+
+func reqFilterID(raw []json.RawMessage) string {
+	if len(raw) < 3 {
+		return ""
+	}
+	var f struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.Unmarshal(raw[2], &f); err != nil || len(f.IDs) == 0 {
+		return ""
+	}
+	return f.IDs[0]
 }
