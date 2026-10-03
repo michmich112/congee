@@ -475,12 +475,17 @@ func (sch *Scheduler) redialUpstream(ctx context.Context, log zerolog.Logger, c 
 func (sch *Scheduler) fetchPersistWithRetry(ctx context.Context, log zerolog.Logger, c **wsClient, relayURL, id string) (bool, error) {
 	var lastFetchErr error
 	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
-		if attempt > 1 {
-			pause := time.Duration(attempt-1) * 100 * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return false, ctx.Err()
-			case <-time.After(pause):
+		// A previous read failure sticks to this socket. Redial before spending
+		// a fetch attempt on it, including the first attempt of the next event.
+		poisoned := *c != nil && (*c).readErr != nil
+		if attempt > 1 || poisoned {
+			if attempt > 1 {
+				pause := time.Duration(attempt-1) * 100 * time.Millisecond
+				select {
+				case <-ctx.Done():
+					return false, ctx.Err()
+				case <-time.After(pause):
+				}
 			}
 			if err := sch.redialUpstream(ctx, log, c, relayURL); err != nil {
 				if lastFetchErr == nil {
