@@ -120,6 +120,14 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string, timeout time.Dur
 	if err := c.sendJSON([]any{"REQ", subID, filter}); err != nil {
 		return nil, err
 	}
+	// A timeout or read error used to return without CLOSE, so the upstream
+	// kept serving a subscription this client had already abandoned.
+	closed := false
+	defer func() {
+		if !closed {
+			_ = c.sendJSON([]any{"CLOSE", subID})
+		}
+	}()
 	deadline := time.Now().Add(timeout)
 	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
 		deadline = ctxDeadline
@@ -146,6 +154,7 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string, timeout time.Dur
 				continue
 			}
 			if ev.ID == id {
+				closed = true
 				_ = c.sendJSON([]any{"CLOSE", subID})
 				return &ev, nil
 			}
@@ -153,12 +162,14 @@ func (c *wsClient) reqEventByID(ctx context.Context, id string, timeout time.Dur
 			if jsonStringAt(raw, 1) != subID {
 				continue
 			}
+			closed = true
 			_ = c.sendJSON([]any{"CLOSE", subID})
 			return nil, fmt.Errorf("event not found: %s", id)
 		case "CLOSED":
 			if jsonStringAt(raw, 1) != subID {
 				continue
 			}
+			closed = true
 			return nil, fmt.Errorf("closed: %s", jsonStringAt(raw, 2))
 		}
 	}
