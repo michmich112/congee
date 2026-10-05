@@ -61,7 +61,7 @@ func writeIntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeTest",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -71,7 +71,7 @@ func writeIntegrationConfig(dir, dsn string) string {
 	return p
 }
 
-func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnConnect bool) string {
+func writeNIP42IntegrationConfig(dir, dsn, relayWSURL, requireAuth string) string {
 	p := filepath.Join(dir, "config-nip42.json")
 	body := `{
   "relay": { "port": 3334 },
@@ -105,13 +105,13 @@ func writeNIP42IntegrationConfig(dir, dsn, relayWSURL string, sendChallengeOnCon
   "nip11": {
     "name": "CongeeNIP42",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
   "nip42": {
     "relay_url": ` + strconv.Quote(relayWSURL) + `,
-    "send_challenge_on_connect": ` + strconv.FormatBool(sendChallengeOnConnect) + `,
+    "require_auth": ` + strconv.Quote(requireAuth) + `,
     "created_at_skew_seconds": 600,
     "require_auth_subscribe_kinds": [4],
     "require_auth_publish_kinds": [1],
@@ -157,7 +157,7 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
   "nip11": {
     "name": "CongeeNIP29",
     "description": "integration",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com"
   },
@@ -167,7 +167,7 @@ func writeNIP29IntegrationConfig(dir, dsn string) string {
   },
   "nip42": {
     "relay_url": "",
-    "send_challenge_on_connect": false,
+    "require_auth": "protected_kinds",
     "created_at_skew_seconds": 600,
     "require_auth_subscribe_kinds": [],
     "require_auth_publish_kinds": [],
@@ -216,6 +216,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 	var (
 		tmpDir   string
 		cfg      *config.Config
+		rid      *relayidentity.Identity
 		st       storage.Store
 		srv      *relay.Server
 		ln       net.Listener
@@ -232,9 +233,8 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		cfg, err = config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
 		secPath := relayidentity.ResolvePath(cfgPath)
-		rid, err := relayidentity.Load(secPath)
+		rid, err = relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		var closeStore func() error
 		st, closeStore, err = db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
@@ -384,8 +384,9 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		priv, err := btcec.NewPrivateKey()
 		Expect(err).NotTo(HaveOccurred())
 		ev1 := signedEvent(priv, 0, "first", nil)
-		time.Sleep(10 * time.Millisecond)
 		ev2 := signedEvent(priv, 0, "second", nil)
+		ev2.CreatedAt = ev1.CreatedAt + 1
+		Expect(ev2.Sign(priv)).To(Succeed())
 
 		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -455,6 +456,20 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		var doc map[string]any
 		Expect(json.NewDecoder(resp.Body).Decode(&doc)).To(Succeed())
 		Expect(doc["name"]).To(Equal("CongeeTest"))
+		Expect(doc["self"]).To(Equal(rid.PubKeyHex()))
+		Expect(doc).NotTo(HaveKey("pubkey"))
+		limits, ok := doc["limitation"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(limits["max_message_length"]).To(Equal(float64(cfg.WebSocket.MaxMessageBytes)))
+		Expect(limits["max_subscriptions"]).To(Equal(float64(cfg.ConnectionLimits.MaxSubscriptionsPerConnection)))
+		Expect(limits["max_subid_length"]).To(Equal(float64(cfg.MaxSubscriptionIDLength)))
+		Expect(limits["max_filters"]).To(Equal(float64(cfg.ConnectionLimits.MaxFiltersPerReq)))
+		Expect(limits["default_limit"]).To(Equal(float64(config.EffectiveREQDefaultQueryLimit(cfg.ConnectionLimits.DefaultQueryLimit))))
+		Expect(limits["auth_required"]).To(BeFalse())
+		Expect(fmt.Sprint(doc["icon"])).To(ContainSubstring("/assets/icon"))
+		Expect(fmt.Sprint(doc["banner"])).To(ContainSubstring("/assets/banner"))
+		Expect(limits).NotTo(HaveKey("max_limit"))
+		Expect(limits).NotTo(HaveKey("max_event_tags"))
 	})
 
 	It("adds CORS for NIP-11 when nip11.cors_allow_any_origin is true", func() {
@@ -493,7 +508,7 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
   "nip11": {
     "name": "CorsRelay",
     "description": "cors test",
-    "pubkey": "",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://example.com",
     "cors_allow_any_origin": true
@@ -506,7 +521,6 @@ var _ = Describe("Relay WebSocket and HTTP", func() {
 		corsSec := relayidentity.ResolvePath(cfgPath)
 		corsRid, err := relayidentity.Load(corsSec)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(corsCfg, corsRid)).To(Succeed())
 		corsSt, closeCors, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
 		defer closeCors()
@@ -586,14 +600,13 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer ln.Close()
 		port := ln.Addr().(*net.TCPAddr).Port
 		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
-		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, true)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthConnect)
 
 		cfg, err := config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -621,7 +634,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(ok).To(BeTrue())
 		Expect(challenge).NotTo(BeEmpty())
 
-		reqPayload, err := json.Marshal([]any{"REQ", "sub-dm", map[string]any{"kinds": []int{4}}})
+		reqPayload, err := json.Marshal([]any{"REQ", "sub-open", map[string]any{"kinds": []int{0}}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
 
@@ -630,7 +643,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		var closed []any
 		Expect(json.Unmarshal(closedData, &closed)).To(Succeed())
 		Expect(closed[0]).To(Equal("CLOSED"))
-		Expect(closed[1]).To(Equal("sub-dm"))
+		Expect(closed[1]).To(Equal("sub-open"))
 		msg, ok := closed[2].(string)
 		Expect(ok).To(BeTrue())
 		Expect(msg).To(HavePrefix("auth-required:"))
@@ -656,7 +669,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		var eose []any
 		Expect(json.Unmarshal(eoseData, &eose)).To(Succeed())
 		Expect(eose[0]).To(Equal("EOSE"))
-		Expect(eose[1]).To(Equal("sub-dm"))
+		Expect(eose[1]).To(Equal("sub-open"))
 
 		note := signedEvent(priv, 1, "hello", nil)
 		evPayload, err := json.Marshal([]any{"EVENT", note})
@@ -674,7 +687,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(srv.Shutdown(ctx)).To(Succeed())
 	})
 
-	It("sends AUTH challenge on first gated REQ when send_challenge_on_connect is false", func() {
+	It("sends AUTH challenge on first gated REQ when require_auth is protected_kinds", func() {
 		tmpDir := GinkgoT().TempDir()
 		dbPath := filepath.Join(tmpDir, "nip42-lazy.db")
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -682,14 +695,13 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer ln.Close()
 		port := ln.Addr().(*net.TCPAddr).Port
 		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
-		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, false)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthProtectedKinds)
 
 		cfg, err := config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -756,7 +768,7 @@ var _ = Describe("NIP-42 authentication", func() {
 		Expect(srv.Shutdown(ctx)).To(Succeed())
 	})
 
-	It("sends AUTH before OK false when publish requires auth and send_challenge_on_connect is false", func() {
+	It("sends AUTH before OK false when publish requires auth and require_auth is protected_kinds", func() {
 		tmpDir := GinkgoT().TempDir()
 		dbPath := filepath.Join(tmpDir, "nip42-pub-lazy.db")
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -764,14 +776,13 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer ln.Close()
 		port := ln.Addr().(*net.TCPAddr).Port
 		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
-		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, false)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthProtectedKinds)
 
 		cfg, err := config.LoadJSON(cfgPath)
 		Expect(err).NotTo(HaveOccurred())
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())
@@ -839,6 +850,160 @@ var _ = Describe("NIP-42 authentication", func() {
 		defer cancel()
 		Expect(srv.Shutdown(ctx)).To(Succeed())
 	})
+
+	It("serves an unauthenticated REQ when a legacy send_challenge_on_connect config is loaded", func() {
+		tmpDir := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmpDir, "nip42-legacy.db")
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer ln.Close()
+		port := ln.Addr().(*net.TCPAddr).Port
+		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthProtectedKinds)
+		raw, err := os.ReadFile(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		var doc map[string]any
+		Expect(json.Unmarshal(raw, &doc)).To(Succeed())
+		nip42 := doc["nip42"].(map[string]any)
+		delete(nip42, "require_auth")
+		nip42["send_challenge_on_connect"] = true
+		rewritten, err := json.Marshal(doc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(cfgPath, rewritten, 0o600)).To(Succeed())
+
+		cfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.NIP42.RequireAuth).To(Equal(config.NIP42RequireAuthProtectedKinds))
+
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
+		Expect(err).NotTo(HaveOccurred())
+		defer closeStore()
+		log := zerolog.Nop()
+		rid, err := relayidentity.Load(relayidentity.ResolvePath(cfgPath))
+		Expect(err).NotTo(HaveOccurred())
+		srv, err := relay.NewServer(cfg, st, log, rid)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
+		go func() { _ = srv.Serve(ln) }()
+		baseWS := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		time.Sleep(30 * time.Millisecond)
+
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+
+		reqPayload, err := json.Marshal([]any{"REQ", "open", map[string]any{"kinds": []int{1}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
+		_, data, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var msg []any
+		Expect(json.Unmarshal(data, &msg)).To(Succeed())
+		Expect(msg[0]).To(Equal("EOSE"))
+		Expect(msg[1]).To(Equal("open"))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(srv.Shutdown(ctx)).To(Succeed())
+	})
+
+	It("accepts AUTH when the relay tag matches a configured alias and rejects an unknown URL", func() {
+		tmpDir := GinkgoT().TempDir()
+		dbPath := filepath.Join(tmpDir, "nip42-alias.db")
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer ln.Close()
+		port := ln.Addr().(*net.TCPAddr).Port
+		relayWSURL := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		cfgPath := writeNIP42IntegrationConfig(tmpDir, dbPath, relayWSURL, config.NIP42RequireAuthConnect)
+		raw, err := os.ReadFile(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		var doc map[string]any
+		Expect(json.Unmarshal(raw, &doc)).To(Succeed())
+		nip42 := doc["nip42"].(map[string]any)
+		nip42["relay_aliases"] = []string{"wss://Public.EXAMPLE/path/"}
+		rewritten, err := json.Marshal(doc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(cfgPath, rewritten, 0o600)).To(Succeed())
+
+		cfg, err := config.LoadJSON(cfgPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.NIP42.RelayAliases).To(Equal([]string{"wss://public.example/path"}))
+
+		secPath := relayidentity.ResolvePath(cfgPath)
+		rid, err := relayidentity.Load(secPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
+		Expect(err).NotTo(HaveOccurred())
+		defer closeStore()
+
+		log := zerolog.Nop()
+		srv, err := relay.NewServer(cfg, st, log, rid)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(nips.LoadEnabled(cfg, srv, st, log)).To(Succeed())
+
+		go func() { _ = srv.Serve(ln) }()
+		baseWS := fmt.Sprintf("ws://127.0.0.1:%d/", port)
+		time.Sleep(30 * time.Millisecond)
+
+		c, _, err := websocket.DefaultDialer.Dial(baseWS, nil)
+		Expect(err).NotTo(HaveOccurred())
+		defer c.Close()
+
+		_, data, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var authChal []any
+		Expect(json.Unmarshal(data, &authChal)).To(Succeed())
+		Expect(authChal[0]).To(Equal("AUTH"))
+		challenge, ok := authChal[1].(string)
+		Expect(ok).To(BeTrue())
+
+		priv, err := btcec.NewPrivateKey()
+		Expect(err).NotTo(HaveOccurred())
+		unknown := nip42AuthEvent(priv, "wss://evil.example/", challenge, time.Now().Unix())
+		unknownPayload, err := json.Marshal([]any{"AUTH", unknown})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, unknownPayload)).To(Succeed())
+
+		_, rejData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var rej []any
+		Expect(json.Unmarshal(rejData, &rej)).To(Succeed())
+		Expect(rej[0]).To(Equal("OK"))
+		Expect(rej[1]).To(Equal(unknown.ID))
+		Expect(rej[2]).To(Equal(false))
+		rmsg, ok := rej[3].(string)
+		Expect(ok).To(BeTrue())
+		Expect(rmsg).To(ContainSubstring("relay tag does not match"))
+
+		aliasEv := nip42AuthEvent(priv, "wss://public.example/path/", challenge, time.Now().Unix())
+		aliasPayload, err := json.Marshal([]any{"AUTH", aliasEv})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, aliasPayload)).To(Succeed())
+
+		_, okData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var okmsg []any
+		Expect(json.Unmarshal(okData, &okmsg)).To(Succeed())
+		Expect(okmsg[0]).To(Equal("OK"))
+		Expect(okmsg[1]).To(Equal(aliasEv.ID))
+		Expect(okmsg[2]).To(Equal(true))
+
+		reqPayload, err := json.Marshal([]any{"REQ", "sub-alias", map[string]any{"kinds": []int{1}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.WriteMessage(websocket.TextMessage, reqPayload)).To(Succeed())
+		_, eoseData, err := c.ReadMessage()
+		Expect(err).NotTo(HaveOccurred())
+		var eose []any
+		Expect(json.Unmarshal(eoseData, &eose)).To(Succeed())
+		Expect(eose[0]).To(Equal("EOSE"))
+		Expect(eose[1]).To(Equal("sub-alias"))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		Expect(srv.Shutdown(ctx)).To(Succeed())
+	})
 })
 
 var _ = Describe("NIP-29 relay groups", func() {
@@ -851,7 +1016,6 @@ var _ = Describe("NIP-29 relay groups", func() {
 		secPath := relayidentity.ResolvePath(cfgPath)
 		rid, err := relayidentity.Load(secPath)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(relayidentity.ReconcileNIP11PubKey(cfg, rid)).To(Succeed())
 
 		st, closeStore, err := db.OpenTestStore(context.Background(), dbPath, zerolog.Nop())
 		Expect(err).NotTo(HaveOccurred())

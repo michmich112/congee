@@ -1,0 +1,61 @@
+# Opens a pull request into rc that increments VERSION and the admin package together.
+# Merging that pull request is what starts the rc image build. A push made with
+# GITHUB_TOKEN does not start workflows, so this job does not push straight to rc.
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: Semver component to increment
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: rc
+
+      - id: bump
+        run: |
+          set -euo pipefail
+          bash scripts/bump-version.sh "${{ inputs.part }}"
+          echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          branch="version-bump/${VERSION}"
+          git checkout -B "$branch"
+          git add VERSION web/admin/package.json web/admin/package-lock.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: bump version to ${VERSION}"
+          git fetch origin "$branch" || true
+          if git rev-parse --verify "origin/${branch}" >/dev/null 2>&1; then
+            git push --force-with-lease="refs/heads/${branch}:refs/remotes/origin/${branch}" origin "$branch"
+          else
+            git push -u origin "$branch"
+          fi
+          if gh pr list --base rc --head "$branch" --json number --jq '.[0].number' | grep -Eq '^[0-9]+$'; then
+            echo "Pull request for ${branch} is already open."
+            exit 0
+          fi
+          gh pr create \
+            --base rc \
+            --head "$branch" \
+            --title "chore: bump version to ${VERSION}" \
+            --body "Bumps the shared Congee and admin UI version to ${VERSION}. Merging publishes \`${VERSION}-rc\` and \`${VERSION}-nightly\` images from \`rc\`."

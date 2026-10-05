@@ -31,6 +31,7 @@
 	import { pluginNav, refreshPluginNav } from '$lib/plugin-nav.svelte';
 	import { initTimestampDisplayFromStorage } from '$lib/admin-timestamp-preference.svelte';
 	import { syncAdminFavicon } from '$lib/admin-favicon';
+	import { congeeVersion } from '$lib/congee-version';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as Collapsible from '$lib/components/ui/collapsible';
@@ -49,6 +50,7 @@
 	let loginErr = $state('');
 	let loginBusy = $state(false);
 	let relayVersion = $state<string | null>(null);
+	const displayVersion = $derived(congeeVersion.trim() !== '' ? congeeVersion : relayVersion);
 	let mobileNavOpen = $state(false);
 	let configNavOpen = $state(true);
 	let auditNavOpen = $state(true);
@@ -502,9 +504,9 @@
 								Sign out
 							{/if}
 						</Button>
-						{#if relayVersion && !sidebarCollapsed}
+						{#if displayVersion && !sidebarCollapsed}
 							<p class="text-[0.65rem] leading-snug text-muted-foreground">
-								Relay <span class="font-mono tabular-nums">{relayVersion}</span>
+								Relay <span class="font-mono tabular-nums">{displayVersion}</span>
 								<span class="text-muted-foreground/80"> (NIP-11)</span>
 							</p>
 						{/if}
@@ -607,9 +609,9 @@
 									<Button variant="outline" size="sm" type="button" onclick={() => { mobileNavOpen = false; logout(); }}>
 										Sign out
 									</Button>
-									{#if relayVersion}
+									{#if displayVersion}
 										<p class="text-[0.65rem] text-muted-foreground">
-											Relay <span class="font-mono">{relayVersion}</span>
+											Relay <span class="font-mono">{displayVersion}</span>
 										</p>
 									{/if}
 								</div>

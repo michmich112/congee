@@ -63,9 +63,12 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 	if stg == nil {
 		t.Fatal("storage not object")
 	}
+	if stg["analysis_enabled"] != false {
+		t.Fatalf("analysis_enabled: %#v", stg["analysis_enabled"])
+	}
 	for _, k := range []string{"bytes", "meta_bytes", "events", "tags", "audit"} {
-		if _, ok := stg[k]; !ok {
-			t.Errorf("storage missing %q", k)
+		if _, ok := stg[k]; ok {
+			t.Errorf("storage included %q while analysis is off", k)
 		}
 	}
 	ser, _ := body["series"].(map[string]any)
@@ -77,6 +80,46 @@ func TestHandleStatsJSONKeys(t *testing.T) {
 	}
 	if _, ok := ser["buckets"]; !ok {
 		t.Error("series missing buckets")
+	}
+}
+
+func TestHandleStatsIncludesStorageWhenAnalyzeEnabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	p := filepath.Join(t.TempDir(), "stats-on.db")
+	st, closeStore, err := db.OpenTestStore(ctx, p, zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeStore()
+
+	cfg := config.DefaultConfig()
+	cfg.Database.Analyze = true
+	h := handleStats(cfg, nil, st)
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/stats", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	stg, _ := body["storage"].(map[string]any)
+	if stg == nil {
+		t.Fatal("storage not object")
+	}
+	if stg["analysis_enabled"] != true {
+		t.Fatalf("analysis_enabled: %#v", stg["analysis_enabled"])
+	}
+	for _, k := range []string{"bytes", "meta_bytes", "events", "tags", "audit"} {
+		if _, ok := stg[k]; !ok {
+			t.Errorf("storage missing %q", k)
+		}
+	}
+	if asInt64(t, stg["bytes"])+asInt64(t, stg["meta_bytes"]) <= 0 {
+		t.Fatalf("expected on-disk size, got %#v", stg)
 	}
 }
 

@@ -54,10 +54,14 @@ if [ ! -d web/admin/node_modules ]; then
 	(cd web/admin && npm ci)
 fi
 
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+export PUBLIC_CONGEE_VERSION="$VERSION"
+LDFLAGS="-X github.com/michmich112/congee/internal/version.Version=${VERSION}"
+
 (
 	set +e
 	set -o pipefail
-	go run ./cmd/congee 2>&1 | prefix "$CYAN" relay
+	go run -ldflags "$LDFLAGS" ./cmd/congee 2>&1 | prefix "$CYAN" relay
 	echo "relay:$?" >"$TMP/done"
 ) &
 relay_pid=$!

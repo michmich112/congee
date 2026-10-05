@@ -3,9 +3,14 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/michmich112/congee/internal/nostr"
 )
+
+// ErrStaleReplaceable means a replaceable event lost NIP-01 revision ordering.
+// Callers must not treat it as a newly stored event.
+var ErrStaleReplaceable = errors.New("invalid: newer replaceable event already stored")
 
 // AuditEntry is a row written to the audit log.
 type AuditEntry struct {

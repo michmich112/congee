@@ -13,8 +13,10 @@
 //	GET    /api/events/{id}     — single stored Nostr event by hex id (404 if not in DB)
 //	GET    /api/nips             — known NIPs + enabled flags
 //	PATCH  /api/nips             — body {"nip":N,"enabled":bool}; response includes restart_required
-//	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage snapshot, series.buckets (UTC minutes), recent_query_latency; ports + relay_version
+//	GET    /api/stats            — open connections, subscriptions, uptime, relay_counters, storage (size details only when database.analyze is on), series.buckets (UTC minutes), recent_query_latency; ports + relay_version
 //	GET    /api/relay-identity   — relay pubkey_hex, npub, relay_instance_id at process start (read-only)
+//	GET    /api/relay-assets/icon|banner — hosted NIP-11 image preview (default art or upload)
+//	POST   /api/relay-assets/icon|banner — multipart file upload; sets that image source to upload
 //	POST   /api/migration/start  — copy sqlite↔postgres with SSE progress; optional make_target_primary to rewrite config
 //	POST   /api/migration/target-preflight  — read-only target schema inspection (JSON)
 //
@@ -58,8 +60,10 @@ import (
 //	GET      /events/{id}      — stored event JSON for admin UI (ephemeral / missing → 404)
 //	GET      /nips             — known NIPs + enabled flags from config
 //	PATCH    /nips             — toggle optional NIP; restart_required in response
-//	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{bytes,events,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
+//	GET      /stats            — connections, subscriptions_open, started_at_unix, uptime_sec, relay_counters, storage{analysis_enabled,bytes?,events?,...}, series{bucket_sec,buckets}, recent_query_latency; ports + relay_version
 //	GET      /relay-identity   — relay pubkey_hex, npub, relay_instance_id (runtime)
+//	GET      /relay-assets/icon|banner — hosted NIP-11 image bytes for the admin preview
+//	POST     /relay-assets/icon|banner — multipart upload; writes the file and sets source to upload
 //	POST     /migration/start  — data migration (SSE); body may set make_target_primary to update config
 //	POST     /migration/target-preflight  — JSON { target }; schema status for migration UI
 //
@@ -140,7 +144,11 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	//   POST     /api/migration/target-preflight  — JSON target schema check (no DDL)
 	api := http.NewServeMux()
 	api.HandleFunc("GET /config", handleGetConfig(cfgPath).ServeHTTP)
-	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, scheduleRestart, relayID).ServeHTTP)
+	api.HandleFunc("PUT /config", handlePutConfig(cfgPath, &s.cfgMu, store, s.log, scheduleRestart).ServeHTTP)
+	api.HandleFunc("POST /relay-assets/icon", handlePostRelayAsset(cfgPath, &s.cfgMu, store, s.log, scheduleRestart, config.NIP11AssetIcon))
+	api.HandleFunc("POST /relay-assets/banner", handlePostRelayAsset(cfgPath, &s.cfgMu, store, s.log, scheduleRestart, config.NIP11AssetBanner))
+	api.HandleFunc("GET /relay-assets/icon", handleGetRelayAsset(cfgPath, config.NIP11AssetIcon))
+	api.HandleFunc("GET /relay-assets/banner", handleGetRelayAsset(cfgPath, config.NIP11AssetBanner))
 	api.HandleFunc("GET /config/changelog", handleConfigChangelog(store).ServeHTTP)
 	api.HandleFunc("GET /audit/kinds", HandleAuditKinds(store).ServeHTTP)
 	api.HandleFunc("GET /audit/connections/{ref}", HandleAuditConnectionsDetail(cfg, relaySrv, store))
@@ -152,7 +160,7 @@ func NewServer(cfg *config.Config, cfgPath string, store storage.Store, relaySrv
 	api.HandleFunc("PATCH /nips", handleNIPsPatch(cfgPath, &s.cfgMu, store, scheduleRestart).ServeHTTP)
 	api.HandleFunc("GET /stats", handleStats(cfg, relaySrv, store).ServeHTTP)
 	api.Handle("GET /relay-identity", handleRelayIdentity(relayID, s.relayInstanceBoot))
-	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart, relayID))
+	api.HandleFunc("POST /migration/start", handleMigrationStart(s.log, s.cfgPath, &s.cfgMu, store, scheduleRestart))
 	api.HandleFunc("POST /migration/target-preflight", handleMigrationTargetPreflight(s.log))
 	registerPluginRoutes(api, s)
 

@@ -45,11 +45,13 @@ func connectionLimitsKeysPresent(data []byte) (keys map[string]struct{}, section
 }
 
 func unmarshalConfigJSON(data []byte) (*Config, error) {
+	warnLegacyNIP11Pubkey(data)
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
 	applyUnsetConnectionLimitsDefaults(&c, data)
+	applyLegacyNIP42RequireAuth(&c, data)
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}

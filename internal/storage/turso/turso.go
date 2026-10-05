@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/michmich112/congee/internal/storage"
+	"github.com/michmich112/congee/internal/storage/ftsv7detach"
 	"github.com/michmich112/congee/internal/storage/sqlevent"
 	"github.com/michmich112/congee/internal/storage/sqlitewriter"
 	"github.com/rs/zerolog"
@@ -19,23 +21,34 @@ type Store = sqlevent.Store
 var _ storage.EventStore = (*Store)(nil)
 var _ storage.MigrationSource = (*Store)(nil)
 
-// HasDriver reports whether go-libsql is linked (CGO build).
-func HasDriver() bool { return sqlitewriter.HasLibsqlDriver() }
+// HasDriver reports whether the local Turso driver is linked.
+func HasDriver() bool { return sqlitewriter.HasTursoDriver() }
 
 // CurrentSchemaVersion is the PRAGMA user_version / app-expected value for this binary.
 func CurrentSchemaVersion() int { return sqlevent.CurrentSchemaVersion() }
 
-// Open opens a local libSQL database file, runs migrations, and starts the writer loop.
+// Open opens a local database file, upgrades a pre-v8 FTS5 schema when needed, runs migrations, and starts the writer loop.
 func Open(ctx context.Context, dsn string, notifier storage.EventNotifier, log zerolog.Logger) (*Store, error) {
 	if !HasDriver() {
-		return nil, errors.New("turso: libsql driver not available (build with CGO_ENABLED=1)")
+		return nil, errors.New("turso: driver not available")
+	}
+	path, err := sqlitewriter.ResolveMainFilePath(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if _, statErr := os.Stat(path); statErr == nil {
+		if err := ftsv7detach.PrepareEvents(ctx, path, log); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("turso: stat database: %w", statErr)
 	}
 	return sqlevent.Open(ctx, sqlevent.OpenConfig{
 		Engine:        "turso",
 		DSN:           dsn,
 		Notifier:      notifier,
 		Log:           log,
-		OpenHandles:   sqlitewriter.OpenLibsqlHandles,
+		OpenHandles:   sqlitewriter.OpenTursoHandles,
 		ResolveDBPath: sqlitewriter.ResolveMainFilePath,
 	})
 }
@@ -74,9 +87,17 @@ func PreflightMigrationTarget(ctx context.Context, dsn string, log zerolog.Logge
 		}
 	}
 
+	hasFTS, probeErr := ftsv7detach.HasEventFTS5(ctx, path)
 	cfg := sqlevent.DefaultTursoPreflightConfig(dsn, log)
+	if probeErr == nil && hasFTS {
+		cfg.OpenDB = func(dsn string) (*sql.DB, error) {
+			sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, dsn, log)
+			return sqldb, err
+		}
+		return sqlevent.PreflightMigrationTarget(ctx, cfg)
+	}
 	cfg.OpenDB = func(dsn string) (*sql.DB, error) {
-		sqldb, _, err := sqlitewriter.OpenLibsqlHandles(ctx, dsn, log)
+		sqldb, _, err := sqlitewriter.OpenTursoHandles(ctx, dsn, log)
 		return sqldb, err
 	}
 	return sqlevent.PreflightMigrationTarget(ctx, cfg)

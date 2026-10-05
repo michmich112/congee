@@ -8,7 +8,8 @@
   "database": {
     "type": "turso",
     "dsn": "./congee.db",
-    "meta_dsn": "./congee-meta.db"
+    "meta_dsn": "./congee-meta.db",
+    "analyze": false
   },
   "_comment_database": "Local files use type turso (libSQL). PostgreSQL uses type postgres. Legacy sqlite is rewritten to turso on boot.",
   "logging": {
@@ -47,14 +48,17 @@
   "nip11": {
     "name": "Congee",
     "description": "Nostr relay (example metadata)",
-    "pubkey": "",
+    "icon_source": "default",
+    "banner_source": "default",
+    "admin_pubkey": "",
     "contact": "",
     "software": "https://github.com/michmich112/congee",
     "cors_allow_any_origin": false
   },
   "nip42": {
     "relay_url": "",
-    "send_challenge_on_connect": false,
+    "relay_aliases": [],
+    "require_auth": "protected_kinds",
     "created_at_skew_seconds": 600,
     "require_auth_subscribe_kinds": [],
     "require_auth_publish_kinds": [],

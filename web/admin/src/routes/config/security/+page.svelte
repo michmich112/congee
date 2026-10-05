@@ -1,14 +1,16 @@
 <script lang="ts">
 	import Shield from '@lucide/svelte/icons/shield';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { parseIntSafe } from '$lib/app-config';
+	import { relayWebSocketURL } from '$lib/relay-websocket-url';
 	import AdminPageHeading from '$lib/components/AdminPageHeading.svelte';
 	import { getAdminConfig } from '$lib/config/admin-config-context';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	const ctx = getAdminConfig();
@@ -41,6 +43,43 @@
 	function queryPageSizeFieldShowsPagingDisabledPill(): boolean {
 		const n = queryPageSizeFieldParsed();
 		return n !== null && n < 1;
+	}
+
+	let aliasDraft = $state('');
+	let aliasError = $state<string | null>(null);
+
+	function canonicalURLProblem(): string | null {
+		const raw = draft().nip42.relay_url;
+		if (raw.trim() === '') return null;
+		const parsed = relayWebSocketURL(raw);
+		return 'error' in parsed ? parsed.error : null;
+	}
+
+	function addAlias() {
+		const parsed = relayWebSocketURL(aliasDraft);
+		if ('error' in parsed) {
+			aliasError = parsed.error;
+			return;
+		}
+		const canonical = relayWebSocketURL(draft().nip42.relay_url);
+		const canonicalURL = 'url' in canonical ? canonical.url : '';
+		const existing = draft().nip42.relay_aliases.map((alias) => {
+			const item = relayWebSocketURL(alias);
+			return 'url' in item ? item.url : alias;
+		});
+		if (parsed.url === canonicalURL || existing.includes(parsed.url)) {
+			aliasError = 'That relay URL is already listed.';
+			return;
+		}
+		draft().nip42.relay_aliases = [...draft().nip42.relay_aliases, parsed.url];
+		aliasDraft = '';
+		aliasError = null;
+		ctx.markDirty();
+	}
+
+	function removeAlias(url: string) {
+		draft().nip42.relay_aliases = draft().nip42.relay_aliases.filter((alias) => alias !== url);
+		ctx.markDirty();
 	}
 </script>
 
@@ -146,6 +185,7 @@
 					Used when NIP-42 is enabled under Enabled NIPs. Set the public WebSocket URL clients put in the
 					<code class="rounded bg-muted px-1 text-[0.7rem]">relay</code> tag (for example
 					<code class="rounded bg-muted px-1 text-[0.7rem]">wss://relay.example.com/</code>).
+					Aliases are other public URLs for the same relay, such as a hosting hostname beside a custom domain.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4 pt-0 md:grid-cols-2">
@@ -155,41 +195,119 @@
 						id="nip42-relay-url"
 						class="font-mono text-xs"
 						spellcheck={false}
+						aria-invalid={canonicalURLProblem() != null}
 						value={draft().nip42.relay_url}
 						oninput={(e) => {
 							draft().nip42.relay_url = e.currentTarget.value;
 							ctx.markDirty();
 						}}
-					/>
-				</div>
-				<div
-					class="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2 sm:flex-row sm:items-center sm:justify-between"
-				>
-					<div class="space-y-1">
-						<Label for="nip42-chal" class="text-sm font-medium">Send AUTH challenge on connect</Label>
-						<p class="text-xs text-muted-foreground">
-							<strong class="font-medium text-foreground">On:</strong> the relay sends
-							<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> with a challenge as soon as the
-							WebSocket opens, so clients can authenticate before any gated
-							<code class="rounded bg-muted px-1 text-[0.7rem]">REQ</code> or
-							<code class="rounded bg-muted px-1 text-[0.7rem]">EVENT</code>.
-							<strong class="font-medium text-foreground">Off:</strong> the relay still sends
-							<code class="rounded bg-muted px-1 text-[0.7rem]">AUTH</code> immediately before a
-							<code class="rounded bg-muted px-1 text-[0.7rem]">CLOSED</code> or
-							<code class="rounded bg-muted px-1 text-[0.7rem]">OK</code> that returns
-							<code class="rounded bg-muted px-1 text-[0.7rem]">auth-required:</code>, so connections that
-							never touch protected kinds avoid an extra message (NIP-42 lazy auth).
-						</p>
-					</div>
-					<Switch
-						id="nip42-chal"
-						checked={draft().nip42.send_challenge_on_connect}
-						onCheckedChange={(on) => {
-							draft().nip42.send_challenge_on_connect = on;
-							ctx.markDirty();
+						onblur={() => {
+							const parsed = relayWebSocketURL(draft().nip42.relay_url);
+							if ('url' in parsed && parsed.url !== draft().nip42.relay_url) {
+								draft().nip42.relay_url = parsed.url;
+								ctx.markDirty();
+							}
 						}}
 					/>
+					{#if canonicalURLProblem()}
+						<p role="alert" class="text-sm text-destructive">{canonicalURLProblem()}</p>
+					{/if}
 				</div>
+				<div class="space-y-2 md:col-span-2">
+					<Label for="nip42-alias">Relay URL aliases</Label>
+					<p class="text-xs text-muted-foreground">
+						Each alias uses the same WebSocket URL rules as the canonical relay URL. Add a URL, or remove one
+						that clients no longer use.
+					</p>
+					{#if draft().nip42.relay_aliases.length > 0}
+						<ul class="flex flex-wrap gap-2" aria-label="Relay URL aliases">
+							{#each draft().nip42.relay_aliases as alias (alias)}
+								<li>
+									<Badge variant="secondary" class="h-auto max-w-full gap-1 py-1 font-mono text-xs">
+										<span class="truncate">{alias}</span>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground rounded-full"
+											aria-label={`Remove ${alias}`}
+											onclick={() => removeAlias(alias)}
+										>
+											<XIcon />
+										</button>
+									</Badge>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<div class="flex gap-2">
+						<Input
+							id="nip42-alias"
+							class="font-mono text-xs"
+							spellcheck={false}
+							placeholder="wss://alias.example/"
+							aria-invalid={aliasError != null}
+							bind:value={aliasDraft}
+							oninput={() => {
+								aliasError = null;
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									addAlias();
+								}
+							}}
+						/>
+						<Button type="button" variant="outline" onclick={addAlias}>Add</Button>
+					</div>
+					{#if aliasError}
+						<p role="alert" class="text-sm text-destructive">{aliasError}</p>
+					{/if}
+				</div>
+				<fieldset
+					id="require-auth-on"
+					class="scroll-mt-8 space-y-3 rounded-lg border border-border bg-muted/30 px-4 py-3 md:col-span-2"
+				>
+					<legend class="px-1 text-sm font-medium">Require AUTH on</legend>
+					<label class="flex items-start gap-2 text-sm">
+						<input
+							type="radio"
+							name="nip42-require-auth"
+							value="protected_kinds"
+							checked={draft().nip42.require_auth === 'protected_kinds'}
+							onchange={() => {
+								draft().nip42.require_auth = 'protected_kinds';
+								ctx.markDirty();
+							}}
+						/>
+						<span>
+							<span class="font-medium">Protected kinds</span>
+							<span class="mt-1 block text-xs text-muted-foreground">
+								Ordinary requests stay open. The relay sends
+								<code class="rounded bg-muted px-1">AUTH</code> when a subscribe or publish kind in the
+								lists below is hit. NIP-11 <code class="rounded bg-muted px-1">auth_required</code> is false.
+							</span>
+						</span>
+					</label>
+					<label class="flex items-start gap-2 text-sm">
+						<input
+							type="radio"
+							name="nip42-require-auth"
+							value="connect"
+							checked={draft().nip42.require_auth === 'connect'}
+							onchange={() => {
+								draft().nip42.require_auth = 'connect';
+								ctx.markDirty();
+							}}
+						/>
+						<span>
+							<span class="font-medium">Connect</span>
+							<span class="mt-1 block text-xs text-muted-foreground">
+								The relay sends <code class="rounded bg-muted px-1">AUTH</code> when the WebSocket opens
+								and rejects every command except AUTH until the client authenticates. NIP-11
+								<code class="rounded bg-muted px-1">auth_required</code> is true while NIP-42 is enabled.
+							</span>
+						</span>
+					</label>
+				</fieldset>
 				<div class="space-y-2">
 					<Label for="nip42-skew">Created-at skew (seconds)</Label>
 					<Input
